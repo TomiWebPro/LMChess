@@ -130,15 +130,17 @@ not ship. This is exactly how the per-target trimming is done today.
 
 - [x] `assets/engines/LICENSE.GPLv3` ships (copied from `Copying.txt`); the
       full text is also now in the repository-root `LICENSE` file.
-- [x] The root `LICENSE` is the GPLv3 base license, modified by the
-      **Geographic Use Restriction Addendum v1.0 (GURAv1)**, whose text
-      ships at the repository root as
-      `Geographic Use Restriction Addendum v1.0`. The addendum applies *in
-      addition to* the base license and takes precedence on conflict.
-- [ ] `EngineAttributions.stockfish` string shown on the settings/about
+- [x] The root `LICENSE` is the GPLv3 base license **plus the full text of
+      the Geographic Use Restriction Addendum v1.0 (GURAv1)** appended
+      after it. The addendum applies *in addition to* the base license and
+      takes precedence on conflict. There is no separate addendum file —
+      everything license-related lives in `LICENSE`.
+- [x] `EngineAttributions.stockfish` string shown on the settings/about
       screen (name + version + URL + license + source pointer). The string
-      exists (`lib/src/review/embedded_engine.dart`) but is not yet surfaced
-      in the UI.
+      lives in `lib/src/review/embedded_engine.dart` and is rendered
+      verbatim in the **License & attributions** section of the settings
+      screen (`lib/src/ui/screens/settings_screen.dart`), together with the
+      GURAv1 geographic-use restriction and the WintrChess credit.
 - [ ] Source offer: this doc points at
       `https://github.com/official-stockfish/Stockfish` (tag `sf_19`);
       keep a copy of the corresponding source/archives with releases.
@@ -156,9 +158,11 @@ obligations. Before cutting a release:
   on the same device (relevant for locked-down targets such as Android/iOS,
   where the engine runs from the app sandbox).
 - Verify the `EngineAttributions.stockfish` string is actually rendered on
-  the settings/about screen (still open above).
+  the settings/about screen (it is — see the checklist above).
 - Ship the GURAv1 addendum text alongside the GPLv3 base license so every
-  recipient sees the geographic restriction it is under.
+  recipient sees the geographic restriction it is under. Both texts are
+  already in the root `LICENSE` file; keep them together in every
+  distribution of this software.
 
 ## WintrChess-derived review module
 
@@ -196,8 +200,8 @@ ported.
 - [x] `assets/engines/LICENSE.GPLv3` (and the repository-root `LICENSE`)
       covers both Stockfish and the WintrChess-derived module (same license
       family).
-- [x] The GURAv1 addendum (root: `Geographic Use Restriction Addendum v1.0`)
-      applies on top of the GPLv3 base license for the whole distribution.
+- [x] The GURAv1 addendum is appended in full to the root `LICENSE` file,
+      after the GPLv3 base license.
 - [ ] Source offer: this repository's own source (including the derived
       module) is the corresponding source for the app build.
 - [ ] Keep `wintrchess_notes.md` citations current when refreshing.

@@ -95,12 +95,11 @@ built-in heuristic estimator (scores are always labeled `heuristic` vs
 ## License
 
 LLM Chess Arena is distributed under the **GNU General Public License,
-version 3 or later (GPL-3.0-or-later)** — the full text is in the root
-[`LICENSE`](LICENSE) file — **as modified by the Geographic Use Restriction
-Addendum v1.0 (GURAv1)**, whose text is in the root
-[`Geographic Use Restriction Addendum v1.0`](Geographic%20Use%20Restriction%20Addendum%20v1.0)
-file and which takes precedence over the base license in the event of
-conflict.
+version 3 or later (GPL-3.0-or-later)**, as modified by the **Geographic Use
+Restriction Addendum v1.0 (GURAv1)**. Both texts are in the root
+[`LICENSE`](LICENSE) file — the GPLv3 terms first, then the addendum in
+full — and the addendum takes precedence over the base license in the event
+of conflict.
 
 The addendum is a statement of non-compliance with government-mandated
 OS-level age verification (see

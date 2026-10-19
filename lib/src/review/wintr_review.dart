@@ -2,7 +2,8 @@
 // WintrChess-derived game-review pipeline — ported from wintrcat/wintrchess;
 // see wintrchess_notes.md and assets/engines/LICENSE.GPLv3.
 // Distribution also subject to the Geographic Use Restriction Addendum v1.0
-// (GURAv1) at the repository root, which takes precedence on conflict.
+// (GURAv1), appended in full to the root LICENSE file; it takes precedence
+// on conflict.
 /// WintrChess-derived game-review pipeline (pure Dart, GPLv3).
 ///
 /// # Derivation statement (license-relevant — keep truthful)

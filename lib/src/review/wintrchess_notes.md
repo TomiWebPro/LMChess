@@ -165,9 +165,9 @@ from `quality.dart` (§4).
   *Acknowledgements* section; the derivation statement and per-path
   citations below are the audit trail behind that credit.
 - The whole distribution is additionally subject to the **Geographic Use
-  Restriction Addendum v1.0 (GURAv1)** (repository root,
-  `Geographic Use Restriction Addendum v1.0`), which applies on top of the
-  GPLv3 base license and takes precedence on conflict.
+  Restriction Addendum v1.0 (GURAv1)**, whose full text is appended to the
+  repository-root `LICENSE` file after the GPLv3 base license. It applies
+  on top of the base license and takes precedence on conflict.
 - Checklist, kept in sync: (1) license text shipped at
   `assets/engines/LICENSE.GPLv3`; (2) attribution to
   `wintrcat/wintrchess` (branch `master`) in `wintr_review.dart`

@@ -1,4 +1,4 @@
-/// [SettingsScreen]: theme switchers + app brightness (content-only).
+/// [SettingsScreen]: theme switchers + app brightness + license info.
 ///
 /// Board-theme and piece-theme radio lists bound to [ThemeRegistry]
 /// (`useBoardTheme`/`usePieceTheme`), a light/dark/system segmented control
@@ -6,11 +6,18 @@
 /// every combination can be judged in place. Custom-theme management UI can
 /// call `addCustomBoardTheme`/`removeCustomBoardTheme` later; the registry
 /// already validates those paths.
+///
+/// The **License & attributions** section surfaces the GPLv3 base license,
+/// the GURAv1 geographic-use restriction, and the Stockfish / WintrChess
+/// credits. These are GPLv3 obligations, not decoration: the engine
+/// attribution and the geographic restriction must be visible to every
+/// user of a distributed build, not only to repository readers.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../review/embedded_engine.dart' show EngineAttributions;
 import '../../theme/registry.dart';
 import '../widgets/chessboard.dart';
 import 'play_screen.dart' show startingPosition;
@@ -112,10 +119,50 @@ class SettingsScreen extends ConsumerWidget {
                   ],
                 ),
               ),
+              const SizedBox(height: 24),
+              Text('License & attributions', style: theme.textTheme.titleMedium),
+              const SizedBox(height: 8),
+              _buildLicenseSection(theme),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  /// License, geographic-use restriction, and third-party credits.
+  ///
+  /// Rendered verbatim from [EngineAttributions] so the strings the
+  /// attribution ledger declares are exactly what the user sees — a
+  /// hand-written duplicate would drift and could go stale.
+  Widget _buildLicenseSection(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          EngineAttributions.geographicUseRestriction,
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: 12),
+        Text(EngineAttributions.stockfish, style: theme.textTheme.bodySmall),
+        const SizedBox(height: 12),
+        Text(
+          'WintrChess — https://github.com/wintrcat/wintrchess (GPLv3), by '
+          'the WintrChess authors. The game-review pipeline is a derived '
+          "work: it ports the review math from WintrChess' "
+          'shared/src/lib/reporter/ (expected-points model, per-move '
+          'accuracy formula, analysis pipeline shape). See '
+          'lib/src/review/wintrchess_notes.md for the full ported-vs-new '
+          'ledger.',
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'Full license texts (GPLv3 + Geographic Use Restriction Addendum '
+          'v1.0) ship in the LICENSE file of the project source.',
+          style: theme.textTheme.bodySmall,
+        ),
+      ],
     );
   }
 
