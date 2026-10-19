@@ -28,6 +28,52 @@ No API keys needed: `MockProvider` plays scripted demo games. Add OpenAI /
 Anthropic / Gemini / Ollama keys in **Agents** screen (stored in secure storage,
 never exported).
 
+## Getting the Stockfish engine
+
+The engine binaries are **not committed** to this repository (~100 MB each,
+~680 MiB for all 7 platforms — see `docs/ENGINE_RUNTIME.md` for the
+bundling rationale). Every platform has a per-directory `README.md` with the
+exact expected size and SHA-256 for that binary.
+
+**Easiest path — let the bundled fetcher do it** (verifies size, SHA-256 and
+a `uci` → `uciok` handshake, then `chmod +x`):
+
+```bash
+dart run tool/download_stockfish.dart linux-x86-64   # one platform
+dart run tool/download_stockfish.dart --all           # every platform
+dart run tool/download_stockfish.dart --list          # show URLs + status
+```
+
+**Manual download** — grab the release archive for your platform from the
+official Stockfish releases and extract the binary into
+`assets/engines/<platform>/`:
+
+| Platform | Directory | Official release asset |
+|---|---|---|
+| Linux x86-64 | `linux-x86-64/` | [`stockfish-linux-x86-64-universal.tar.gz`](https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-linux-x86-64-universal.tar.gz) |
+| Linux ARM64 | `linux-arm64/` | [`stockfish-linux-arm64-universal.tar.gz`](https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-linux-arm64-universal.tar.gz) |
+| macOS (Intel + Apple Silicon) | `macos-universal/` | [`stockfish-macos-universal.tar.gz`](https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-macos-universal.tar.gz) |
+| Windows x86-64 | `windows-x86-64/` | [`stockfish-windows-x86-64-universal.zip`](https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-windows-x86-64-universal.zip) |
+| Windows ARM64 | `windows-arm64/` | [`stockfish-windows-arm64-universal.zip`](https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-windows-arm64-universal.zip) |
+| Android ARM64 | `android-arm64/` | [`stockfish-android-arm64-universal.tar.gz`](https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-android-arm64-universal.tar.gz) |
+| Android ARMv7 (NEON) | `android-armv7/` | [`stockfish-android-armv7-neon.tar.gz`](https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-android-armv7-neon.tar.gz) |
+
+Release tag: [`sf_19`](https://github.com/official-stockfish/Stockfish/releases/tag/sf_19)
+· Upstream project: <https://github.com/official-stockfish/Stockfish> (GPLv3)
+
+If `github.com` is blocked, prefix the URL with the proxy
+`https://gh.llkk.cc/` (the fetch tool does this automatically) — e.g.
+`https://gh.llkk.cc/https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-linux-x86-64-universal.tar.gz`.
+
+After extracting, the file must be named `stockfish` (or `stockfish.exe` on
+Windows) and live directly in `assets/engines/<platform>/`. The app
+verifies its pinned size + SHA-256 before running it, so a partial or
+modified download is rejected rather than executed.
+
+Without the binary the app still works: game review falls back to the
+built-in heuristic estimator (scores are always labeled `heuristic` vs
+`stockfish-uci`).
+
 ## Embedded Stockfish + review
 
 - Stockfish `sf_19` ships as a per-platform binary asset
