@@ -1,0 +1,840 @@
+/// [PlayScreen]: human (White) vs AI (Black) over a live board.
+///
+/// Content-only widget hosted by `AppShell`/routes. Layout pairs a top
+/// [PlayerCard] (AI), the [Chessboard], a bottom [PlayerCard] (human) and a
+/// [BoardPanelLayout] side panel with **Activity** (streaming
+/// [AgentActivityPanel]) and **Moves** ([MoveList] + heuristic [EvalBar] +
+/// resign/new-game) tabs — so medium widths automatically get the
+/// board+activity tab treatment per the responsive rule.
+///
+/// Real wiring (no demo stubs):
+///
+/// * The board mirrors a real [Position] (perft-verified move generation:
+///   selection highlights come from `Position.legalMoves(forSquare:)`, so
+///   check, pins, en passant and castling are enforced by the engine).
+/// * Every move flows through a real [GameOrchestrator] (human White seat +
+///   bound AI Black seat, authoritative clock, `positionUpdater:
+///   fenAdvance`, persist-then-broadcast [GameEvent] log). Human taps call
+///   [GameOrchestrator.applyHumanMove]; the AI side runs
+///   [GameOrchestrator.requestAiTurn] with a `providerOverride` from
+///   [mockAwareProvider] — mock agents get a fresh legal move per turn, and
+///   the full [AgentRunner] validation + seeded-fallback path still runs.
+/// * [GameEvent]s map to [ActivityEvent]s via [activityFromGameEvent] for
+///   the panel. The local board never applies moves itself: [_syncBoard]
+///   replays the orchestrator's `moveHistory` tail onto the mirror engine,
+///   so UI and backend can never diverge (both the event listener and the
+///   post-turn continuation call it; it is idempotent).
+/// * At most one AI turn runs at a time ([_aiInFlight] guard mirrors the
+///   orchestrator's `_turnInFlight` rejection on the UI side).
+/// * Terminal positions come from [ChessRules.resultOf] mapped through
+///   [mapTerminal] into [GameOrchestrator.reportTerminal]. Stats turns are
+///   buffered as [PendingTurn]s and flushed to [StatsLog] only at game end
+///   (undone/abandoned moves never pollute aggregates); finished games are
+///   recorded to [ReviewLog] for the review screen.
+/// * There is deliberately **no undo**: the orchestrator log is append-only
+///   (`moveApplied` has no inverse), so retracting a round would fork the
+///   UI mirror from the backend. Use New game to restart.
+/// * Promotion shows the standard Q/R/B/N [promotionDialog]; resign asks
+///   for confirmation and calls `orchestrator.resign('w')`.
+library;
+
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../chess/engine.dart' as chess_eng;
+import '../../chess/fen.dart';
+import '../../chess/move.dart';
+import '../../chess/piece.dart';
+import '../../chess/position.dart';
+import '../../chess/square.dart';
+import '../../game/clock.dart';
+import '../../game/game_state.dart';
+import '../../game/orchestrator.dart';
+import '../../theme/piece_theme.dart';
+import '../../theme/registry.dart';
+import '../backend_bridge.dart';
+import '../ui_models.dart';
+import '../widgets/activity_panel.dart';
+import '../widgets/boards.dart';
+import '../widgets/chessboard.dart';
+
+/// Game id used for stats/review attribution of the play room.
+const String kPlayGameId = 'play-game';
+
+/// Fixed AI seat for the play room (bound per turn from the catalog).
+const String kPlayAiAgentId = 'demo-black';
+
+/// Human (White) vs AI (Black) play surface.
+class PlayScreen extends ConsumerStatefulWidget {
+  /// Creates the play screen.
+  const PlayScreen({super.key});
+
+  @override
+  ConsumerState<PlayScreen> createState() => _PlayScreenState();
+}
+
+class _PlayScreenState extends ConsumerState<PlayScreen> {
+  /// Mirror engine; only ever advanced by [_syncBoard] from the
+  /// orchestrator's authoritative `moveHistory`.
+  Position _engine = Position.initial();
+
+  /// SAN history parallel to the orchestrator's UCI history.
+  final List<String> _sans = <String>[];
+
+  /// FEN history (`fens[0]` is the start position; one entry per ply + 1).
+  List<String> _fens = <String>[standardStartFen];
+
+  /// Agent phrases parallel to the UCI history (`null` for human moves
+  /// and unattributed fallbacks).
+  final List<String?> _phrases = <String?>[];
+
+  /// Fallback flags parallel to the UCI history.
+  final List<bool> _fallbacks = <bool>[];
+
+  /// How many of the orchestrator's UCIs [_engine] has applied.
+  int _applied = 0;
+
+  /// Viewed ply for tap-to-seek (`_sans.length` = live).
+  int _viewPly = 0;
+
+  /// Selected square, if the human has one picked up.
+  String? _selected;
+
+  /// Engine-legal targets for [_selected].
+  List<String> _legal = const <String>[];
+
+  /// Last-move trail.
+  String? _lastFrom;
+  String? _lastTo;
+
+  /// Game result (`'1-0'`, `'0-1'`, `'1/2-1/2'`); non-null ends input.
+  String? _result;
+
+  /// Streaming activity for the side panel.
+  final List<ActivityEvent> _events = <ActivityEvent>[];
+
+  /// Presentation revision for the activity panel.
+  ///
+  /// Bumped whenever an event is appended so only the panel subtree rebuilds
+  /// — streaming turns no longer repaint the 64-square board.
+  final ValueNotifier<int> _activityRevision = ValueNotifier<int>(0);
+
+  /// Visible AI-turn error (with a retry), e.g. a turn that produced no move.
+  String? _aiError;
+
+  /// Whether an AI turn is in flight (footer spinner).
+  bool _thinking = false;
+
+  /// UI-side reentrancy guard (mirrors the orchestrator's turn guard).
+  bool _aiInFlight = false;
+
+  /// Stats turns buffered until game end (undo-less but abandon-safe).
+  final List<PendingTurn> _pending = <PendingTurn>[];
+
+  /// Agent id / model actually bound for Black (for end markers).
+  String _blackAgentId = kPlayAiAgentId;
+  String _blackModel = 'mock';
+
+  /// The live orchestrator (recreated per game).
+  GameOrchestrator? _orch;
+
+  /// Subscription mapping [GameEvent]s into [_events].
+  StreamSubscription<GameEvent>? _sub;
+
+  @override
+  void initState() {
+    super.initState();
+    _newGame();
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    _orch?.dispose();
+    _activityRevision.dispose();
+    super.dispose();
+  }
+
+  /// Creates a fresh engine mirror + orchestrator and starts the game.
+  void _newGame() {
+    _sub?.cancel();
+    _orch?.dispose();
+    _engine = Position.initial();
+    _sans.clear();
+    _fens = <String>[standardStartFen];
+    _phrases.clear();
+    _fallbacks.clear();
+    _applied = 0;
+    _viewPly = 0;
+    _selected = null;
+    _legal = const <String>[];
+    _lastFrom = null;
+    _lastTo = null;
+    _result = null;
+    _events.clear();
+    _thinking = false;
+    _aiInFlight = false;
+    _aiError = null;
+    _pending.clear();
+    _blackAgentId = kPlayAiAgentId;
+    _blackModel = 'mock';
+    final orch = GameOrchestrator(
+      config: const GameConfig(
+        mode: GameMode.standard,
+        timeControl: TimeControl(
+          type: TimeControlType.fixed,
+          initialMs: 600000,
+        ),
+        maxMoves: 200,
+      ),
+      white: const GameParticipant(label: 'You', isHuman: true),
+      black: const GameParticipant(
+        agentConfigId: kPlayAiAgentId,
+        label: 'AI Opponent',
+        isHuman: false,
+      ),
+      positionUpdater: fenAdvance,
+    );
+    orch.setPosition(
+      standardStartFen,
+      turn: 'w',
+      legalMoves: legalUcis(_engine),
+    );
+    orch.startGame();
+    _orch = orch;
+    _sub = orch.events.listen(_onEvent);
+  }
+
+  /// Maps one orchestrator event into the activity panel, then syncs.
+  void _onEvent(GameEvent event) {
+    final activity = activityFromGameEvent(event);
+    if (activity != null) {
+      _addActivity(activity);
+    }
+    if (event.type == 'moveApplied') {
+      _syncBoard();
+    } else if (event.type == 'gameFinished' ||
+        event.type == 'terminalReported' ||
+        event.type == 'resigned' ||
+        event.type == 'flagFall') {
+      _finishGame();
+    }
+    // No whole-screen refresh here: activity rows rebuild through
+    // [_activityRevision] and board changes flow through [_syncBoard], so
+    // high-frequency stream events no longer repaint the board.
+  }
+
+  /// Appends [event] to the activity panel without rebuilding the board.
+  void _addActivity(ActivityEvent event) {
+    if (!mounted) return;
+    _events.add(event);
+    _activityRevision.value++;
+  }
+
+  /// Replays unapplied orchestrator UCIs onto the mirror engine.
+  ///
+  /// Idempotent: both [_onEvent] and the post-turn continuation call it.
+  /// After syncing it either finishes terminal games or fires the AI
+  /// reply when it is Black's turn.
+  void _syncBoard() {
+    final orch = _orch;
+    if (orch == null) return;
+    final history = orch.moveHistory;
+    var changed = false;
+    while (_applied < history.length) {
+      final uci = history[_applied];
+      try {
+        final move = ChessMove.fromUci(uci);
+        final from = move.from.name;
+        final to = move.to.name;
+        final applied = _engine.apply(move);
+        final meta = appliedMetaFor(orch, _applied + 1);
+        _sans.add(applied.san);
+        _phrases.add(meta.isFallback ? null : meta.phrase);
+        _fallbacks.add(meta.isFallback);
+        _fens.add(_engine.toFen());
+        _lastFrom = from;
+        _lastTo = to;
+        _applied++;
+        changed = true;
+      } catch (e) {
+        _addActivity(
+          ActivityEvent(
+            kind: ActivityEventKind.error,
+            message: 'Mirror sync failed on $uci: $e',
+          ),
+        );
+        break;
+      }
+    }
+    if (changed && mounted) {
+      setState(() {
+        _viewPly = _sans.length;
+        _selected = null;
+        _legal = const <String>[];
+      });
+      // Fresh legal intake for the next turn (required: the orchestrator
+      // clears its legal list on every applied move).
+      orch.setPosition(
+        _engine.toFen(),
+        turn: _engine.sideToMove.isWhite ? 'w' : 'b',
+        legalMoves: legalUcis(_engine),
+      );
+    }
+    if (_result != null) return;
+    if (chess_eng.ChessRules.resultOf(_engine) != null) {
+      _finishGame();
+    } else if (orch.turn == 'b' &&
+        orch.state == OrchestratorState.waitingAi) {
+      _requestAiTurn();
+    }
+  }
+
+  /// Phrase/fallback metadata for `moveApplied` entry [moveIndex]
+  /// (1-based, matches the orchestrator's `moveIndex` payload).
+  @override
+  Widget build(BuildContext context) {
+    final boardTheme = ref.watch(
+      themeRegistryProvider.select((r) => r.boardTheme),
+    );
+    final pieceTheme = ref.watch(
+      themeRegistryProvider.select((r) => r.pieceTheme),
+    );
+    final aiAgent = ref.watch(
+      agentListProvider.select((s) => s.byId(kPlayAiAgentId)),
+    );
+    final viewingLive = _viewPly == _sans.length;
+    final position = viewingLive
+        ? squaresOf(_engine)
+        : squaresOfFen(_fens[_viewPly.clamp(0, _fens.length - 1)]);
+    final orch = _orch;
+    final whiteActive =
+        _result == null && (orch?.turn == 'w') && viewingLive;
+    final blackActive =
+        _result == null && (orch?.turn == 'b') && viewingLive;
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        children: <Widget>[
+          PlayerCard(
+            name: 'AI Opponent',
+            subtitle: aiAgent == null
+                ? _blackModel
+                : '${aiAgent.summary} · t=${aiAgent.temperature.toStringAsFixed(2)}',
+            clockSeconds: orch == null
+                ? null
+                : (orch.clock.remainingB / 1000).ceil(),
+            isActive: blackActive,
+            isWhite: false,
+          ),
+          const SizedBox(height: 8),
+          if (_result != null) _buildResultBanner(),
+          if (_aiError != null && _result == null) _buildAiErrorBanner(),
+          Expanded(
+            child: BoardPanelLayout(
+              boardLabel: 'Board',
+              panelLabel: 'Activity',
+              board: Chessboard(
+                squares: position,
+                orientationWhite: true,
+                selected: viewingLive ? _selected : null,
+                lastFrom: _lastFrom,
+                lastTo: _lastTo,
+                legalTargets: viewingLive ? _legal : const <String>[],
+                inCheck: viewingLive ? checkSquare(_engine) : null,
+                boardTheme: boardTheme,
+                pieceTheme: pieceTheme,
+                onTapSquare: _result == null && viewingLive ? _onTap : null,
+              ),
+              panel: ValueListenableBuilder<int>(
+                valueListenable: _activityRevision,
+                builder: (context, _, _) => DefaultTabController(
+                  length: 2,
+                  child: Column(
+                    children: <Widget>[
+                      const TabBar(
+                        tabs: <Widget>[
+                          Tab(text: 'Activity'),
+                          Tab(text: 'Moves'),
+                        ],
+                      ),
+                      Expanded(
+                        child: TabBarView(
+                          children: <Widget>[
+                            AgentActivityPanel(
+                              events: _events,
+                              isThinking: _thinking,
+                            ),
+                            _buildMovesPanel(),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          PlayerCard(
+            name: 'You',
+            subtitle: 'Human · White',
+            clockSeconds: orch == null
+                ? null
+                : (orch.clock.remainingW / 1000).ceil(),
+            isActive: whiteActive,
+            isHuman: true,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Result banner shown once the game ends.
+  Widget _buildResultBanner() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        color: Theme.of(context).colorScheme.tertiaryContainer,
+      ),
+      child: Row(
+        children: <Widget>[
+          const Icon(Icons.flag_outlined),
+          const SizedBox(width: 8),
+          Expanded(child: Text('Game over · $_result')),
+          TextButton(
+            onPressed: () => setState(_newGame),
+            child: const Text('New game'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Visible error banner for an AI turn that produced no move, with retry.
+  ///
+  /// Mirrors the watch room's inline failure text; without this the error
+  /// would only be visible on the Activity tab.
+  Widget _buildAiErrorBanner() {
+    final theme = Theme.of(context);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        color: theme.colorScheme.errorContainer,
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(
+            Icons.error_outline,
+            color: theme.colorScheme.onErrorContainer,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _aiError!,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onErrorContainer,
+              ),
+            ),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(
+              foregroundColor: theme.colorScheme.onErrorContainer,
+            ),
+            onPressed: _requestAiTurn,
+            child: const Text('Retry'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Moves tab: heuristic eval bar, SAN list with tap-to-seek, controls.
+  Widget _buildMovesPanel() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          EvalBar(score: _materialPawns(_engine), isHeuristic: true),
+          const SizedBox(height: 8),
+          MoveList(
+            moves: _sans,
+            currentIndex: _viewPly - 1,
+            errorPlies: <int>{
+              for (var i = 0; i < _fallbacks.length; i++)
+                if (_fallbacks[i]) i,
+            },
+            onTapMove: (ply) => setState(() {
+              _viewPly = ply + 1;
+              _selected = null;
+              _legal = const <String>[];
+            }),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _result != null
+                      ? null
+                      : () => setState(_newGame),
+                  icon: const Icon(Icons.refresh_outlined),
+                  label: const Text('New game'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _result != null ? null : _confirmResign,
+                  icon: const Icon(Icons.flag_outlined),
+                  label: const Text('Resign'),
+                ),
+              ),
+            ],
+          ),
+          if (_viewPly != _sans.length)
+            TextButton(
+              onPressed: () => setState(() {
+                _viewPly = _sans.length;
+                _selected = null;
+                _legal = const <String>[];
+              }),
+              child: const Text('Return to live position'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Board tap handler: select own piece (engine-legal targets), then
+  /// move / capture / reselect.
+  Future<void> _onTap(String square) async {
+    final orch = _orch;
+    if (_result != null || orch == null) return;
+    if (orch.turn != 'w') return;
+    // Tapped a legal destination → move (promotion dialog at the end rank).
+    if (_selected != null && _legal.contains(square)) {
+      final from = _selected!;
+      final fromSq = Square.fromName(from);
+      final occupant = _engine.pieceAt(fromSq);
+      String? promotion;
+      if (occupant != null &&
+          occupant.type == PieceType.pawn &&
+          Square.fromName(square).rank == 7) {
+        promotion = await promotionDialog(context, isWhite: true);
+        if (promotion == null || !mounted) return;
+      }
+      _applyHumanMove(from, square, promotion);
+      return;
+    }
+    // Tapped own (white) piece → select with engine-legal targets.
+    final tapped = Square.tryParse(square);
+    final occupant = tapped == null ? null : _engine.pieceAt(tapped);
+    if (occupant != null && occupant.color.isWhite) {
+      final targets = <String>[
+        for (final m in _engine.legalMoves(forSquare: tapped!))
+          m.to.name,
+      ];
+      setState(() {
+        _selected = square;
+        _legal = targets;
+      });
+      return;
+    }
+    // Anything else clears the selection.
+    setState(() {
+      _selected = null;
+      _legal = const <String>[];
+    });
+  }
+
+  /// Applies the human's move through the orchestrator.
+  ///
+  /// The board sync + AI reply happen in [_syncBoard] once the
+  /// `moveApplied` event lands; rejections surface as a snackbar and leave
+  /// the position untouched.
+  void _applyHumanMove(String from, String to, String? promotion) {
+    final orch = _orch;
+    if (orch == null || _result != null) return;
+    final uci = '$from$to${promotion == null ? '' : promotion.toLowerCase()}';
+    final ok = orch.applyHumanMove(uci);
+    if (!ok) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Move rejected by the game.')),
+        );
+      }
+      return;
+    }
+    _pending.add(PendingTurn.human(mode: 'standard'));
+    setState(() {
+      _selected = null;
+      _legal = const <String>[];
+    });
+  }
+
+  /// Runs one Black AI turn (guarded against overlap).
+  ///
+  /// The agent config is rebound from the catalog every turn so setup
+  /// edits apply immediately; [mockAwareProvider] scripts mock turns with
+  /// a fresh legal move. The applied move (or seeded fallback) lands via
+  /// [_syncBoard]; the runner result is buffered for end-of-game stats.
+  Future<void> _requestAiTurn() async {
+    final orch = _orch;
+    if (orch == null ||
+        _aiInFlight ||
+        _result != null ||
+        orch.turn != 'b') {
+      return;
+    }
+    _aiInFlight = true;
+    if (mounted) {
+      setState(() {
+        _thinking = true;
+        _aiError = null;
+      });
+    }
+    try {
+      final uiAgent =
+          ref.read(agentListProvider).byId(kPlayAiAgentId) ??
+          AgentConfig(
+            id: kPlayAiAgentId,
+            name: 'Mock Opponent',
+            provider: 'mock',
+            model: 'mock',
+          );
+      final backend = toBackendAgent(uiAgent);
+      orch.bindAgent(backend);
+      _blackAgentId = backend.id;
+      _blackModel = backend.model;
+      final before = orch.moveHistory.length;
+      final provider = await resolveTurnProvider(
+        backend,
+        orch.legalMoves,
+        phrase: '${uiAgent.name} reply',
+      );
+      try {
+        final result = await orch.requestAiTurn(
+          'b',
+          providerOverride: provider,
+        );
+        if (!mounted) return;
+        if (result != null) {
+          final grew = orch.moveHistory.length > before;
+          _pending.add(
+            PendingTurn.ai(
+              agentId: backend.id,
+              modelKey: backend.model,
+              color: 'black',
+              mode: 'standard',
+              result: result,
+              fallback: grew && !result.isSuccess,
+            ),
+          );
+          if (!grew) {
+            final message =
+                'AI turn produced no move (${result.outcome.kind.name}).';
+            _addActivity(
+              ActivityEvent(
+                kind: ActivityEventKind.error,
+                message: message,
+              ),
+            );
+            if (mounted) setState(() => _aiError = message);
+          }
+        }
+        // The moveApplied listener may not have run yet; sync directly.
+        _syncBoard();
+      } finally {
+        closeProvider(provider);
+      }
+    } finally {
+      _aiInFlight = false;
+      if (mounted) {
+        setState(() => _thinking = false);
+      }
+    }
+  }
+
+  /// Finishes the game: records the result, flushes stats, logs review.
+  ///
+  /// The outcome prefers the orchestrator's authoritative result; when the
+  /// engine sees a terminal position first it is reported in. Buffered
+  /// stats turns flush here (once), per-agent end markers follow, and the
+  /// full game lands in [ReviewLog].
+  void _finishGame() {
+    if (_result != null || _orch == null) return;
+    final orch = _orch!;
+    var outcome = orch.result?.outcome;
+    if (outcome == null) {
+      final terminal = chess_eng.ChessRules.resultOf(_engine);
+      if (terminal == null) return;
+      final mapped = mapTerminal(terminal);
+      orch.reportTerminal(
+        gameResult(
+          outcome: mapped.outcome,
+          reason: mapped.reason,
+          winnerColor: mapped.winnerColor,
+        ),
+      );
+      outcome = mapped.outcome;
+    }
+    for (final turn in _pending) {
+      turn.flush(gameId: kPlayGameId);
+    }
+    _pending.clear();
+    final aiName =
+        ref.read(agentListProvider).byId(_blackAgentId)?.name ?? 'AI Opponent';
+    logGameResults(
+      gameId: kPlayGameId,
+      whiteAgentId: 'human',
+      blackAgentId: _blackAgentId,
+      whiteModelKey: 'human',
+      blackModelKey: _blackModel,
+      mode: 'standard',
+      outcome: outcome,
+    );
+    ReviewLog.record(
+      ReviewGame(
+        id: kPlayGameId,
+        whiteLabel: 'You',
+        blackLabel: aiName,
+        whiteAgentId: 'human',
+        blackAgentId: _blackAgentId,
+        ucis: orch.moveHistory,
+        sans: List<String>.of(_sans),
+        fens: List<String>.of(_fens),
+        phrases: List<String?>.of(_phrases),
+        fallbackFlags: List<bool>.of(_fallbacks),
+      ),
+    );
+    if (mounted) {
+      setState(() {
+        _result = outcome;
+        _thinking = false;
+      });
+    } else {
+      _result = outcome;
+      _thinking = false;
+    }
+  }
+
+  /// Resign confirmation → `orchestrator.resign('w')` (outcome `0-1`).
+  Future<void> _confirmResign() async {
+    final orch = _orch;
+    if (orch == null || _result != null) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Resign?'),
+        content: const Text('This ends the game as a loss (0-1).'),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Resign'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      orch.resign('w');
+    }
+  }
+}
+
+/// Standard initial position as square → two-char code.
+///
+/// Kept for the settings preview and review demo line; live screens use
+/// [squaresOf] over the real engine instead.
+Map<String, String> startingPosition() {
+  const back = <String>['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R'];
+  final pos = <String, String>{};
+  for (var f = 0; f < 8; f++) {
+    pos['${kFiles[f]}1'] = 'w${back[f]}';
+    pos['${kFiles[f]}2'] = 'wP';
+    pos['${kFiles[f]}7'] = 'bP';
+    pos['${kFiles[f]}8'] = 'b${back[f]}';
+  }
+  return pos;
+}
+
+/// Promotion picker (Q/R/B/N); `null` when dismissed.
+Future<String?> promotionDialog(
+  BuildContext context, {
+  required bool isWhite,
+}) {
+  const options = <String>['Q', 'R', 'B', 'N'];
+  return showDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Promote to'),
+      content: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: <Widget>[
+          for (final o in options)
+            IconButton(
+              iconSize: 40,
+              tooltip: o,
+              onPressed: () => Navigator.pop(context, o),
+              icon: _promotionGlyph(o, isWhite: isWhite),
+            ),
+        ],
+      ),
+    ),
+  );
+}
+
+/// Promotion glyph drawn as a filled shape over a contrasting outline.
+///
+/// A plain colored glyph relies on a single drop shadow and disappears in
+/// the wrong dialog tone; the explicit stroke layer keeps white pieces
+/// legible on light surfaces (and black pieces on dark ones) without assets.
+Widget _promotionGlyph(String letter, {required bool isWhite}) {
+  final glyph = PieceTheme.glyphFor(PieceTypeX.fromLetter(letter)!);
+  final fill = isWhite ? Colors.white : Colors.black;
+  final stroke = isWhite ? Colors.black : Colors.white;
+  return Stack(
+    alignment: Alignment.center,
+    children: <Widget>[
+      Text(
+        glyph,
+        style: TextStyle(
+          fontSize: 40,
+          height: 1,
+          foreground: Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 3
+            ..color = stroke,
+        ),
+      ),
+      Text(
+        glyph,
+        style: TextStyle(fontSize: 40, height: 1, color: fill),
+      ),
+    ],
+  );
+}
+
+/// Material balance (White-relative pawns) for the heuristic eval bar.
+///
+/// A deliberately naive estimator over the real position — the bar's
+/// `heuristic` watermark (see [EvalBar]) marks it as such.
+double _materialPawns(Position position) {
+  var total = 0;
+  for (final entry in position.board.entries) {
+    final v = entry.value.type.value;
+    total += entry.value.color.isWhite ? v : -v;
+  }
+  return (total.toDouble() * 0.4).clamp(-8.0, 8.0);
+}

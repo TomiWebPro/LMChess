@@ -1,0 +1,51 @@
+name: llm_chess_arena
+description: "LLM Chess Arena — humans and LLMs play standard and chaotic chess, with full observability, arena tournaments, statistics, and game review."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.13.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  flutter_riverpod: ^2.6.1
+  http: ^1.2.2
+  uuid: ^4.4.0
+  intl: ^0.20.2
+  fl_chart: ^0.69.0
+  path_provider: ^2.1.4
+  hive_ce: ^2.11.2
+  hive_ce_flutter: ^2.2.1
+  flutter_secure_storage: ^9.2.2
+  collection: ^1.19.0
+  meta: ^1.15.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  import_lint: ^2.0.0
+
+flutter:
+  uses-material-design: true
+  # Stockfish binaries (~100MB each) are gitignored and fetched per-dev via
+  # `dart run tool/download_stockfish.dart <platform>`; only README
+  # placeholders + LICENSE.GPLv3 are committed (see docs/ENGINE_RUNTIME.md).
+  #
+  # NOTE: a bare directory entry bundles only its direct files — each
+  # platform subdirectory must be listed so the pinned `stockfish`
+  # binary actually ships inside `flutter_assets` (the runtime resolver
+  # loads `assets/engines/<platform>/stockfish` via rootBundle). For
+  # release builds, trim the entries for platforms you do not ship to
+  # avoid bundling ~100MB per extra platform.
+  assets:
+    - assets/engines/
+    - assets/engines/android-arm64/
+    - assets/engines/android-armv7/
+    - assets/engines/linux-arm64/
+    - assets/engines/linux-x86-64/
+    - assets/engines/macos-universal/
+    - assets/engines/windows-arm64/
+    - assets/engines/windows-x86-64/

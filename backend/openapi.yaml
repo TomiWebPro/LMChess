@@ -1,0 +1,850 @@
+openapi: 3.0.3
+info:
+  title: LLM Chess Arena API (future server — contracts mirror LocalAppStore)
+  description: |
+    HTTP contract for the deferred server phase (see
+    `backend/SERVER_ROADMAP.md`). Every operation maps 1:1 onto an
+    `AppRepository` / `EventStore` method in
+    `lib/src/storage/repository.dart`, so the local Hive store remains the
+    reference implementation. Entities are opaque JSON documents
+    (`Map<String, Object?>`) with the well-known fields documented in the
+    schemas below; unknown extra fields are preserved (forward compatible).
+
+    Authentication is not part of the local store but is required by the
+    server: send a short-lived bearer token, never a provider API key.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: https://api.llm-chess-arena.example/v1
+    description: Production (illustrative)
+security:
+  - bearerAuth: []
+tags:
+  - name: agents
+  - name: games
+  - name: tournaments
+  - name: evaluations
+  - name: exports
+  - name: events
+  - name: stats
+
+paths:
+  /agents:
+    get:
+      tags: [agents]
+      operationId: listAgents
+      summary: List agent configurations (listAgents).
+      responses:
+        '200':
+          description: Agent configs keyed by agent id.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  $ref: '#/components/schemas/AgentJson'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags: [agents]
+      operationId: createAgent
+      summary: Create an agent configuration and return its id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentJson'
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntityId'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /agents/{id}:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    get:
+      tags: [agents]
+      operationId: getAgent
+      summary: Get an agent configuration (getAgent).
+      responses:
+        '200':
+          description: The agent config.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentJson'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    put:
+      tags: [agents]
+      operationId: saveAgent
+      summary: Upsert an agent configuration (saveAgent).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentJson'
+      responses:
+        '204':
+          description: Saved.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      tags: [agents]
+      operationId: deleteAgent
+      summary: Delete an agent configuration (deleteAgent).
+      responses:
+        '204':
+          description: Deleted (no-op when absent).
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /games:
+    get:
+      tags: [games]
+      operationId: listGames
+      summary: List game summaries (listGames).
+      responses:
+        '200':
+          description: Game summaries keyed by game id.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  $ref: '#/components/schemas/GameJson'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags: [games]
+      operationId: createGame
+      summary: Create a game summary and return its id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GameJson'
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntityId'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /games/{id}:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    get:
+      tags: [games]
+      operationId: getGame
+      summary: Get a game summary (getGame).
+      responses:
+        '200':
+          description: The game summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameJson'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    put:
+      tags: [games]
+      operationId: saveGame
+      summary: Upsert a game summary (saveGame).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GameJson'
+      responses:
+        '204':
+          description: Saved.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      tags: [games]
+      operationId: deleteGame
+      summary: Delete a game summary (deleteGame).
+      responses:
+        '204':
+          description: Deleted (no-op when absent).
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /games/{id}/events:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    get:
+      tags: [events]
+      operationId: listGameEvents
+      summary: List events for a game (EventStore.listByGame, sorted by seq).
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+        - name: startAfter
+          in: query
+          required: false
+          description: Exclusive cursor (last idempotency key of the previous page).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Events ordered ascending by seq.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GameEventRecord'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags: [events]
+      operationId: appendGameEvent
+      summary: Idempotently append an event (EventStore.append).
+      description: |
+        First write wins: re-posting an event whose `key` already exists is a
+        no-op (200), never a duplicate. `Idempotency-Key` mirrors the event
+        `key` so retried requests are safe even if the body is re-serialized.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GameEventRecord'
+      responses:
+        '202':
+          description: Appended, or already present (idempotent).
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /games/{id}/moves:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    post:
+      tags: [games]
+      operationId: playMove
+      summary: Submit one `make_chess_move` tool call for the side to move.
+      description: |
+        Mirrors the LLM tool contract (`chessMoveToolName` /
+        `makeChessMoveParametersJson` in `lib/src/llm/tool_schema.dart`).
+        Legality is enforced server-side against the engine-provided legal
+        move list; illegal moves are rejected, never played.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MakeChessMove'
+      responses:
+        '200':
+          description: Move accepted and applied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameJson'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /tournaments:
+    get:
+      tags: [tournaments]
+      operationId: listTournaments
+      summary: List tournament states (listTournaments).
+      responses:
+        '200':
+          description: Tournament states keyed by tournament id.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  $ref: '#/components/schemas/TournamentJson'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags: [tournaments]
+      operationId: createTournament
+      summary: Create/start a tournament and return its id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TournamentJson'
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntityId'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /tournaments/{id}:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    get:
+      tags: [tournaments]
+      operationId: getTournament
+      summary: Get tournament state (getTournament).
+      responses:
+        '200':
+          description: The tournament state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TournamentJson'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    put:
+      tags: [tournaments]
+      operationId: saveTournament
+      summary: Upsert tournament state (saveTournament).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TournamentJson'
+      responses:
+        '204':
+          description: Saved.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      tags: [tournaments]
+      operationId: deleteTournament
+      summary: Delete tournament state (deleteTournament).
+      responses:
+        '204':
+          description: Deleted (no-op when absent).
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /tournaments/{id}/events:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    get:
+      tags: [events]
+      operationId: listTournamentEvents
+      summary: List events for a tournament (EventStore.listByTournament).
+      responses:
+        '200':
+          description: Events ordered ascending by (gameId, seq).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GameEventRecord'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /events:
+    get:
+      tags: [events]
+      operationId: listAllEvents
+      summary: List all events (EventStore.listAll).
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+        - name: startAfter
+          in: query
+          required: false
+          description: Exclusive cursor (last idempotency key of the previous page).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Events ordered ascending by idempotency key.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GameEventRecord'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /evaluations/{gameId}:
+    parameters:
+      - $ref: '#/components/parameters/PathGameId'
+    get:
+      tags: [evaluations]
+      operationId: listEvaluations
+      summary: List evaluations for a game (listEvaluations, ascending seq).
+      responses:
+        '200':
+          description: Evaluation documents ordered ascending by seq.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EvaluationJson'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /evaluations/{gameId}/{seq}:
+    parameters:
+      - $ref: '#/components/parameters/PathGameId'
+      - $ref: '#/components/parameters/PathSeq'
+    put:
+      tags: [evaluations]
+      operationId: saveEvaluation
+      summary: Upsert one evaluation (saveEvaluation, key `<gameId>:<seq>`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvaluationJson'
+      responses:
+        '204':
+          description: Saved.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /exports:
+    get:
+      tags: [exports]
+      operationId: listExports
+      summary: List export ids (listExports, sorted ascending).
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+        - name: startAfter
+          in: query
+          required: false
+          description: Exclusive cursor (last export id of the previous page).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Export ids.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags: [exports]
+      operationId: saveExport
+      summary: Store a versioned tournament export and return its id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExportJson'
+      responses:
+        '201':
+          description: Stored.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntityId'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /exports/{id}:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    get:
+      tags: [exports]
+      operationId: getExport
+      summary: Get a stored export (getExport).
+      responses:
+        '200':
+          description: The export document.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportJson'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      tags: [exports]
+      operationId: deleteExport
+      summary: Delete a stored export (deleteExport).
+      responses:
+        '204':
+          description: Deleted (no-op when absent).
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /stats/summary:
+    get:
+      tags: [stats]
+      operationId: getStatsSummary
+      summary: Aggregate metrics across events (future extension).
+      description: |
+        FUTURE EXTENSION (`x-future-extension`): not backed by an
+        `AppRepository` method today — local stats are computed in-process by
+        `lib/src/stats/metrics.dart`. Documented here so the server phase can
+        add it without a contract break; the response derives from the same
+        persisted events (`GET /events`).
+      x-future-extension: true
+      responses:
+        '200':
+          description: Aggregate metrics keyed by agent id.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: object
+                  additionalProperties: true
+        '501':
+          description: Not implemented yet (server phase).
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    PathId:
+      name: id
+      in: path
+      required: true
+      description: Entity id (agent, game, tournament or export).
+      schema:
+        type: string
+        minLength: 1
+    PathGameId:
+      name: gameId
+      in: path
+      required: true
+      description: Game id owning the evaluations.
+      schema:
+        type: string
+        minLength: 1
+    PathSeq:
+      name: seq
+      in: path
+      required: true
+      description: Zero-based per-game move sequence number.
+      schema:
+        type: integer
+        minimum: 0
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        Client-generated idempotency key; must equal the event `key` so a
+        retried POST is a no-op (first write wins).
+      schema:
+        type: string
+        minLength: 1
+  responses:
+    BadRequest:
+      description: Malformed request body or parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: No entity exists for the given id.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: The request conflicts with current state (e.g. illegal move).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ServerError:
+      description: Unexpected server error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    EntityId:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          example: 5f1c2e3a-9b8d-4c7e-a1f2-0d3e4b5c6a7f
+    AgentJson:
+      type: object
+      description: |
+        Agent configuration (`AgentConfig.toJson` in
+        `lib/src/agent/agent_config.dart`). Never contains a raw API key:
+        `apiKeyRef` is an opaque `SecureKeyStore` reference.
+      required: [id, name, providerId, model]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        providerId:
+          type: string
+          enum: [openai, anthropic, gemini, ollama, mock]
+        model:
+          type: string
+        baseUrl:
+          type: string
+          nullable: true
+        apiKeyRef:
+          type: string
+          nullable: true
+          description: Opaque secret reference (not the secret).
+        temperature:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 2
+        maxTokens:
+          type: integer
+          minimum: 1
+        timeoutMs:
+          type: integer
+          minimum: 1
+        retry:
+          type: object
+          additionalProperties: true
+        fallback:
+          type: object
+          additionalProperties: true
+        systemPrompt:
+          type: string
+        customInstructions:
+          type: string
+        reasoningEffort:
+          type: string
+          nullable: true
+          enum: [low, medium, high]
+        concurrencyLimit:
+          type: integer
+          minimum: 1
+      additionalProperties: true
+    GameJson:
+      type: object
+      description: Game summary document; well-known fields shown, extras kept.
+      properties:
+        id:
+          type: string
+        mode:
+          type: string
+          enum: [standard, chaotic]
+        whiteAgentId:
+          type: string
+        blackAgentId:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        result:
+          type: string
+          example: '1-0'
+      additionalProperties: true
+    TournamentJson:
+      type: object
+      description: Tournament state document (`TournamentState.toJson`).
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        config:
+          type: object
+          additionalProperties: true
+        games:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+      additionalProperties: true
+    EvaluationJson:
+      type: object
+      description: One per-move evaluation result.
+      properties:
+        supported:
+          type: boolean
+        source:
+          type: string
+          example: stockfish-uci
+        scoreCp:
+          type: integer
+          nullable: true
+        bestMoveUci:
+          type: string
+          nullable: true
+      additionalProperties: true
+    ExportJson:
+      type: object
+      description: |
+        Versioned tournament export (`buildTournamentExport`); agent configs
+        are redacted before storage.
+      required: [schemaVersion, exportedAt, tournament, events]
+      properties:
+        schemaVersion:
+          type: string
+          example: '1.0'
+        exportedAt:
+          type: string
+          format: date-time
+        tournament:
+          $ref: '#/components/schemas/TournamentJson'
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/GameEventRecord'
+        agentConfigs:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties: true
+        versions:
+          type: object
+          additionalProperties:
+            type: string
+      additionalProperties: true
+    GameEventRecord:
+      type: object
+      description: |
+        Immutable event (`GameEventRecord.toJson`). `key` is the client
+        idempotency key; `seq` is the per-game monotonic sequence.
+      required: [key, gameId, seq, type, createdAt]
+      properties:
+        key:
+          type: string
+          minLength: 1
+        gameId:
+          type: string
+          minLength: 1
+        tournamentId:
+          type: string
+          nullable: true
+        seq:
+          type: integer
+          minimum: 0
+        type:
+          type: string
+          minLength: 1
+          example: move.accepted
+        payloadJson:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+      additionalProperties: false
+    MakeChessMove:
+      type: object
+      description: |
+        Arguments of the `make_chess_move` LLM tool
+        (`makeChessMoveParametersJson`). The same shape is used by every
+        provider envelope (OpenAI/Anthropic/Gemini/Ollama/Mock).
+      required: [from, to]
+      properties:
+        from:
+          type: string
+          minLength: 2
+          maxLength: 4
+          example: e2
+        to:
+          type: string
+          minLength: 2
+          maxLength: 4
+          example: e4
+        promotion:
+          type: string
+          minLength: 1
+          maxLength: 1
+          enum: [q, r, b, n]
+        phrase:
+          type: string
+          maxLength: 200
+          example: Let's open the center.
+      additionalProperties: false
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+        detail:
+          type: string
+          nullable: true
