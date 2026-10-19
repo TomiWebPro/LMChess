@@ -161,6 +161,13 @@ from `quality.dart` (§4).
 - WintrChess is **GPLv3**. The review port is a modified variant of
   GPLv3 logic (algorithm port, no upstream code vendored) and stays
   **GPLv3**: do not relicense, do not add proprietary restrictions.
+- The WintrChess authors are credited by name in the repository README
+  *Acknowledgements* section; the derivation statement and per-path
+  citations below are the audit trail behind that credit.
+- The whole distribution is additionally subject to the **Geographic Use
+  Restriction Addendum v1.0 (GURAv1)** (repository root,
+  `Geographic Use Restriction Addendum v1.0`), which applies on top of the
+  GPLv3 base license and takes precedence on conflict.
 - Checklist, kept in sync: (1) license text shipped at
   `assets/engines/LICENSE.GPLv3`; (2) attribution to
   `wintrcat/wintrchess` (branch `master`) in `wintr_review.dart`

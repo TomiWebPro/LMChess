@@ -95,9 +95,26 @@ built-in heuristic estimator (scores are always labeled `heuristic` vs
 ## License
 
 LLM Chess Arena is distributed under the **GNU General Public License,
-version 3 or later (GPL-3.0-or-later)**; the full text is in the root
-[`LICENSE`](LICENSE) file. This project links or derives from GPLv3 code,
-so the whole distribution is GPLv3:
+version 3 or later (GPL-3.0-or-later)** — the full text is in the root
+[`LICENSE`](LICENSE) file — **as modified by the Geographic Use Restriction
+Addendum v1.0 (GURAv1)**, whose text is in the root
+[`Geographic Use Restriction Addendum v1.0`](Geographic%20Use%20Restriction%20Addendum%20v1.0)
+file and which takes precedence over the base license in the event of
+conflict.
+
+The addendum is a statement of non-compliance with government-mandated
+OS-level age verification (see
+[TomiWebPro/Geographic-Use-Restriction-Addendum](https://github.com/TomiWebPro/Geographic-Use-Restriction-Addendum)).
+It revokes the base license's permissions — for everyone — in **Brazil**,
+**California**, **Texas**, **Utah**, **Louisiana**, **Colorado**,
+**Illinois**, and **New York** (USA), and for anyone holding citizenship,
+residency, or a residential permit in those jurisdictions. Because it
+discriminates by geography, this distribution is **not** OSI-approved open
+source; outside the restricted jurisdictions the GPLv3 terms continue to
+apply in full.
+
+This project links and derives from GPLv3 code, so the whole distribution
+stays under GPLv3:
 
 - **Stockfish** (`sf_19`) — the embedded evaluation engine
   (`assets/engines/<platform>/stockfish[.exe]`) — is
@@ -111,6 +128,28 @@ so the whole distribution is GPLv3:
   [wintrcat/wintrchess](https://github.com/wintrcat/wintrchess) (GPLv3); the
   derivation statement is in the file header and the attribution ledger is
   in `lib/src/review/wintrchess_notes.md`.
+
+### Acknowledgements
+
+- **Stockfish** — the chess engine that evaluates every position.
+  <https://github.com/official-stockfish/Stockfish> (GPLv3). The engine
+  binaries are not committed here; each platform's `assets/engines/<platform>/README.md`
+  records the exact expected size and SHA-256, and the upstream release
+  links are in the [engine download section](#getting-the-stockfish-engine)
+  above.
+- **WintrChess** — <https://github.com/wintrcat/wintrchess> (GPLv3), by the
+  WintrChess authors. The game-review pipeline in
+  `lib/src/review/wintr_review.dart` is a **derived work**: it ports the
+  review math from WintrChess' `shared/src/lib/reporter/` — the
+  expected-points model, the per-move accuracy formula, and the analysis
+  pipeline shape. Thanks to the WintrChess team for the review design that
+  made the in-app reviewer possible. The full ported-vs-new ledger, with
+  exact upstream paths and the reasons for every deliberate omission, is in
+  `lib/src/review/wintrchess_notes.md`; the derivation statement itself is
+  in the `wintr_review.dart` file header.
+- **The Geographic Use Restriction Addendum** — by
+  [TomiWebPro](https://github.com/TomiWebPro/Geographic-Use-Restriction-Addendum)
+  (MIT).
 
 Before distributing binaries, fulfil the GPLv3 Corresponding Source and
 Installation Information obligations — see the release checklist in

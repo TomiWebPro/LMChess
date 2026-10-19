@@ -130,6 +130,11 @@ not ship. This is exactly how the per-target trimming is done today.
 
 - [x] `assets/engines/LICENSE.GPLv3` ships (copied from `Copying.txt`); the
       full text is also now in the repository-root `LICENSE` file.
+- [x] The root `LICENSE` is the GPLv3 base license, modified by the
+      **Geographic Use Restriction Addendum v1.0 (GURAv1)**, whose text
+      ships at the repository root as
+      `Geographic Use Restriction Addendum v1.0`. The addendum applies *in
+      addition to* the base license and takes precedence on conflict.
 - [ ] `EngineAttributions.stockfish` string shown on the settings/about
       screen (name + version + URL + license + source pointer). The string
       exists (`lib/src/review/embedded_engine.dart`) but is not yet surfaced
@@ -152,6 +157,8 @@ obligations. Before cutting a release:
   where the engine runs from the app sandbox).
 - Verify the `EngineAttributions.stockfish` string is actually rendered on
   the settings/about screen (still open above).
+- Ship the GURAv1 addendum text alongside the GPLv3 base license so every
+  recipient sees the geographic restriction it is under.
 
 ## WintrChess-derived review module
 
@@ -183,10 +190,14 @@ ported.
 ### License checklist (WintrChess port — GPLv3)
 
 - [x] Upstream is GPLv3: the derived Dart module ships under GPLv3 with
-      attribution in `lib/src/review/wintr_review.dart`'s header.
+      attribution in `lib/src/review/wintr_review.dart`'s header, and the
+      WintrChess authors are credited by name in the README
+      *Acknowledgements* section.
 - [x] `assets/engines/LICENSE.GPLv3` (and the repository-root `LICENSE`)
       covers both Stockfish and the WintrChess-derived module (same license
       family).
+- [x] The GURAv1 addendum (root: `Geographic Use Restriction Addendum v1.0`)
+      applies on top of the GPLv3 base license for the whole distribution.
 - [ ] Source offer: this repository's own source (including the derived
       module) is the corresponding source for the app build.
 - [ ] Keep `wintrchess_notes.md` citations current when refreshing.

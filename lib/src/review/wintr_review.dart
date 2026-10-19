@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // WintrChess-derived game-review pipeline — ported from wintrcat/wintrchess;
 // see wintrchess_notes.md and assets/engines/LICENSE.GPLv3.
+// Distribution also subject to the Geographic Use Restriction Addendum v1.0
+// (GURAv1) at the repository root, which takes precedence on conflict.
 /// WintrChess-derived game-review pipeline (pure Dart, GPLv3).
 ///
 /// # Derivation statement (license-relevant — keep truthful)

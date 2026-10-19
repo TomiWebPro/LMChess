@@ -2,6 +2,8 @@
 // Embedded Stockfish runtime (Stockfish is GPLv3). Attribution:
 // EngineAttributions.stockfish; license text: assets/engines/LICENSE.GPLv3;
 // source-offer procedure: docs/ENGINE_RUNTIME.md.
+// Distribution also subject to the Geographic Use Restriction Addendum v1.0
+// (GURAv1) at the repository root, which takes precedence on conflict.
 /// Embedded Stockfish runtime: first-run extraction of bundled binaries.
 ///
 /// # Why extraction is needed
@@ -405,6 +407,23 @@ abstract class EngineAttributions {
       'by the Stockfish developers — licensed under GPLv3 '
       '(see assets/engines/LICENSE.GPLv3). '
       'Corresponding source available per docs/ENGINE_RUNTIME.md.';
+
+  /// Distribution-level addendum that modifies the project's GPLv3 base
+  /// license (Geographic Use Restriction Addendum v1.0).
+  ///
+  /// Shown on the settings/about screen so every user can see the
+  /// geographic restriction the distribution is under, not just
+  /// repository readers. Keep in sync with the root file
+  /// `Geographic Use Restriction Addendum v1.0` and the README license
+  /// section.
+  static const String geographicUseRestriction =
+      'Distributed under the GNU General Public License v3.0 or later, as '
+      'modified by the Geographic Use Restriction Addendum v1.0 (GURAv1) — '
+      'permissions are revoked in Brazil, California, Texas, Utah, '
+      'Louisiana, Colorado, Illinois and New York (USA), and for holders of '
+      'citizenship, residency or residential permits there. See the LICENSE '
+      'and "Geographic Use Restriction Addendum v1.0" files in the project '
+      'source.';
 
   /// Heuristic estimator attribution (built-in, no third-party code).
   static const String heuristic =
