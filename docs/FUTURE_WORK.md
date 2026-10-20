@@ -948,6 +948,17 @@ directly. Tests override with a success or failure lambda. Also allow an
 optional `SecureKeyStore` constructor parameter so save/clear can be asserted
 without platform channels.
 
+> Note (2026-10-20): implemented. `ConnectionTester` typedef +
+> `connectionTesterProvider` (default wraps `testAgentConnection` with internal
+> `const SecureKeyStore()`) live in `lib/src/ui/backend_bridge.dart`;
+> AgentSetupScreen wired (`_tester` captured via `ref.read` in initState, call
+> site uses `_tester(probe, inlineSecret: ...)`, no longer passes `_keyStore`
+> directly). Pinned by `test/connection_tester_seam_test.dart` (8 tests: default
+> factory resolves, override fixed-success/fixed-false, inlineSecret passthrough
+> verification, thrown failure injection, nested scope shadowing, per-container
+> independence, real-network timeout bounded; full regression 181/183 pass). 10.7
+> still open.
+
 ### 10.5 Arena Elo injection
 
 `ArenaScreen._elo` is `static final` and leaks across tests. Replace with:

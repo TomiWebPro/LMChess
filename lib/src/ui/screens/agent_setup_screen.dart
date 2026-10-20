@@ -84,9 +84,14 @@ class _AgentSetupScreenState extends ConsumerState<AgentSetupScreen> {
   /// routes (or mint two key refs).
   bool _saving = false;
 
+  /// Resolved connection tester (§10.4 seam): captures once at init so every
+  /// test-connection uses the same injectable function.
+  late final ConnectionTester _tester;
+
   @override
   void initState() {
     super.initState();
+    _tester = ref.read(connectionTesterProvider);
     final existing = ref.read(agentListProvider).byId(widget.agentId);
     _name = TextEditingController(text: existing?.name ?? '');
     _model = TextEditingController(text: existing?.model ?? '');
@@ -423,7 +428,8 @@ class _AgentSetupScreenState extends ConsumerState<AgentSetupScreen> {
   }
 
   /// Real connectivity probe: resolves the key and pings the provider
-  /// endpoint via [testAgentConnection]. Never logs the key.
+  /// endpoint via the injected [connectionTesterProvider] seam. Never logs
+  /// the key.
   Future<void> _testConnection() async {
     setState(() {
       _testing = true;
@@ -432,9 +438,8 @@ class _AgentSetupScreenState extends ConsumerState<AgentSetupScreen> {
     final probe = _formConfig(apiKeyRef: _hasStoredKey ? _apiKeyRef : null);
     bool ok;
     try {
-      ok = await testAgentConnection(
+      ok = await _tester(
         probe,
-        _keyStore,
         inlineSecret: _apiKey.text.trim(),
       );
     } catch (_) {

@@ -33,7 +33,7 @@ This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every ru
 | P0 | `test/ui/monkey_tap_test.dart` | TODO |
 | P0 | `integration_test/accessibility_windows_test.dart` | TODO (no `integration_test/` dir 2026-10-20) |
 | P0 | `tool/windows_accessibility_smoke.ps1` | TODO |
-| P0 | Refactors 10.1-10.4 + 10.7 (turn-provider / evaluator / clock / connection-tester seams + stable keys) | PARTIAL (10.1 DONE 2026-10-20; 10.2 DONE 2026-10-20: `ReviewEvaluatorFactory` + `reviewEvaluatorFactoryProvider` rewired in ReviewScreen + VariantReplayScreen, `test/review_evaluator_seam_test.dart` 8/8; 10.3 DONE 2026-10-20: `clockProvider` default `DateTime.now`, wired into WatchScreen (`_startWatchGame` seed + `_flushToReviewLog` id) and ArenaScreen (`_startChaosPump` seed + `_chaosRun` startedAt/finishedAt), new `test/clock_seam_test.dart` 8/8; 10.4 + 10.7 still missing) |
+| P0 | Refactors 10.1-10.4 + 10.7 (turn-provider / evaluator / clock / connection-tester seams + stable keys) | PARTIAL (10.1 DONE 2026-10-20; 10.2 DONE 2026-10-20: `ReviewEvaluatorFactory` + `reviewEvaluatorFactoryProvider` rewired in ReviewScreen + VariantReplayScreen, `test/review_evaluator_seam_test.dart` 8/8; 10.3 DONE 2026-10-20: `clockProvider` default `DateTime.now`, wired into WatchScreen (`_startWatchGame` seed + `_flushToReviewLog` id) and ArenaScreen (`_startChaosPump` seed + `_chaosRun` startedAt/finishedAt), new `test/clock_seam_test.dart` 8/8; 10.4 DONE 2026-10-20: `ConnectionTester` typedef + `connectionTesterProvider` (default wraps `testAgentConnection` with internal `SecureKeyStore`), wired into AgentSetupScreen (`_tester` captured in initState via `ref.read(connectionTesterProvider)`), new `test/connection_tester_seam_test.dart` 8/8; 10.7 still missing) |
 | P1 | `test/ui/watch_screen_test.dart` | TODO |
 | P1 | `test/ui/arena_screen_test.dart` | TODO |
 | P1 | `test/ui/agent_setup_test.dart` | TODO |
@@ -98,3 +98,17 @@ does not exist yet. Worker should verify and record actual state each run.
   files); `flutter test test/clock_seam_test.dart` 8/8 pass; full regression
   `flutter test` 173/173 pass (all existing + new). Next: 10.4 connection
   tester seam.
+- 2026-10-20Z — REFACTOR 10.4 (connection tester seam, §12 order step 4): added
+  `ConnectionTester` typedef + `connectionTesterProvider` (default wraps
+  `testAgentConnection` with internal `const SecureKeyStore()`) to
+  `lib/src/ui/backend_bridge.dart`; rewired AgentSetupScreen (`_tester` captured
+  in `initState` via `ref.read(connectionTesterProvider)`, call-site uses
+  `_tester(probe, inlineSecret: ...)` instead of direct
+  `testAgentConnection(probe, _keyStore, ...)`). New
+  `test/connection_tester_seam_test.dart` (8 tests): default factory resolves,
+  override fixed-success, override fixed-false, inlineSecret passthrough verify,
+  thrown failure injection, nested scope shadowing, per-container independence,
+  real-network timeout bounded. Evidence: `flutter analyze` clean (3 new/changed
+  files); `flutter test test/connection_tester_seam_test.dart` 8/8 pass; full
+  regression `flutter test` 181/181 pass (173 old + 8 new). Next: 10.7 stable
+  keys (duplicate-label fix for banner/play/New game controls).

@@ -246,6 +246,36 @@ final clockProvider = Provider<DateTime Function()>(
   (ref) => DateTime.now,
 );
 
+/// Typedef for the §10.4 connection-tester seam.
+///
+/// Wraps [testAgentConnection] so that [AgentSetupScreen] resolves it through
+/// a Riverpod provider instead of calling the free function directly. Widget
+/// tests override this provider with a lambda that returns `true` or `false`
+/// immediately — no real HTTP request, no platform channel into secure storage.
+///
+/// The default provider points to [testAgentConnection], keeping production
+/// behaviour identical (it receives a [SecureKeyStore] internally via
+/// `SecureKeyReaderAdapter`).
+typedef ConnectionTester = Future<bool> Function(
+  ui.AgentConfig agent, {
+  String? inlineSecret,
+});
+
+/// Provider for the [ConnectionTester]; defaults to a wrapper around
+/// [testAgentConnection].
+///
+/// The default binder resolves [SecureKeyStore] internally so callers don't
+/// need to pass one — production code uses the same key resolution path
+/// (`SecureKeyReaderAdapter`). Widget tests override the provider with a
+/// fixed-success/fixed-failure lambda.
+final connectionTesterProvider = Provider<ConnectionTester>(
+  (ref) => (agent, {inlineSecret}) => testAgentConnection(
+        agent,
+        const SecureKeyStore(),
+        inlineSecret: inlineSecret,
+      ),
+);
+
 Future<LlmProvider> resolveTurnProvider(
   agent_backend.AgentConfig config,
   List<String> legalUcis, {
