@@ -1,7 +1,7 @@
 # Future Work
 
 Status: living document
-Last updated: 2026-10-20 (UTC) — §5.1 harness + §5.3 semantics invariants created + tested
+Last updated: 2026-10-20 (UTC) — §5.1 harness + §5.3 semantics invariants created + tested; §6.3 chessboard widget tests created (26 tests)
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -562,6 +562,14 @@ labels and `ensureSemantics` when the widget exposes actions.
 - `showCoordinates: false` still exposes the same 64 nodes.
 - Both activation paths (gesture and `Semantics.onTap`) call the handler once;
   no double move.
+
+> Note (2026-10-20): implemented. File: `test/ui/chessboard_test.dart`, 26 tests.
+> All §6.3 items covered: tap callbacks per square, orientation flips, non-interactive/
+> null onTapSquare disables buttons, all overlay states render cleanly, variant badges
+> don't change layout, rapid content swaps stable across 10 alternations, coordinate
+> on/off, semantic+gesture handler parity, built-in theme variety, responsive sizing
+> down to 120px. Evidence: `flutter test test/ui/chessboard_test.dart` 26/26 pass;
+> full regression `flutter test` 229/229 pass. Next: shell_navigation_test.dart (§6.1).
 
 ### 6.4 Play (`play_screen_test.dart`, ~30 tests)
 
@@ -1126,7 +1134,7 @@ Implementation order:
 
 1. Refactors 10.1-10.4 and 10.7 — DONE 2026-10-20 (all seams + stable keys).
 2. Harness + semantics checker — DONE 2026-10-20 (arena_test_harness.dart + semantics_invariants.dart, 18 integration tests green).
-3. Chessboard, shell, semantics stability.
+3. Chessboard — DONE 2026-10-20 (`test/ui/chessboard_test.dart`, 26 tests); remaining: shell navigation + semantics stability.
 4. Play interaction + monkey tests (the reported repro).
 5. Windows integration + UIA smoke + CI job.
 6. Watch and Arena.

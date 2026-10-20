@@ -26,7 +26,7 @@ This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every ru
 |---|---|---|
 | P0 | `test/support/arena_test_harness.dart` | DONE 2026-10-20: `useDesktopSurface`, `pumpArenaApp`, `pumpSteps`, `disposeApp`, `resetTelemetry` (clears StatsLog + QualityLog + ReviewLog + VariantReviewLog), `fakeAgent`/`fakeAgents` (mock ProviderId), `fakeOverrides` (turn provider factory → legal UCI MockProvider + clock fixed UTC), `expectNoException`. New `test/support/integration_test.dart` (18 tests): telemetry clear/reset, fake agents valid, fake overrides resolve in ProviderScope, surface sizing, app shell renders, semantics tree invariants/capture/parentMap/noReparenting/captureSafe, expectNoException, disposeApp. Evidence: `flutter analyze` clean; `flutter test test/support/integration_test.dart` 18/18 pass; full regression `flutter test` 203/203 pass (201 old + 18 new); note: integration test placed inside `test/support/` so relative imports resolve correctly — no longer separate flat file) |
 | P0 | `test/support/semantics_invariants.dart` | DONE 2026-10-20: `captureSemantics(tester)` returns root + reachable nodes; `parentMap(capture)` → `Map<int,int?>`; `expectSemanticsTreeInvariants(tester)` checks unique ids, non-null parents, owner match; `expectNoReparenting(before, after)` flags changed parent ids; `expectSquareSemantics(expectedCount, requireUniqueSquares)` counts & validates square labels; `expectNoExceptionWithSemanticsDump(context)` prints tree on failure; `captureSemanticsSafe(tester)` wraps ensureSemantics in try/finally. New integration test covers all functions. Evidence: `flutter analyze` clean; `flutter test test/support/integration_test.dart` 18/18 pass; full regression `flutter test` 203/203 pass. Next: chessboard + shell navigation tests (P0 §6.1–6.3). |
-| P0 | `test/ui/chessboard_test.dart` | TODO |
+| P0 | `test/ui/chessboard_test.dart` | DONE 2026-10-20: 26 tests covering §6.3 — rendering (initial board semantics labels, constrained sizing, coordinate labels on/off, both orientations, all built-in themes), interactions (empty/opponent/piece taps, select/deselect/reslect, opponent piece, empty square with selection), every-labels-reachable via semantics tap, semantic+gesture handler parity, overlay states (selected/inCheck/terminal/legalTargets/highlight-precedence/lastMove), edge cases (non-interactive/onTapSquare=null disabling buttons, rapid content swaps across 10 alternations without exception, variant badges not changing layout, all 64 label strings present, code vs unicode glyph equivalence, responsive sizing down to 120px). Evidence: `flutter analyze` clean; `flutter test test/ui/chessboard_test.dart` 26/26 pass; full regression `flutter test` 229/229 pass (203 old + 26 new). Next: shell navigation tests (§6.1, P0). |
 | P0 | `test/ui/shell_navigation_test.dart` | TODO |
 | P0 | `test/ui/play_screen_test.dart` | TODO |
 | P0 | `test/ui/semantics_stability_test.dart` | TODO |
@@ -145,3 +145,17 @@ does not exist yet. Worker should verify and record actual state each run.
   `flutter test test/support/integration_test.dart` 18/18 pass; full regression
   `flutter test` 203/203 pass (201 old + 18 new). Next: chessboard + shell
   navigation widget tests (§6.1–6.3, P0).
+- 2026-10-20Z — UI P0 §6.3 (`test/ui/chessboard_test.dart`, ~20 tests): created
+  26 widget tests covering all chessboard interaction scenarios from the spec.
+  Rendering: initial board semantics labels, constrained 400×400 sizing (64 cells),
+  coordinate labels default/on/off, orientationWhite=false flips view, all 4 built-in
+  themes. Interactions: tap empty/opponent/piece squares, select/deselect/reslect,
+  every label reachable via semantics tap, semantic+gesture handler parity (each fires
+  exactly once). Overlays: selected/inCheck/terminal/legalTargets/highlight-precedence
+  check>terminal>selection>lastFrom>lastTo/lastMove trail without crashes or exception.
+  Edge cases: non-interactive disables buttons, onTapSquare=null disables buttons,
+  rapid 10× empty↔full swaps no leaked state, variant badges no layout change, all
+  64 square labels present, piece-code vs unicode-glyph equivalence, 120px minimum
+  constraint. Evidence: `flutter analyze` clean; `flutter test test/ui/chessboard_test.dart`
+  26/26 pass; full regression `flutter test` 229/229 pass (203 old + 26 new). Next:
+  shell_navigation_test.dart (§6.1, P0).
