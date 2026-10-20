@@ -1,7 +1,7 @@
 # Future Work
 
 Status: living document
-Last updated: 2026-10-20 (UTC) — §6.10 agent_setup_test.dart created (29 tests); §6.8 review_screen_test.dart created (17 tests)
+Last updated: 2026-10-21 (UTC) — §9.1 integration_test/accessibility_windows_test.dart scaffolded (12 tests, compiles clean, runs via device/display)
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -904,6 +904,19 @@ crash; keep it as a known-issue gate, not a silently ignored test.
 Optional CI enhancement: fail if Event Viewer contains an `Application Error`
 entry for `flutter_windows.dll` with RVA `0x3c1ea` or exception
 `0xC0000005` after the smoke run.
+
+> Note (2026-10-21): scaffolded — `integration_test/accessibility_windows_test.dart`
+> created with 12 tests covering §9.1 spec: app launch, all 8 destinations, More
+> sheet open/close/dismiss, Settings navigate+back via back-gesture drag, 20 rapid
+> Play/Watch switches, every destination anchor label check, theme toggle stability
+> (light→dark→system), resize across 699/700/1100 breakpoints, full round-trip
+> Home→Play→Watch→Home, agents form render, stats empty state, review empty state.
+> All use deterministic fakes (MockProvider + fixed clock UTC). Compiles clean
+> (`flutter analyze` no issues); runs as widget-level integration test; requires
+> display device for the actual binary execution path (expected per §9.1 caveats).
+> Evidence: `flutter analyze` clean; full regression `flutter test` 401/401 pass
+> (372 old + 29 agent_setup + 0 new here; this file is integration-layer, not
+> picked up by `flutter test` in headless env). Next: `tool/windows_accessibility_smoke.ps1`.
 
 ---
 
