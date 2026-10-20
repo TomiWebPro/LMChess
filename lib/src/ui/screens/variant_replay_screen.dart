@@ -44,7 +44,16 @@ class _VariantReplayScreenState extends ConsumerState<VariantReplayScreen> {
   String? _reviewError;
   int _reviewToken = 0;
 
+  /// §10.2 seam — injected for tests; production defaults to [resolveReviewEvaluator].
+  Future<ReviewEvaluatorHandle> Function() _evalFactory = resolveReviewEvaluator;
+
   VariantGameRecord get _record => widget.record;
+
+  @override
+  void initState() {
+    super.initState();
+    _evalFactory = ref.read(reviewEvaluatorFactoryProvider);
+  }
 
   @override
   void dispose() {
@@ -68,7 +77,7 @@ class _VariantReplayScreenState extends ConsumerState<VariantReplayScreen> {
     _reviewHandle = null;
     if (previous != null) await previous.dispose();
     try {
-      final handle = await resolveReviewEvaluator();
+      final handle = await _evalFactory();
       if (!mounted || token != _reviewToken) {
         await handle.dispose();
         return;

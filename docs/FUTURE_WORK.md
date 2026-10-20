@@ -879,7 +879,8 @@ thrown failures.
 > via `ref.read(turnProviderFactoryProvider)`. Pinned by
 > `test/turn_provider_seam_test.dart` (8 tests: default legal mock move,
 > seed/phrase passthrough, timeout/malformed/no-move/thrown injection,
-> end-to-end mock stream). 10.2-10.4 and 10.7 still open.
+> end-to-end mock stream). 10.2 now implemented separately; 10.3-10.4 and 10.7
+> still open.
 
 ### 10.2 Review evaluator seam
 
@@ -895,6 +896,16 @@ final reviewEvaluatorFactoryProvider = Provider<ReviewEvaluatorFactory>(
 
 Use it in `ReviewScreen` and `VariantReplayScreen`. Tests override it with
 `HeuristicEvaluator` wrapped in a handle so no Stockfish process is spawned.
+
+> Note (2026-10-20): implemented. `ReviewEvaluatorFactory` +
+> `reviewEvaluatorFactoryProvider` (default `resolveReviewEvaluator`) live in
+> `lib/src/ui/backend_bridge.dart`; both ReviewScreen and VariantReplayScreen
+> capture the factory via `ref.read(reviewEvaluatorFactoryProvider)` in initState
+> and invoke `_evalFactory()` inside their review methods. Pinned by
+> `test/review_evaluator_seam_test.dart` (8 tests: default provider resolves,
+> heuristic-only override, factory invocation timing, thrown failure injection,
+> nested ProviderScope shadowing, container lifecycle). 10.3-10.4 and 10.7 still
+> open.
 
 ### 10.3 Clock seam
 

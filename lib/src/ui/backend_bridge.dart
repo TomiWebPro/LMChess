@@ -221,6 +221,21 @@ final turnProviderFactoryProvider = Provider<TurnProviderFactory>(
   (ref) => resolveTurnProvider,
 );
 
+/// Factory type for §10.2 review-evaluator seam.
+///
+/// Takes no arguments — the screen's own record id is already captured by the
+/// caller. Returning a [ReviewEvaluatorHandle] lets the callee own the
+/// evaluator lifecycle (resolution, use, disposal) while keeping the wiring
+/// point injectable for tests: override with a heuristic-only handle so no
+/// Stockfish process is ever spawned in widget tests.
+typedef ReviewEvaluatorFactory = Future<ReviewEvaluatorHandle> Function();
+
+/// Default resolves [resolveReviewEvaluator]; tests override to avoid
+/// spawning Stockfish or waiting on network/time in widget tests.
+final reviewEvaluatorFactoryProvider = Provider<ReviewEvaluatorFactory>(
+  (ref) => resolveReviewEvaluator,
+);
+
 Future<LlmProvider> resolveTurnProvider(
   agent_backend.AgentConfig config,
   List<String> legalUcis, {

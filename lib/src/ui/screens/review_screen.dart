@@ -88,12 +88,16 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
   /// Run token: invalidates stale async completions.
   int _runToken = 0;
 
+  /// §10.2 seam — injected for tests; production defaults to [resolveReviewEvaluator].
+  Future<ReviewEvaluatorHandle> Function() _evalFactory = resolveReviewEvaluator;
+
   /// Whether the shell's Review tab is currently visible.
   bool _visible = true;
 
   @override
   void initState() {
     super.initState();
+    _evalFactory = ref.read(reviewEvaluatorFactoryProvider);
     ReviewLog.changes.addListener(_onLogChanged);
     // Selection and the review run are deferred to [didChangeDependencies]:
     // the shell builds every tab eagerly inside its IndexedStack, and this
@@ -245,7 +249,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
     _handle = null;
     if (previous != null) await previous.dispose();
     try {
-      final handle = await resolveReviewEvaluator();
+      final handle = await _evalFactory();
       if (!mounted || token != _runToken) {
         await handle.dispose();
         return;

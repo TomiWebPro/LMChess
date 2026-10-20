@@ -33,7 +33,7 @@ This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every ru
 | P0 | `test/ui/monkey_tap_test.dart` | TODO |
 | P0 | `integration_test/accessibility_windows_test.dart` | TODO (no `integration_test/` dir 2026-10-20) |
 | P0 | `tool/windows_accessibility_smoke.ps1` | TODO |
-| P0 | Refactors 10.1-10.4 + 10.7 (turn-provider / evaluator / clock / connection-tester seams + stable keys) | PARTIAL (10.1 DONE 2026-10-20: `turnProviderFactoryProvider` + Play/Watch/Arena×2 rewired + `test/turn_provider_seam_test.dart` 8/8; 10.2-10.4 + 10.7 still missing) |
+| P0 | Refactors 10.1-10.4 + 10.7 (turn-provider / evaluator / clock / connection-tester seams + stable keys) | PARTIAL (10.1 DONE 2026-10-20; 10.2 DONE 2026-10-20: `ReviewEvaluatorFactory` + `reviewEvaluatorFactoryProvider` rewired in ReviewScreen + VariantReplayScreen, `test/review_evaluator_seam_test.dart` 8/8; 10.3-10.4 + 10.7 still missing) |
 | P1 | `test/ui/watch_screen_test.dart` | TODO |
 | P1 | `test/ui/arena_screen_test.dart` | TODO |
 | P1 | `test/ui/agent_setup_test.dart` | TODO |
@@ -72,3 +72,17 @@ does not exist yet. Worker should verify and record actual state each run.
   FakeAsync (`Future.delayed` ticks never fire unpumped) — stream assertions
   moved to plain `test`s; widget test only proves override resolution.
   Commit + push below. Next: 10.2 review-evaluator seam (same pattern).
+- 2026-10-20Z — REFACTOR 10.2 (review evaluator seam, §12 order step 2): added
+  `ReviewEvaluatorFactory` typedef + `reviewEvaluatorFactoryProvider`
+  (default `resolveReviewEvaluator`) to
+  `lib/src/ui/backend_bridge.dart`; rewired direct `resolveReviewEvaluator()`
+  calls via `_evalFactory` in ReviewScreen (`review_screen.dart:251`,
+  initState captured with `ref.read`) and VariantReplayScreen
+  (`variant_replay_screen.dart:74`, initState added with `ref.read`).
+  New `test/review_evaluator_seam_test.dart` (8 tests): default non-null
+  factory, override returns heuristic-only handle, factory capture, thrown
+  failure injection, nested ProviderScope resolution, container lifecycle.
+  Evidence: `flutter analyze` clean (3 new files); `flutter test
+  test/review_evaluator_seam_test.dart` 8/8 pass; regression
+  `flutter test test/variant_review_test.dart test/variant_quality_test.dart
+  test/turn_provider_seam_test.dart` 23/23 pass. Next: 10.3 clock seam.
