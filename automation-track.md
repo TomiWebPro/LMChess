@@ -33,7 +33,7 @@ This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every ru
 | P0 | `test/ui/monkey_tap_test.dart` | TODO |
 | P0 | `integration_test/accessibility_windows_test.dart` | TODO (no `integration_test/` dir 2026-10-20) |
 | P0 | `tool/windows_accessibility_smoke.ps1` | TODO |
-| P0 | Refactors 10.1-10.4 + 10.7 (turn-provider / evaluator / clock / connection-tester seams + stable keys) | PARTIAL (10.1 DONE 2026-10-20; 10.2 DONE 2026-10-20: `ReviewEvaluatorFactory` + `reviewEvaluatorFactoryProvider` rewired in ReviewScreen + VariantReplayScreen, `test/review_evaluator_seam_test.dart` 8/8; 10.3-10.4 + 10.7 still missing) |
+| P0 | Refactors 10.1-10.4 + 10.7 (turn-provider / evaluator / clock / connection-tester seams + stable keys) | PARTIAL (10.1 DONE 2026-10-20; 10.2 DONE 2026-10-20: `ReviewEvaluatorFactory` + `reviewEvaluatorFactoryProvider` rewired in ReviewScreen + VariantReplayScreen, `test/review_evaluator_seam_test.dart` 8/8; 10.3 DONE 2026-10-20: `clockProvider` default `DateTime.now`, wired into WatchScreen (`_startWatchGame` seed + `_flushToReviewLog` id) and ArenaScreen (`_startChaosPump` seed + `_chaosRun` startedAt/finishedAt), new `test/clock_seam_test.dart` 8/8; 10.4 + 10.7 still missing) |
 | P1 | `test/ui/watch_screen_test.dart` | TODO |
 | P1 | `test/ui/arena_screen_test.dart` | TODO |
 | P1 | `test/ui/agent_setup_test.dart` | TODO |
@@ -86,3 +86,15 @@ does not exist yet. Worker should verify and record actual state each run.
   test/review_evaluator_seam_test.dart` 8/8 pass; regression
   `flutter test test/variant_review_test.dart test/variant_quality_test.dart
   test/turn_provider_seam_test.dart` 23/23 pass. Next: 10.3 clock seam.
+- 2026-10-20Z — REFACTOR 10.3 (clock seam, §12 order step 3): added
+  `clockProvider = Provider<DateTime Function()>((ref) => DateTime.now)` to
+  `lib/src/ui/backend_bridge.dart`; wired into WatchScreen (`_clock` in
+  `initState`, replacing `_watchSeed = DateTime.now()…` and review game id
+  `'$kWatchGameId-${DateTime.now()…}'`) and ArenaScreen (`_clock` in
+  `initState`, replacing chaos seed, `startedAt`, and `finishedAt`). New
+  `test/clock_seam_test.dart` (8 tests): default returns valid DateTime,
+  override fixes UTC, deterministic ms-epoch, masked seed stable, nested
+  scope shadowing, shared reference. Evidence: `flutter analyze` clean (5
+  files); `flutter test test/clock_seam_test.dart` 8/8 pass; full regression
+  `flutter test` 173/173 pass (all existing + new). Next: 10.4 connection
+  tester seam.

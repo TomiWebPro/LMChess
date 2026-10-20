@@ -65,6 +65,9 @@ class WatchScreen extends ConsumerStatefulWidget {
 }
 
 class _WatchScreenState extends ConsumerState<WatchScreen> {
+  /// Wall-clock source (§10.3 seam); tests override via [clockProvider].
+  late DateTime Function() _clock;
+
   /// Mirror engine; advanced only by [_syncBoard] from the orchestrator.
   Position _engine = Position.initial();
 
@@ -127,6 +130,12 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
   /// lifecycle actually changes (so mid-turn status chips stay honest while
   /// stream events no longer repaint the board).
   OrchestratorState? _lastOrchState;
+
+  @override
+  void initState() {
+    _clock = ref.read(clockProvider);
+    super.initState();
+  }
 
   @override
   void dispose() {
@@ -450,7 +459,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     _pending.clear();
     _finished = false;
     _lastOrchState = null;
-    _watchSeed = DateTime.now().millisecondsSinceEpoch & 0x7fffffff;
+    _watchSeed = _clock().millisecondsSinceEpoch & 0x7fffffff;
     _whiteAgentId = white.id;
     _blackAgentId = black.id;
     _whiteModel = white.model;
@@ -736,7 +745,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     );
     ReviewLog.record(
       ReviewGame(
-        id: '$kWatchGameId-${DateTime.now().millisecondsSinceEpoch}',
+        id: '$kWatchGameId-${_clock().millisecondsSinceEpoch}',
         whiteLabel: agents.byId(_whiteAgentId)?.name ?? 'White',
         blackLabel: agents.byId(_blackAgentId)?.name ?? 'Black',
         whiteAgentId: _whiteAgentId,

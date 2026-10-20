@@ -1,7 +1,7 @@
 # Future Work
 
 Status: living document
-Last updated: 2026-10-20
+Last updated: 2026-10-20 (UTC)
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -917,6 +917,14 @@ final clockProvider = Provider<DateTime Function()>((ref) => DateTime.now);
 
 Replace `DateTime.now()` in Watch seeds, Arena ids/timestamps, and review ids.
 Tests override with a fixed UTC timestamp.
+
+> Note (2026-10-20): implemented. `clockProvider` added to
+> `lib/src/ui/backend_bridge.dart`; WatchScreen wired (`_clock` in `initState`,
+> `_watchSeed` + review id use `_clock()`), ArenaScreen wired (`_clock` in
+> `initState`, chaos seed + startedAt/finishedAt use `_clock()`). Pinned by
+> `test/clock_seam_test.dart` (8 tests: default valid DateTime, override fixes
+> UTC, deterministic ms-epoch, masked seed stable, nested scope shadowing,
+> shared reference, full regression 173/173). 10.4 + 10.7 still open.
 
 ### 10.4 Connection tester seam
 

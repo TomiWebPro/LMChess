@@ -236,6 +236,16 @@ final reviewEvaluatorFactoryProvider = Provider<ReviewEvaluatorFactory>(
   (ref) => resolveReviewEvaluator,
 );
 
+/// Injectable wall-clock source for seeds and timestamps (§10.3 seam).
+///
+/// Defaults to `DateTime.now` so production behaviour is unchanged; widget
+/// tests override it with a fixed `DateTime.utc(2026, 1, 1)` so every seed
+/// and timestamp becomes deterministic — no wall-clock dependency, no
+/// pending-timer failures caused by stale `pumpAndSettle`.
+final clockProvider = Provider<DateTime Function()>(
+  (ref) => DateTime.now,
+);
+
 Future<LlmProvider> resolveTurnProvider(
   agent_backend.AgentConfig config,
   List<String> legalUcis, {

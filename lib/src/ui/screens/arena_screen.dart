@@ -351,6 +351,15 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
   /// Dialog-follow notifier (see [_ArenaTicker]).
   final _ArenaTicker _ticker = _ArenaTicker();
 
+  /// Wall-clock source (§10.3 seam); tests override via [clockProvider].
+  late DateTime Function() _clock;
+
+  @override
+  void initState() {
+    _clock = ref.read(clockProvider);
+    super.initState();
+  }
+
   @override
   void dispose() {
     _cancelling = true;
@@ -762,7 +771,7 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
     if (picked.length < 2) return; // Button is disabled; double-guard.
     final pairs = picked.length * (picked.length - 1) ~/ 2;
     final mode = _chaos ? 'chaotic' : 'standard';
-    final seed = DateTime.now().millisecondsSinceEpoch & 0x7fffffff;
+    final seed = _clock().millisecondsSinceEpoch & 0x7fffffff;
     final config = TournamentConfig(
       id: const Uuid().v4(),
       name: _name.text.trim().isEmpty ? 'Tournament' : _name.text.trim(),
@@ -1201,7 +1210,7 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
     final pending = <PendingTurn>[];
     live.initialBoard = board;
     live.variantPlies.clear();
-    live.startedAt = DateTime.now().toUtc();
+    live.startedAt = _clock().toUtc();
     var ply = 0;
     var outcome = '*';
     var reason = '';
@@ -1517,7 +1526,7 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
           outcome: outcome,
           reason: reason,
           startedAt: live.startedAt,
-          finishedAt: DateTime.now().toUtc(),
+          finishedAt: _clock().toUtc(),
         ));
       }
     }
