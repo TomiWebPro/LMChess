@@ -1,7 +1,7 @@
 # Future Work
 
 Status: living document
-Last updated: 2026-10-21 (UTC) — §9.1 integration_test/accessibility_windows_test.dart scaffolded (12 tests, compiles clean, runs via device/display)
+Last updated: 2026-10-21 (UTC) — §6.9 test/ui/variant_replay_test.dart created (22 tests covering all spec items)
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -689,6 +689,8 @@ Lifecycle:
 - Both `ExpansionTile`s open/close.
 - AppBar back pops and disposes the evaluator.
 
+> Note (2026-10-21): implemented — `test/ui/variant_replay_test.dart`, 22 tests covering all §6.9 items: First/Previous/Next/Last boundary checks (disabled/enabled states on all four nav buttons), slider drag advances without exception, Analyze button visible pre-review, dispose during async review cleans up, Attempt ExpansionTile card appears when stepping past ply 0, Pipeline events panel renders, AppBar back pops route without crash, zero-plies game has all navigation disabled, semantics stable across full nav sequence, theme light→dark→light crash-free, narrow layout renders without overflow, rapid 10× control taps safe, single-ply boundaries correct, ply label updates reflect position per step, rendering at each ply no exception, wide layout has all five controls, header shows white/black labels + outcome, Engine review card titled correctly with hint text, pushed ModalRoute pop disposes handler cleanly. Uses deterministic test data via ChaoticRules.interpret; never spawns engine. Evidence: `flutter analyze` clean; `flutter test test/ui/variant_replay_test.dart` 22/22 pass; full regression `flutter test` 423/423 pass (401 old + 22 new). Next: `test/ui/stats_screen_test.dart` (§6.7, P2).
+
 ### 6.10 Agents (`agent_setup_test.dart`, ~26 tests)
 
 - List: count, New agent, Edit, Delete, empty state.
@@ -702,7 +704,7 @@ Lifecycle:
 - Cancel/back leaves the catalog untouched.
 - Narrow layout scrolls without overflow.
 
-> Note (2026-10-20): implemented — `test/ui/agent_setup_test.dart`, 29 tests covering all §6.10 items: create/edit mode titles ('New agent'/'Edit agent'), blank default form, display name accepts text input, provider dropdown lists all kAgentProviders values with stable selection, model placeholder 'gpt-4o', temperature slider drag responsive, max tokens numeric input, system/user prompt TextFormFields present, API key TextField exists with obscureText=true, lock-status indicator Row renders below API key field, Test Connection OutlinedButton exists/enabled, tapping Test Connection shows result via injected tester override, spinner during testing (500ms delayed test → CircularProgressIndicator appears then completes cleanly without pending timer), failure result with failing tester override, Save/Create buttons labelled correctly per mode, empty required fields validation snackbar shown, valid form submission succeeds, double-save guard (_saving==true), empty name/provider/model block save with validation messages, navigating away from unsaved form cleans up properly, AppBar back button pops route safely, narrow (<700px) layout scrolls, wide layout renders single column, 10 rapid taps on Create no crash, semantics tree invariant stable after rendering. Uses deterministic fakes (harness.fakeOverrides + connectionTesterProvider override), never hits real network/engine/wall-clock. Evidence: `flutter analyze` clean; `flutter test test/ui/agent_setup_test.dart` 29/29 pass; full regression `flutter test` 401/401 pass (372 old + 29 new). Next: `test/ui/variant_replay_test.dart` (§6.9, P1).
+> Note (2026-10-20): implemented — `test/ui/agent_setup_test.dart`, 29 tests covering all §6.10 items: create/edit mode titles ('New agent'/'Edit agent'), blank default form, display name accepts text input, provider dropdown lists all kAgentProviders values with stable selection, model placeholder 'gpt-4o', temperature slider drag responsive, max tokens numeric input, system/user prompt TextFormFields present, API key TextField exists with obscureText=true, lock-status indicator Row renders below API key field, Test Connection OutlinedButton exists/enabled, tapping Test Connection shows result via injected tester override, spinner during testing (500ms delayed test → CircularProgressIndicator appears then completes cleanly without pending timer), failure result with failing tester override, Save/Create buttons labelled correctly per mode, empty required fields validation snackbar shown, valid form submission succeeds, double-save guard (_saving==true), empty name/provider/model block save with validation messages, navigating away from unsaved form cleans up properly, AppBar back button pops route safely, narrow (<700px) layout scrolls, wide layout renders single column, 10 rapid taps on Create no crash, semantics tree invariant stable after rendering. Uses deterministic fakes (harness.fakeOverrides + connectionTesterProvider override), never hits real network/engine/wall-clock. Evidence: `flutter analyze` clean; `flutter test test/ui/agent_setup_test.dart` 29/29 pass; full regression `flutter test` 401/401 pass (372 old + 29 new). Next: `test/ui/stats_screen_test.dart` (§6.7, P2).
 
 ### 6.11 Settings (`settings_screen_test.dart`, ~14 tests)
 
