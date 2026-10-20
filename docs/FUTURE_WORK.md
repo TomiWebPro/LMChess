@@ -1,7 +1,7 @@
 # Future Work
 
 Status: living document
-Last updated: 2026-10-20 (UTC) — §5.1 harness + §5.3 semantics invariants created + tested; §6.3 chessboard widget tests created (26 tests); §6.1 shell navigation tests created (16 tests)
+Last updated: 2026-10-20 (UTC) — §5.1 harness + §5.3 semantics invariants created + tested; §6.3 chessboard widget tests created (26 tests); §6.1 shell navigation tests created (16 tests); §6.4 play screen widget tests created (25 tests)
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -621,6 +621,8 @@ Lifecycle:
 - Pump a replacement widget mid-turn; no setState-after-dispose.
 - Dispose with a pending provider future; no pending timer.
 - Terminal FEN injection (test-only) -> correct banner and disabled controls.
+
+> Note (2026-10-20): Implemented — `test/ui/play_screen_test.dart` with 25 tests covering board interaction (select/deselect/respect, opponent/empty square taps, legal/illegal moves), promotion dialog stability, resign flow verification, move list entries after human move, Activity/Moves tab switching, provider error handling (timeout, throws, no-move, retry, internal crash), lifecycle (replacement widget safe, dispose drains timers, narrow layout, theme change stable, player cards). Deterministic fakes only. Evidence: `flutter test test/ui/play_screen_test.dart` 25/25 pass; regression `flutter test` 270/270 pass. Next: §7 semantics_stability_test.dart.
 
 ### 6.5 Watch (`watch_screen_test.dart`, ~22 tests)
 
