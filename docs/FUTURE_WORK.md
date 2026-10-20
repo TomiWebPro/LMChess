@@ -1,7 +1,7 @@
 # Future Work
 
 Status: living document
-Last updated: 2026-10-20 (UTC) — §5.1 harness + §5.3 semantics invariants created + tested; §6.3 chessboard widget tests created (26 tests); §6.1 shell navigation tests created (16 tests); §6.4 play screen widget tests created (25 tests); §7 semantics stability test suite created (32 tests); §8 monkey_tap_test.dart created (5 tests)
+Last updated: 2026-10-20 (UTC) — §5.1 harness + §5.3 semantics invariants created + tested; §6.3 chessboard widget tests created (26 tests); §6.1 shell navigation tests created (16 tests); §6.4 play screen widget tests created (25 tests); §7 semantics stability test suite created (32 tests); §8 monkey_tap_test.dart created (5 tests); §6.5 watch_screen_test.dart created (21 tests)
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -637,6 +637,8 @@ Lifecycle:
 - Move-list seek matches the board.
 - Dispose while running: no pending timers.
 - Narrow tabs vs wide board+panel layout.
+
+> Note (2026-10-20): implemented — `test/ui/watch_screen_test.dart`, 21 tests covering all §6.5 items: transport flow (Start/Pause/Resume/Stop), agent selectors (dropdown visibility, disabled while running, idle changes), tab switching (Activity/Moves/Errors idle and running), error panel state, move-list population and seek, dispose timer drain, narrow/wide layouts, status chip lifecycle, semantics stability across transitions. Key design notes: MockProvider stepDelay=0 reaches terminal quickly so tests use defensive control-checking; retireOrchestrator async-disposal race in double-start requires long pump waits or harness.disposeApp. Evidence: `flutter analyze` clean; `flutter test test/ui/watch_screen_test.dart` 21/21 pass; full regression `flutter test` 328/328 pass (307 old + 21 new).
 
 ### 6.6 Arena (`arena_screen_test.dart`, ~26 tests)
 
