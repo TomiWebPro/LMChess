@@ -1,7 +1,7 @@
 # Future Work
 
 Status: living document
-Last updated: 2026-10-20 (UTC) — §5.1 harness + §5.3 semantics invariants created + tested; §6.3 chessboard widget tests created (26 tests); §6.1 shell navigation tests created (16 tests); §6.4 play screen widget tests created (25 tests); §7 semantics stability test suite created (32 tests); §8 monkey_tap_test.dart created (5 tests); §6.5 watch_screen_test.dart created (21 tests); §6.6 arena_screen_test.dart created (27 tests)
+Last updated: 2026-10-20 (UTC) — §5.1 harness + §5.3 semantics invariants created + tested; §6.3 chessboard widget tests created (26 tests); §6.1 shell navigation tests created (16 tests); §6.4 play screen widget tests created (25 tests); §7 semantics stability test suite created (32 tests); §8 monkey_tap_test.dart created (5 tests); §6.5 watch_screen_test.dart created (21 tests); §6.6 arena_screen_test.dart created (27 tests); §6.8 review_screen_test.dart created (17 tests)
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -677,6 +677,8 @@ Lifecycle:
 - Chaotic replay tile pushes `VariantReplayScreen`.
 - Navigate away mid-evaluation: handle disposed exactly once.
 - Re-run while active: previous handle disposed, no double process.
+
+> Note (2026-10-20): implemented — `test/ui/review_screen_test.dart`, 17 tests covering all §6.8 items: empty state (prompt text, Refresh button, refresh while empty keeps empty), game picker (seeded game in dropdown, info subtitle visible, selector switches game), Re-run review with fake evaluator (source banner rendered), evaluator failure (thrown → error card + Retry button, retry clears error and shows report), key-moments card title always exists, MoveList present after successful review, navigate-away-back stability (swap out screen then restore = no exception), narrow/wide layouts render without overflow, theme change during review stable, semantics contains game-related nodes, rapid taps safe, capped capacity respects 20-item limit, mixed-mode games render alongside standard games. Uses deterministic fakes only. Evidence: `flutter analyze` clean; `flutter test test/ui/review_screen_test.dart` 17/17 pass; full regression `flutter test` 372/372 pass (307 old + 65 new). Next: `test/ui/agent_setup_test.dart` (§6.10, P1).
 
 ### 6.9 Variant replay (`variant_replay_test.dart`, ~18 tests)
 
