@@ -404,6 +404,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
           const SizedBox(width: 8),
           Expanded(child: Text('Game over · $_result')),
           TextButton(
+            key: const ValueKey<String>('play-new-game-banner'),
             onPressed: () => setState(_newGame),
             child: const Text('New game'),
           ),
@@ -441,6 +442,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
             ),
           ),
           TextButton(
+            key: const ValueKey<String>('play-retry-ai'),
             style: TextButton.styleFrom(
               foregroundColor: theme.colorScheme.onErrorContainer,
             ),
@@ -479,6 +481,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
             children: <Widget>[
               Expanded(
                 child: OutlinedButton.icon(
+                  key: const ValueKey<String>('play-new-game-button'),
                   onPressed: _result != null
                       ? null
                       : () => setState(_newGame),
@@ -489,6 +492,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: OutlinedButton.icon(
+                  key: const ValueKey<String>('play-resign-button'),
                   onPressed: _result != null ? null : _confirmResign,
                   icon: const Icon(Icons.flag_outlined),
                   label: const Text('Resign'),
@@ -754,6 +758,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
             child: const Text('Cancel'),
           ),
           FilledButton(
+            key: const ValueKey<String>('play-resign-confirm'),
             onPressed: () => Navigator.pop(context, true),
             child: const Text('Resign'),
           ),

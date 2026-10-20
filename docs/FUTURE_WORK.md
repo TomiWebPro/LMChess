@@ -1,7 +1,7 @@
 # Future Work
 
 Status: living document
-Last updated: 2026-10-20 (UTC)
+Last updated: 2026-10-20 (UTC) — §10.7 stable keys + test/ui/stable_keys_test.dart
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -997,6 +997,17 @@ const ValueKey<String>('play-retry-ai');
 
 Use `find.byKey` in new tests. `find.text(...).first` silently hides
 duplicate-control bugs.
+
+> Note (2026-10-20): implemented. Five `ValueKey<String>` constants added to
+> play_screen.dart controls: `'play-new-game-banner'` (result-banner TextButton,
+> ~line 408), `'play-retry-ai'` (AI error banner TextButton, ~line 448),
+> `'play-new-game-button'` (moves-panel OutlinedButton.icon, ~line 486),
+> `'play-resign-button'` (moves-panel OutlinedButton.icon, ~line 494),
+> `'play-resign-confirm'` (resign-dialog FilledButton, ~line 758). All five
+> strings are unique and do not collide with planned Watch/Arena keys. Pinned
+> by `test/ui/stable_keys_test.dart` (4 tests: uniqueness, non-collision across
+> screens, ValueKey parse integrity with overridden providers; full regression
+> 185/185). Next: §5.1 harness + §5.3 semantics invariants.
 
 ### 10.8 Dispose audit
 

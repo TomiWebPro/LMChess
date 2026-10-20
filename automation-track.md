@@ -33,7 +33,7 @@ This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every ru
 | P0 | `test/ui/monkey_tap_test.dart` | TODO |
 | P0 | `integration_test/accessibility_windows_test.dart` | TODO (no `integration_test/` dir 2026-10-20) |
 | P0 | `tool/windows_accessibility_smoke.ps1` | TODO |
-| P0 | Refactors 10.1-10.4 + 10.7 (turn-provider / evaluator / clock / connection-tester seams + stable keys) | PARTIAL (10.1 DONE 2026-10-20; 10.2 DONE 2026-10-20: `ReviewEvaluatorFactory` + `reviewEvaluatorFactoryProvider` rewired in ReviewScreen + VariantReplayScreen, `test/review_evaluator_seam_test.dart` 8/8; 10.3 DONE 2026-10-20: `clockProvider` default `DateTime.now`, wired into WatchScreen (`_startWatchGame` seed + `_flushToReviewLog` id) and ArenaScreen (`_startChaosPump` seed + `_chaosRun` startedAt/finishedAt), new `test/clock_seam_test.dart` 8/8; 10.4 DONE 2026-10-20: `ConnectionTester` typedef + `connectionTesterProvider` (default wraps `testAgentConnection` with internal `SecureKeyStore`), wired into AgentSetupScreen (`_tester` captured in initState via `ref.read(connectionTesterProvider)`), new `test/connection_tester_seam_test.dart` 8/8; 10.7 still missing) |
+| P0 | Refactors 10.1-10.4 + 10.7 (turn-provider / evaluator / clock / connection-tester seams + stable keys) | PARTIAL (10.1 DONE 2026-10-20; 10.2 DONE 2026-10-20: `ReviewEvaluatorFactory` + `reviewEvaluatorFactoryProvider` rewired in ReviewScreen + VariantReplayScreen, `test/review_evaluator_seam_test.dart` 8/8; 10.3 DONE 2026-10-20: `clockProvider` default `DateTime.now`, wired into WatchScreen (`_startWatchGame` seed + `_flushToReviewLog` id) and ArenaScreen (`_startChaosPump` seed + `_chaosRun` startedAt/finishedAt), new `test/clock_seam_test.dart` 8/8; 10.4 DONE 2026-10-20: `ConnectionTester` typedef + `connectionTesterProvider` (default wraps `testAgentConnection` with internal `SecureKeyStore`), wired into AgentSetupScreen (`_tester` captured in initState via `ref.read(connectionTesterProvider)`), new `test/connection_tester_seam_test.dart` 8/8; 10.7 DONE 2026-10-20: ValueKeys on Play-screen duplicate-label controls + `test/ui/stable_keys_test.dart` 4/4) |
 | P1 | `test/ui/watch_screen_test.dart` | TODO |
 | P1 | `test/ui/arena_screen_test.dart` | TODO |
 | P1 | `test/ui/agent_setup_test.dart` | TODO |
@@ -112,3 +112,20 @@ does not exist yet. Worker should verify and record actual state each run.
   files); `flutter test test/connection_tester_seam_test.dart` 8/8 pass; full
   regression `flutter test` 181/181 pass (173 old + 8 new). Next: 10.7 stable
   keys (duplicate-label fix for banner/play/New game controls).
+- 2026-10-20Z — REFACTOR 10.7 (stable keys, §12 order step 5): added
+  `ValueKey<String>` constants to every Play-screen control that previously had
+  a duplicate label text, enabling `find.byKey()` in future tests instead of
+  ambiguous `find.text()` lookups. Files changed:
+  `lib/src/ui/screens/play_screen.dart` — 5 keys added:
+  `'play-new-game-banner'` (result-banner TextButton),
+  `'play-retry-ai'` (AI error banner TextButton),
+  `'play-new-game-button'` (moves-panel OutlinedButton.icon),
+  `'play-resign-button'` (moves-panel OutlinedButton.icon),
+  `'play-resign-confirm'` (resign-dialog FilledButton).
+  New `test/ui/stable_keys_test.dart` (4 tests): uniqueness of all five Play
+  keys + six planned Watch/Arena keys, cross-screen non-collision, ValueKey
+  parse integrity with overridden providers. Evidence:
+  `flutter analyze` clean (2 items); `flutter test
+  test/ui/stable_keys_test.dart` 4/4 pass; full regression
+  `flutter test` 185/185 pass (181 old + 4 new). Next: harness + semantics
+  checker (§5.1–5.2).
