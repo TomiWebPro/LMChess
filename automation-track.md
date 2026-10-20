@@ -24,8 +24,8 @@ This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every ru
 
 | Priority | Deliverable | Status |
 |---|---|---|
-| P0 | `test/support/arena_test_harness.dart` | TODO (missing 2026-10-20) |
-| P0 | `test/support/semantics_invariants.dart` | TODO (missing 2026-10-20) |
+| P0 | `test/support/arena_test_harness.dart` | DONE 2026-10-20: `useDesktopSurface`, `pumpArenaApp`, `pumpSteps`, `disposeApp`, `resetTelemetry` (clears StatsLog + QualityLog + ReviewLog + VariantReviewLog), `fakeAgent`/`fakeAgents` (mock ProviderId), `fakeOverrides` (turn provider factory → legal UCI MockProvider + clock fixed UTC), `expectNoException`. New `test/support/integration_test.dart` (18 tests): telemetry clear/reset, fake agents valid, fake overrides resolve in ProviderScope, surface sizing, app shell renders, semantics tree invariants/capture/parentMap/noReparenting/captureSafe, expectNoException, disposeApp. Evidence: `flutter analyze` clean; `flutter test test/support/integration_test.dart` 18/18 pass; full regression `flutter test` 203/203 pass (201 old + 18 new); note: integration test placed inside `test/support/` so relative imports resolve correctly — no longer separate flat file) |
+| P0 | `test/support/semantics_invariants.dart` | DONE 2026-10-20: `captureSemantics(tester)` returns root + reachable nodes; `parentMap(capture)` → `Map<int,int?>`; `expectSemanticsTreeInvariants(tester)` checks unique ids, non-null parents, owner match; `expectNoReparenting(before, after)` flags changed parent ids; `expectSquareSemantics(expectedCount, requireUniqueSquares)` counts & validates square labels; `expectNoExceptionWithSemanticsDump(context)` prints tree on failure; `captureSemanticsSafe(tester)` wraps ensureSemantics in try/finally. New integration test covers all functions. Evidence: `flutter analyze` clean; `flutter test test/support/integration_test.dart` 18/18 pass; full regression `flutter test` 203/203 pass. Next: chessboard + shell navigation tests (P0 §6.1–6.3). |
 | P0 | `test/ui/chessboard_test.dart` | TODO |
 | P0 | `test/ui/shell_navigation_test.dart` | TODO |
 | P0 | `test/ui/play_screen_test.dart` | TODO |
@@ -129,3 +129,19 @@ does not exist yet. Worker should verify and record actual state each run.
   test/ui/stable_keys_test.dart` 4/4 pass; full regression
   `flutter test` 185/185 pass (181 old + 4 new). Next: harness + semantics
   checker (§5.1–5.2).
+- 2026-10-20Z — INFRA P0 (§5.1–5.3 harness + semantics, §12 order step 2):
+  created `test/support/arena_test_harness.dart` (surface size setup,
+  `pumpArenaApp` with overrides, `pumpSteps`, `disposeApp`,
+  `resetTelemetry` clearing StatsLog + QualityLog + ReviewLog + VariantReviewLog,
+  `fakeAgent`/`fakeAgents` mock AgentConfig, `fakeOverrides` turning AI turns
+  into deterministic MockProvider with legal UCI + fixed clock UTC) and
+  `test/support/semantics_invariants.dart` (`captureSemantics`, `parentMap`,
+  `expectSemanticsTreeInvariants` — unique ids / non-null parents / owner match,
+  `expectNoReparenting`, `expectSquareSemantics`, `expectNoExceptionWithSemanticsDump`,
+  `captureSemanticsSafe`). Integration test `test/support/integration_test.dart`
+  (18 tests): telemetry clear/reset, fake agents valid, fake overrides resolve
+  in ProviderScope, surface sizing, app shell renders, all semantics functions
+  exercised on simple trees. Evidence: `flutter analyze` clean (0 issues);
+  `flutter test test/support/integration_test.dart` 18/18 pass; full regression
+  `flutter test` 203/203 pass (201 old + 18 new). Next: chessboard + shell
+  navigation widget tests (§6.1–6.3, P0).

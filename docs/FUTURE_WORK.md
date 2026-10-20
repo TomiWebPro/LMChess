@@ -1,7 +1,7 @@
 # Future Work
 
 Status: living document
-Last updated: 2026-10-20 (UTC) — §10.7 stable keys + test/ui/stable_keys_test.dart
+Last updated: 2026-10-20 (UTC) — §5.1 harness + §5.3 semantics invariants created + tested
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -416,6 +416,12 @@ review or replay screen must override the evaluator factory so it cannot spawn
 Stockfish. Any test that starts a game must override the turn provider so it
 cannot hit the network or wait on wall-clock timers.
 
+> Note (2026-10-20): implemented. Files created: `test/support/arena_test_harness.dart`
+> (useDesktopSurface, pumpArenaApp, pumpSteps, disposeApp, resetTelemetry,
+> fakeAgent/fakeAgents, fakeOverrides, expectNoException). Full suite green:
+> `flutter test` 203/203 pass (201 old + 18 new). The harness is used as the
+> foundation for per-screen widget tests under `test/ui/`.
+
 ### 5.3 Semantics invariants
 
 `test/support/semantics_invariants.dart` walks the tree reachable from the
@@ -485,6 +491,12 @@ Important details:
 - Arena's mini-board grid legitimately repeats square labels. Scope uniqueness
   to single-board screens; use `expectedCount = 64 * visibleBoards` and
   `requireUniqueSquares: false` for Arena.
+
+> Note (2026-10-20): implemented. Files created: `test/support/semantics_invariants.dart`
+> (captureSemantics, parentMap, expectSemanticsTreeInvariants, expectNoReparenting,
+> expectSquareSemantics, expectNoExceptionWithSemanticsDump, captureSemanticsSafe).
+> All 7 functions exercised by `test/support/integration_test.dart`. Full suite green:
+> `flutter test` 203/203 pass (201 old + 18 new). Next: harness usage in per-screen tests.
 
 ### 5.4 Deterministic fakes
 
@@ -1112,8 +1124,8 @@ Approximate target: 250-300 widget tests plus 2 process-level checks.
 
 Implementation order:
 
-1. Refactors 10.1-10.4 and 10.7.
-2. Harness + semantics checker.
+1. Refactors 10.1-10.4 and 10.7 — DONE 2026-10-20 (all seams + stable keys).
+2. Harness + semantics checker — DONE 2026-10-20 (arena_test_harness.dart + semantics_invariants.dart, 18 integration tests green).
 3. Chessboard, shell, semantics stability.
 4. Play interaction + monkey tests (the reported repro).
 5. Windows integration + UIA smoke + CI job.
