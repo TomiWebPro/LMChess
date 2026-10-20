@@ -1,7 +1,7 @@
 # Future Work
 
 Status: living document
-Last updated: 2026-10-20 (UTC) — §5.1 harness + §5.3 semantics invariants created + tested; §6.3 chessboard widget tests created (26 tests); §6.1 shell navigation tests created (16 tests); §6.4 play screen widget tests created (25 tests)
+Last updated: 2026-10-20 (UTC) — §5.1 harness + §5.3 semantics invariants created + tested; §6.3 chessboard widget tests created (26 tests); §6.1 shell navigation tests created (16 tests); §6.4 play screen widget tests created (25 tests); §7 semantics stability test suite created (32 tests)
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -751,6 +751,20 @@ Why this matters: a node that changes parent is exactly the input that makes
 `CreateRemoveReparentedNodesUpdate` run. A node with a null parent is exactly
 the crash. These assertions turn the native precondition into a fast,
 actionable test failure.
+
+> Note (2026-10-20): implemented — `test/ui/semantics_stability_test.dart`, 32 tests.
+> All §7 scenarios covered: all 8 destinations wide/narrow (16 tests), hidden-tab rule
+> Home→Play→Stats zero/occupied/zero squares, Play Activity/Moves tab switch stable,
+> Watch Activity/Moves/Errors tab switches stable, Arena empty state zero mini-boards,
+> More sheet open/select/dismiss navigation, resize 699→700→1100→699 per-frame no-reparenting,
+> theme light→dark square-count preserved, 50 rapid destination switches zero duplicate ids,
+> Review navigate-away-back stability, Agents form push/pop semantics, wide rail completeness
+> (NavigationRail.destinations.length==8 + all labels visible), narrow AppBar presence on nav,
+> captureSemanticsSafe helper exercised, expectNoExceptionWithSemanticsDump clean-pass, Settings
+> colour-scheme segment toggles, quick round-trip Home→Play→Watch→Home. Each transition asserts
+> tree invariants + parentMap-based reparenting detection. Evidence: `flutter analyze` clean;
+> `flutter test test/ui/semantics_stability_test.dart` 32/32 pass; full regression `flutter test`
+> 302/302 pass (270 old + 32 new). Next: monkey_tap_test.dart (§8, P0).
 
 ---
 
