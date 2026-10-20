@@ -1,7 +1,7 @@
 # Future Work
 
 Status: living document
-Last updated: 2026-10-20 (UTC) — §5.1 harness + §5.3 semantics invariants created + tested; §6.3 chessboard widget tests created (26 tests)
+Last updated: 2026-10-20 (UTC) — §5.1 harness + §5.3 semantics invariants created + tested; §6.3 chessboard widget tests created (26 tests); §6.1 shell navigation tests created (16 tests)
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -539,6 +539,20 @@ labels and `ensureSemantics` when the widget exposes actions.
   reset or double-schedule.
 - Hidden tabs contribute zero square labels; selected tab contributes exactly
   64 (single-board screens).
+
+> Note (2026-10-20): implemented. File: `test/ui/shell_navigation_test.dart`,
+> 16 tests. All §6.1 items covered: wide rail navigates all 8 destinations and
+> preserves state across switches (Home→Play→Home), narrow layout toggles
+> AppBar/rail/NavigationBar correctly at <700px breakpoint, More sheet lists
+> Stats/Review/Agents/Settings with tap-to-select, Drawer present in Scaffold
+> for narrow mode, home-card taps route via _openRoute (index switch, not
+> Navigator.push), resize 699→700→1100→699 preserves mounted Play tab without
+> exception, 20 rapid destination switches clean, hidden tabs contribute zero
+> square semantics nodes while Play shows occupied-square count, no duplicate
+> ids or reparenting across multi-tab sequences. Evidence: `flutter analyze`
+> clean; `flutter test test/ui/shell_navigation_test.dart` 16/16 pass; full
+> regression `flutter test` 245/245 pass (229 old + 16 new). Next: play_screen
+> widget tests (§6.4, P0).
 
 ### 6.2 Home (`home_screen_test.dart`, 6 tests)
 
