@@ -1,7 +1,7 @@
 # Future Work
 
 Status: living document
-Last updated: 2026-10-19
+Last updated: 2026-10-20
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -872,6 +872,14 @@ final turnProviderFactoryProvider = Provider<TurnProviderFactory>(
 Use it in Play, Watch, and Arena. Tests override it with `MockProvider` that
 returns immediately and can inject timeout, malformed response, no-move, and
 thrown failures.
+
+> Note (2026-10-20): implemented. `TurnProviderFactory` +
+> `turnProviderFactoryProvider` (default `resolveTurnProvider`) live in
+> `lib/src/ui/backend_bridge.dart`; Play/Watch/Arena (4 call sites) resolve
+> via `ref.read(turnProviderFactoryProvider)`. Pinned by
+> `test/turn_provider_seam_test.dart` (8 tests: default legal mock move,
+> seed/phrase passthrough, timeout/malformed/no-move/thrown injection,
+> end-to-end mock stream). 10.2-10.4 and 10.7 still open.
 
 ### 10.2 Review evaluator seam
 

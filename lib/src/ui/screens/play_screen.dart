@@ -612,7 +612,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
       _blackAgentId = backend.id;
       _blackModel = backend.model;
       final before = orch.moveHistory.length;
-      final provider = await resolveTurnProvider(
+      final provider = await ref.read(turnProviderFactoryProvider)(
         backend,
         orch.legalMoves,
         phrase: '${uiAgent.name} reply',

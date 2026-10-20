@@ -84,6 +84,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../agent/agent_config.dart' as agent_backend;
@@ -198,6 +199,28 @@ MoveToolCall uciToMoveToolCall(String uci, {String? phrase}) {
 /// config, or returned. A missing secret resolves to `''` so keyless backends
 /// (Ollama) keep working and the runner surfaces an auth failure as a typed,
 /// fallback-able outcome.
+/// Injectable seam for one AI turn's provider (FUTURE_WORK §10.1).
+///
+/// Screens must resolve the turn provider through
+/// [turnProviderFactoryProvider] instead of calling [resolveTurnProvider]
+/// directly, so widget tests can override it with a [MockProvider] that
+/// returns immediately and injects timeout, malformed-response, no-move, or
+/// thrown failures — no sockets, no wall-clock waits.
+///
+/// The default factory is [resolveTurnProvider] itself, so production
+/// behavior (including API-key resolution) is unchanged.
+typedef TurnProviderFactory = Future<LlmProvider> Function(
+  agent_backend.AgentConfig config,
+  List<String> legalUcis, {
+  int? seed,
+  String? phrase,
+});
+
+/// Provider for the [TurnProviderFactory]; defaults to [resolveTurnProvider].
+final turnProviderFactoryProvider = Provider<TurnProviderFactory>(
+  (ref) => resolveTurnProvider,
+);
+
 Future<LlmProvider> resolveTurnProvider(
   agent_backend.AgentConfig config,
   List<String> legalUcis, {

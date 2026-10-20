@@ -1066,7 +1066,7 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
         final backend = toBackendAgent(uiAgent);
         orch.bindAgent(backend);
         final before = orch.moveHistory.length;
-        final provider = await resolveTurnProvider(
+        final provider = await ref.read(turnProviderFactoryProvider)(
           backend,
           orch.legalMoves,
           seed: _turnSeed(seed, before),
@@ -1231,7 +1231,7 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
         break;
       }
       final turnSeed = _turnSeed(seed, ply);
-      final provider = await resolveTurnProvider(
+      final provider = await ref.read(turnProviderFactoryProvider)(
         backend,
         attempts,
         seed: turnSeed,

@@ -626,7 +626,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
         if (!mounted || !identical(_orch, orch)) return;
         if (orch.legalMoves.isEmpty) break;
         final before = orch.moveHistory.length;
-        final provider = await resolveTurnProvider(
+        final provider = await ref.read(turnProviderFactoryProvider)(
           backend,
           orch.legalMoves,
           seed: _turnSeed(before),
