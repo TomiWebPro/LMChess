@@ -1,7 +1,7 @@
 # Future Work
 
 Status: living document
-Last updated: 2026-10-20 (UTC) — §5.1 harness + §5.3 semantics invariants created + tested; §6.3 chessboard widget tests created (26 tests); §6.1 shell navigation tests created (16 tests); §6.4 play screen widget tests created (25 tests); §7 semantics stability test suite created (32 tests); §8 monkey_tap_test.dart created (5 tests); §6.5 watch_screen_test.dart created (21 tests)
+Last updated: 2026-10-20 (UTC) — §5.1 harness + §5.3 semantics invariants created + tested; §6.3 chessboard widget tests created (26 tests); §6.1 shell navigation tests created (16 tests); §6.4 play screen widget tests created (25 tests); §7 semantics stability test suite created (32 tests); §8 monkey_tap_test.dart created (5 tests); §6.5 watch_screen_test.dart created (21 tests); §6.6 arena_screen_test.dart created (27 tests)
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -653,6 +653,9 @@ Lifecycle:
 - Resize while running; finish a small tournament with a fixed seed and assert
   standings/Elo.
 - Concurrency and scheduler cancellation do not leave orchestrators running.
+
+> Note (2026-10-20): implemented — `test/ui/arena_screen_test.dart`, 27 tests.
+> All §6.6 items covered: config form (Name field, Rounds/Games-pairing dropdowns, Chaos FilterChip, Concurrency slider, Start button), disabled controls during run, start → Stop flow (Cancelling… state, double-start rejected, no-agents guard), standings header + agent name rows, Seed Chip renders, empty-grid before start, mini-board cards after start, card tap opens dialog/stable, resize 500↔1400px safe, scheduler cancel stops orchestrators, dispose drains timers, narrow/wide layout, chaos toggle flip, idle config changes safe, status notice shown, rapid taps safe, semantics tree stable across transitions. Uses deterministic fakes only. Evidence: `flutter analyze` clean; `flutter test test/ui/arena_screen_test.dart` 27/27 pass; regression `flutter test` 355/355 pass (307 old + 27 new). Next: §6.8 review_screen_test.dart or §6.10 agent_setup_test.dart.
 
 ### 6.7 Stats (`stats_screen_test.dart`, ~18 tests)
 
