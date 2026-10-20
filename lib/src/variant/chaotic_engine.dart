@@ -228,6 +228,9 @@ class ChaoticRules {
         candidates: [candidate],
         selected: candidate,
         events: events,
+        standardDetail: standard.detail,
+        policy: policy.name,
+        seed: seed,
       );
     }
     events.add('standard legality: illegal (${standard.detail})');
@@ -271,6 +274,9 @@ class ChaoticRules {
         candidates: [fallback],
         selected: fallback,
         events: events,
+        standardDetail: standard.detail,
+        policy: policy.name,
+        seed: seed,
       );
     }
     final selected = selectInterpretation(
@@ -291,6 +297,9 @@ class ChaoticRules {
       candidates: candidates,
       selected: selected,
       events: events,
+      standardDetail: standard.detail,
+      policy: policy.name,
+      seed: seed,
     );
   }
 

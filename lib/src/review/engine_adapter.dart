@@ -279,6 +279,10 @@ class UciEngineAdapter implements PositionEvaluator {
   StreamSubscription<String>? _stderrSub;
   StreamSubscription<String>? _stdoutSub;
 
+  /// In-flight [connect] future, shared by concurrent callers so two
+  /// overlapping connects cannot spawn (and leak) two processes.
+  Future<void>? _connecting;
+
   /// Lines received from the engine (broadcast internally).
   ///
   /// Recreated by [connect] when a previous [dispose] closed it, so an
@@ -305,7 +309,7 @@ class UciEngineAdapter implements PositionEvaluator {
   @override
   String get name => engineName;
 
-  /// True after [connect] until [dispose].
+  /// True after [connect] until the process exits or [dispose] is called.
   bool get isConnected => _process != null;
 
   /// Spawns the engine process and performs the UCI handshake.
@@ -316,7 +320,21 @@ class UciEngineAdapter implements PositionEvaluator {
   /// Throws [ProcessException] when the binary cannot start and
   /// [TimeoutException] when `uciok`/`readyok` never arrive. Either way
   /// no half-connected state is left behind ([dispose] runs on failure).
-  Future<void> connect({Duration timeout = const Duration(seconds: 10)}) async {
+  Future<void> connect({Duration timeout = const Duration(seconds: 10)}) {
+    if (isConnected) return Future<void>.value();
+    final pending = _connecting;
+    if (pending != null) return pending;
+    late final Future<void> tracked;
+    tracked = _connect(timeout).whenComplete(() {
+      if (identical(_connecting, tracked)) _connecting = null;
+    });
+    _connecting = tracked;
+    return tracked;
+  }
+
+  /// Body of [connect]; memoized through [_connecting] so concurrent callers
+  /// await the same process instead of spawning a second one.
+  Future<void> _connect(Duration timeout) async {
     if (isConnected) return;
     if (_lines.isClosed) {
       _lines = StreamController<String>.broadcast();
@@ -326,14 +344,38 @@ class UciEngineAdapter implements PositionEvaluator {
         : executablePath;
     final process = await Process.start(executable, args);
     _process = process;
+    final lines = _lines;
     _stderrSub = process.stderr
         .transform(utf8.decoder)
         .transform(const LineSplitter())
-        .listen((_) {});
+        .listen((_) {}, onError: (Object _) {});
     _stdoutSub = process.stdout
         .transform(utf8.decoder)
         .transform(const LineSplitter())
-        .listen(_lines.add);
+        .listen(
+          lines.add,
+          onError: (Object _) {},
+          // Closing the line controller on stdout EOF makes any in-flight
+          // `evaluate` finish immediately instead of waiting out its timer.
+          onDone: () {
+            if (!lines.isClosed) unawaited(lines.close());
+          },
+        );
+    // Detect an engine that dies on its own (mismatched binary, OOM, killed,
+    // AV quarantine). Without this the adapter would stay "connected" forever
+    // and every evaluate would write into a dead stdin, then wait out the
+    // whole search timeout before reporting a silent `unsupported`.
+    unawaited(process.exitCode.then((_) {
+      if (!identical(_process, process)) return;
+      _process = null;
+      final stderrSub = _stderrSub;
+      final stdoutSub = _stdoutSub;
+      _stderrSub = null;
+      _stdoutSub = null;
+      unawaited(stderrSub?.cancel());
+      unawaited(stdoutSub?.cancel());
+      if (!lines.isClosed) unawaited(lines.close());
+    }));
     try {
       _send('uci');
       await _waitFor((l) => l.trim() == 'uciok', timeout, 'uciok');
@@ -405,6 +447,9 @@ class UciEngineAdapter implements PositionEvaluator {
             if (!finished.isCompleted) finished.complete();
           }
         },
+        onError: (Object _) {
+          if (!finished.isCompleted) finished.complete();
+        },
         onDone: () {
           if (!finished.isCompleted) finished.complete();
         },
@@ -414,6 +459,12 @@ class UciEngineAdapter implements PositionEvaluator {
       } finally {
         timer.cancel();
         await subscription.cancel();
+      }
+
+      if (_process == null) {
+        // The process exited mid-search (see the exitCode watcher in
+        // [connect]); fail loudly rather than returning a stale half score.
+        throw StateError('$engineName exited during evaluation');
       }
 
       if (!sawBestmove) {
@@ -505,8 +556,17 @@ class UciEngineAdapter implements PositionEvaluator {
   }
 
   /// Writes one command line to the engine.
+  ///
+  /// Swallows broken-pipe/closed-stdin errors; the exitCode watcher installed
+  /// by [connect] tears the connection down and surfaces the exit.
   void _send(String command) {
-    _process?.stdin.writeln(command);
+    final process = _process;
+    if (process == null) return;
+    try {
+      process.stdin.writeln(command);
+    } on Object {
+      // Process already gone; the watcher handles teardown.
+    }
   }
 
   /// Waits until a line satisfies [test], rejecting on [timeout].

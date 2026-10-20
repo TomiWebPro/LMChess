@@ -106,6 +106,7 @@ ValidationOutcome validateToolCall({
   required Map? argsJson,
   required String? rawText,
   required bool Function(MoveToolCall) isLegal,
+  bool normalizeCastlingAliases = false,
 }) {
   try {
     if (argsJson == null) {
@@ -149,9 +150,14 @@ ValidationOutcome validateToolCall({
       );
     }
 
+    var effective = call;
+    if (normalizeCastlingAliases) {
+      effective = _castlingAlias(call, isLegal) ?? call;
+    }
+
     late final bool legal;
     try {
-      legal = isLegal(call);
+      legal = isLegal(effective);
     } catch (e) {
       return ValidationOutcome(
         kind: FailureKind.internal,
@@ -162,11 +168,11 @@ ValidationOutcome validateToolCall({
     if (!legal) {
       return ValidationOutcome(
         kind: FailureKind.illegalMove,
-        error: 'Move ${call.uci} is not legal in the current position.',
+        error: 'Move ${effective.uci} is not legal in the current position.',
         rawText: rawText,
       );
     }
-    return ValidationOutcome(kind: FailureKind.valid, toolCall: call);
+    return ValidationOutcome(kind: FailureKind.valid, toolCall: effective);
   } catch (e) {
     // Absolute backstop: this function never throws.
     return ValidationOutcome(
@@ -175,6 +181,35 @@ ValidationOutcome validateToolCall({
       rawText: rawText,
     );
   }
+}
+
+/// Rewrites the common "king to rook square" castling typo into the canonical
+/// UCI king-two-squares form, but only when [isLegal] confirms that the
+/// canonical move exists in the current position.
+///
+/// Standard turns enable this; chaotic turns do not (their attempt is
+/// interpreted as written, and an always-true predicate would rewrite a
+/// genuine rook move from e1 to h1).
+MoveToolCall? _castlingAlias(
+  MoveToolCall call,
+  bool Function(MoveToolCall) isLegal,
+) {
+  final from = call.from.toLowerCase();
+  final to = call.to.toLowerCase();
+  final String? kingTo = switch ((from, to)) {
+    ('e1', 'h1') => 'g1',
+    ('e1', 'a1') => 'c1',
+    ('e8', 'h8') => 'g8',
+    ('e8', 'a8') => 'c8',
+    _ => null,
+  };
+  if (kingTo == null) return null;
+  final candidate = MoveToolCall(
+    from: call.from,
+    to: kingTo,
+    phrase: call.phrase,
+  );
+  return isLegal(candidate) ? candidate : null;
 }
 
 /// Maps an HTTP status code to a [FailureKind].

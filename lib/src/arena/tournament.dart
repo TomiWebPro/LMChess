@@ -224,24 +224,30 @@ class TournamentGameRef {
 
   /// Parses [toJson] output. Throws [FormatException] on invalid input.
   factory TournamentGameRef.fromJson(Map<String, Object?> json) {
+    String requireString(String key) {
+      final value = json[key];
+      if (value is String) return value;
+      throw FormatException('TournamentGameRef.$key must be a String');
+    }
+
     TournamentGameStatus status;
     try {
-      status = TournamentGameStatus.values.byName(json['status'] as String);
+      status = TournamentGameStatus.values.byName(requireString('status'));
     } catch (_) {
       throw const FormatException('TournamentGameRef.status is invalid');
     }
     TournamentGameResult? result;
     if (json['result'] != null) {
       try {
-        result = TournamentGameResult.values.byName(json['result'] as String);
+        result = TournamentGameResult.values.byName(requireString('result'));
       } catch (_) {
         throw const FormatException('TournamentGameRef.result is invalid');
       }
     }
     return TournamentGameRef(
-      gameId: json['gameId'] as String,
-      whiteAgentId: json['whiteAgentId'] as String,
-      blackAgentId: json['blackAgentId'] as String,
+      gameId: requireString('gameId'),
+      whiteAgentId: requireString('whiteAgentId'),
+      blackAgentId: requireString('blackAgentId'),
       status: status,
       result: result,
       error: json['error'] is String ? json['error'] as String : null,

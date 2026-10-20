@@ -40,13 +40,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../agent/agent_runner.dart';
 import '../../chess/engine.dart' as chess_eng;
 import '../../chess/fen.dart';
-import '../../chess/move.dart';
 import '../../chess/position.dart';
 import '../../game/clock.dart';
 import '../../game/game_state.dart';
 import '../../game/orchestrator.dart';
 import '../../theme/registry.dart';
 import '../backend_bridge.dart';
+import '../game_mirror.dart';
 import '../ui_models.dart';
 import '../widgets/activity_panel.dart';
 import '../widgets/boards.dart';
@@ -435,6 +435,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
       return;
     }
     await retireOrchestrator(_orch, _sub);
+    if (!mounted) return;
     _sub = null;
     _engine = Position.initial();
     _moves.clear();
@@ -544,33 +545,32 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
   void _syncBoard() {
     final orch = _orch;
     if (orch == null) return;
-    final history = orch.moveHistory;
-    var changed = false;
-    while (_applied < history.length) {
-      final uci = history[_applied];
-      try {
-        final move = ChessMove.fromUci(uci);
-        final applied = _engine.apply(move);
-        final meta = appliedMetaFor(orch, _applied + 1);
-        _moves.add(applied.san);
+    // Shared replay core; the watch-only hooks (legal intake, finish-once)
+    // stay in this screen.
+    final replay = replayMoves(
+      orch: orch,
+      engine: _engine,
+      applied: _applied,
+      onApplied: (index, uci, move, receipt, meta) {
+        _moves.add(receipt.san);
         _phrases.add(meta.isFallback ? null : meta.phrase);
         _fallbacks.add(meta.isFallback);
         _fens.add(_engine.toFen());
         _lastFrom = move.from.name;
         _lastTo = move.to.name;
-        _applied++;
-        changed = true;
-      } catch (e) {
-        _addActivity(
-          ActivityEvent(
-            kind: ActivityEventKind.error,
-            message: 'Mirror sync failed on $uci: $e',
-          ),
-        );
-        break;
-      }
+      },
+    );
+    _applied = replay.applied;
+    if (replay.hasError) {
+      _addActivity(
+        ActivityEvent(
+          kind: ActivityEventKind.error,
+          message:
+              'Mirror sync failed on ${replay.failedUci}: ${replay.error}',
+        ),
+      );
     }
-    if (changed && mounted) {
+    if (replay.changed && mounted) {
       setState(() {});
       orch.setPosition(
         _engine.toFen(),
@@ -665,8 +665,25 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
         _syncBoard();
         if (mounted) setState(() {});
       }
+    } catch (e) {
+      // The pump runs fire-and-forget; never let a provider/dispatch error
+      // escape as an unhandled async error (which would leave the board
+      // silently idle).
+      _addActivity(
+        ActivityEvent(
+          kind: ActivityEventKind.error,
+          message: 'Watch loop failed: $e',
+        ),
+      );
     } finally {
       _pumping = false;
+      // A Stop→Start (or any game replacement) can retire `orch` while this
+      // loop still owns the guard, in which case the replacement's kick-off
+      // `_pump()` was dropped at the `_pumping` check and the new game would
+      // sit idle until the user paused/resumed. Hand the guard over.
+      if (mounted && !identical(_orch, orch)) {
+        unawaited(_pump());
+      }
       if (mounted) setState(() {});
     }
   }

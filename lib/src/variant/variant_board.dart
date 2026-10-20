@@ -215,16 +215,18 @@ class VariantPiece {
   /// Deserializes; throws [FormatException] on missing/unknown fields.
   factory VariantPiece.fromJson(Map<String, Object?> json) {
     final id = json['id'];
-    final type = parsePieceType(json['type'] as String?);
-    final color = parsePieceColor(json['color'] as String?);
+    final rawType = json['type'];
+    final rawColor = json['color'];
+    final type = rawType is String ? parsePieceType(rawType) : null;
+    final color = rawColor is String ? parsePieceColor(rawColor) : null;
     if (id is! String || id.isEmpty) {
       throw const FormatException('VariantPiece needs a non-empty id');
     }
     if (type == null) {
-      throw FormatException('Unknown piece type: ${json['type']}');
+      throw FormatException('Unknown piece type: $rawType');
     }
     if (color == null) {
-      throw FormatException('Unknown piece color: ${json['color']}');
+      throw FormatException('Unknown piece color: $rawColor');
     }
     return VariantPiece(id: id, type: type, color: color);
   }
@@ -392,6 +394,19 @@ class VariantBoard {
   /// `toStandardPosition() != null`).
   bool canRepresentAsFen() => toStandardPosition() != null;
 
+  /// Castling rights implied by the current home-square king/rook geometry.
+  ///
+  /// Empty when [castlingInvalid] (the board records that the variant has no
+  /// usable king/rook geometry). Exposed so prompt/replay code can show the
+  /// same state the standard converter would use.
+  Set<String> get castlingRights {
+    if (castlingInvalid) return const <String>{};
+    return _rightsFromGeometry(<Square, Piece>{
+      for (final e in squares.entries)
+        e.key: Piece(e.value.type, e.value.color),
+    });
+  }
+
   /// Best-effort FEN export; `null` when the board is not representable.
   ///
   /// Rendered locally (not via `chess/fen.dart`): piece placement, side to
@@ -507,9 +522,13 @@ class VariantBoard {
   /// Duplicate squares or duplicate piece ids are rejected to protect the
   /// board invariants.
   factory VariantBoard.fromJson(Map<String, Object?> json) {
-    final side = parsePieceColor(json['sideToMove'] as String?);
+    final sideValue = json['sideToMove'];
+    if (sideValue is! String) {
+      throw FormatException('Unknown sideToMove: $sideValue');
+    }
+    final side = parsePieceColor(sideValue);
     if (side == null) {
-      throw FormatException('Unknown sideToMove: ${json['sideToMove']}');
+      throw FormatException('Unknown sideToMove: $sideValue');
     }
     final pieces = json['pieces'];
     if (pieces is! List) {
@@ -522,9 +541,13 @@ class VariantBoard {
         throw const FormatException('Piece entry must be a map');
       }
       final entry = Map<String, Object?>.from(raw);
-      final sq = tryParseSquare(entry.remove('square') as String?);
+      final squareValue = entry.remove('square');
+      if (squareValue is! String) {
+        throw FormatException('Unknown square: $squareValue');
+      }
+      final sq = tryParseSquare(squareValue);
       if (sq == null) {
-        throw FormatException('Unknown square: ${raw['square']}');
+        throw FormatException('Unknown square: $squareValue');
       }
       if (m.containsKey(sq)) {
         throw FormatException('Duplicate piece on square ${sq.name}');
@@ -535,21 +558,41 @@ class VariantBoard {
       }
       m[sq] = piece;
     }
-    final moveNumber = (json['moveNumber'] as num?)?.toInt() ?? 1;
-    final halfmove = (json['halfmove'] as num?)?.toInt() ?? 0;
+    int intField(String key, int fallback) {
+      final value = json[key];
+      if (value == null) return fallback;
+      if (value is num) return value.toInt();
+      if (value is String) {
+        final parsed = int.tryParse(value);
+        if (parsed != null) return parsed;
+      }
+      throw FormatException('VariantBoard.$key must be an integer: $value');
+    }
+
+    final moveNumber = intField('moveNumber', 1);
+    final halfmove = intField('halfmove', 0);
     if (moveNumber < 1) {
       throw FormatException('moveNumber out of range: $moveNumber');
     }
     if (halfmove < 0) {
       throw FormatException('halfmove out of range: $halfmove');
     }
+    final castlingInvalid = json['castlingInvalid'];
+    if (castlingInvalid != null && castlingInvalid is! bool) {
+      throw FormatException(
+          'castlingInvalid must be a bool: $castlingInvalid');
+    }
+    final notes = json['notes'];
+    if (notes != null && notes is! String) {
+      throw FormatException('notes must be a String: $notes');
+    }
     return VariantBoard(
       squares: m,
       sideToMove: side,
       moveNumber: moveNumber,
       halfmove: halfmove,
-      castlingInvalid: json['castlingInvalid'] as bool? ?? false,
-      notes: json['notes'] as String? ?? '',
+      castlingInvalid: castlingInvalid as bool? ?? false,
+      notes: notes as String? ?? '',
     );
   }
 

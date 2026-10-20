@@ -45,7 +45,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../chess/engine.dart' as chess_eng;
 import '../../chess/fen.dart';
-import '../../chess/move.dart';
 import '../../chess/piece.dart';
 import '../../chess/position.dart';
 import '../../chess/square.dart';
@@ -55,6 +54,7 @@ import '../../game/orchestrator.dart';
 import '../../theme/piece_theme.dart';
 import '../../theme/registry.dart';
 import '../backend_bridge.dart';
+import '../game_mirror.dart';
 import '../ui_models.dart';
 import '../widgets/activity_panel.dart';
 import '../widgets/boards.dart';
@@ -241,35 +241,32 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
   void _syncBoard() {
     final orch = _orch;
     if (orch == null) return;
-    final history = orch.moveHistory;
-    var changed = false;
-    while (_applied < history.length) {
-      final uci = history[_applied];
-      try {
-        final move = ChessMove.fromUci(uci);
-        final from = move.from.name;
-        final to = move.to.name;
-        final applied = _engine.apply(move);
-        final meta = appliedMetaFor(orch, _applied + 1);
-        _sans.add(applied.san);
+    // Shared replay core: parse/apply/metadata only. The play-specific hooks
+    // (cursor reset, legal intake, AI reply) stay here.
+    final replay = replayMoves(
+      orch: orch,
+      engine: _engine,
+      applied: _applied,
+      onApplied: (index, uci, move, receipt, meta) {
+        _sans.add(receipt.san);
         _phrases.add(meta.isFallback ? null : meta.phrase);
         _fallbacks.add(meta.isFallback);
         _fens.add(_engine.toFen());
-        _lastFrom = from;
-        _lastTo = to;
-        _applied++;
-        changed = true;
-      } catch (e) {
-        _addActivity(
-          ActivityEvent(
-            kind: ActivityEventKind.error,
-            message: 'Mirror sync failed on $uci: $e',
-          ),
-        );
-        break;
-      }
+        _lastFrom = move.from.name;
+        _lastTo = move.to.name;
+      },
+    );
+    _applied = replay.applied;
+    if (replay.hasError) {
+      _addActivity(
+        ActivityEvent(
+          kind: ActivityEventKind.error,
+          message:
+              'Mirror sync failed on ${replay.failedUci}: ${replay.error}',
+        ),
+      );
     }
-    if (changed && mounted) {
+    if (replay.changed && mounted) {
       setState(() {
         _viewPly = _sans.length;
         _selected = null;
@@ -625,7 +622,9 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
           'b',
           providerOverride: provider,
         );
-        if (!mounted) return;
+        // A "New game" may have replaced the orchestrator while this turn was
+        // in flight; bail out before touching the new game's state.
+        if (!mounted || !identical(_orch, orch)) return;
         if (result != null) {
           final grew = orch.moveHistory.length > before;
           _pending.add(
@@ -655,9 +654,23 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
       } finally {
         closeProvider(provider);
       }
+    } catch (e) {
+      // This turn is started fire-and-forget (move dispatch and button); a
+      // thrown provider/resolve error must surface in the UI, not escape as
+      // an unhandled async error.
+      if (mounted && identical(_orch, orch)) {
+        final message = 'AI turn crashed: $e';
+        _addActivity(
+          ActivityEvent(kind: ActivityEventKind.error, message: message),
+        );
+        setState(() => _aiError = message);
+      }
     } finally {
-      _aiInFlight = false;
-      if (mounted) {
+      // Only clear the flags if this turn still belongs to the live game; a
+      // stale turn settling after "New game" must not hide the new spinner or
+      // release the new game's reentrancy guard.
+      if (mounted && identical(_orch, orch)) {
+        _aiInFlight = false;
         setState(() => _thinking = false);
       }
     }

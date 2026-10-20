@@ -99,6 +99,10 @@ class QualityAssessment {
   /// False when no evaluation backed this assessment.
   final bool supported;
 
+  /// Extra provenance labels (`illegal-attempt`, `king-capture`,
+  /// `instant-loss`, `variant-heuristic`, …). UI-only; never affects tiers.
+  final List<String> tags;
+
   /// Creates an assessment.
   const QualityAssessment({
     required this.quality,
@@ -107,6 +111,7 @@ class QualityAssessment {
     this.beforeCp,
     this.afterCp,
     this.supported = true,
+    this.tags = const <String>[],
   });
 
   /// Serializes with stable field ordering.
@@ -117,6 +122,7 @@ class QualityAssessment {
         'beforeCp': beforeCp,
         'afterCp': afterCp,
         'supported': supported,
+        'tags': tags,
       };
 
   @override

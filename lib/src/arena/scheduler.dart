@@ -160,11 +160,21 @@ class ArenaScheduler {
   final StreamController<SchedulerProgress> _progress =
       StreamController<SchedulerProgress>.broadcast();
 
+  /// Safety net for a single game whose future never settles (stalled
+  /// provider/engine, deadlocked process). Normal games end via the chess
+  /// clock long before this; on expiry the game is marked `failed` and the
+  /// tournament continues.
+  final Duration gameTimeout;
+
   bool _cancelled = false;
   bool _running = false;
 
   /// Creates a scheduler for [state] using [gameFactory].
-  ArenaScheduler({required this.state, required this.gameFactory});
+  ArenaScheduler({
+    required this.state,
+    required this.gameFactory,
+    this.gameTimeout = const Duration(hours: 1),
+  });
 
   /// Requests cancellation. Running games finish; pending games are
   /// marked `cancelled`. Safe to call multiple times.
@@ -189,8 +199,15 @@ class ArenaScheduler {
     int? seed,
     String gameIdPrefix = 'game',
   }) {
-    assert(agentIds.length >= 2, 'need >= 2 agents');
-    assert(totalGames >= 1, 'need >= 1 game');
+    // Runtime checks, not asserts: these inputs are UI-provided, and a
+    // release build must fail loudly instead of dividing by an empty pair
+    // list below.
+    if (agentIds.length < 2) {
+      throw ArgumentError.value(agentIds, 'agentIds', 'need >= 2 agents');
+    }
+    if (totalGames < 1) {
+      throw ArgumentError.value(totalGames, 'totalGames', 'need >= 1 game');
+    }
     final random = seed == null ? Random() : Random(seed);
 
     // All unordered pairs, lexicographically ordered for determinism.
@@ -200,6 +217,13 @@ class ArenaScheduler {
       for (var j = i + 1; j < sorted.length; j++) {
         pairs.add(<String>[sorted[i], sorted[j]]);
       }
+    }
+    if (pairs.isEmpty) {
+      throw ArgumentError.value(
+        agentIds,
+        'agentIds',
+        'need >= 2 agents to form a pairing',
+      );
     }
 
     // Round-robin over pairs; per-pair occurrence count drives color swap.
@@ -332,10 +356,19 @@ class ArenaScheduler {
         blackAgentId: ref.blackAgentId,
         roundIndex: index,
       );
-      final summary = await gameFactory.runSingleGame(
-        pairing,
-        gameSeed(state.config.seed, index < 0 ? 0 : index),
-      );
+      final summary = await gameFactory
+          .runSingleGame(
+            pairing,
+            gameSeed(state.config.seed, index < 0 ? 0 : index),
+          )
+          .timeout(
+            gameTimeout,
+            onTimeout: () => throw TimeoutException(
+              'Game ${ref.gameId} exceeded the '
+              '${gameTimeout.inMinutes}-minute wall-clock budget',
+              gameTimeout,
+            ),
+          );
       if (summary.infraFailure != null) {
         ref
           ..status = TournamentGameStatus.failed

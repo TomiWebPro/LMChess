@@ -15,7 +15,12 @@ import '../ui_models.dart';
 /// App dashboard with navigation cards to every destination.
 class HomeScreen extends ConsumerWidget {
   /// Creates the home screen.
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.onOpen});
+
+  /// When provided, cards select the shell destination instead of pushing a
+  /// named route. Pushing would instantiate a second live copy of the same
+  /// screen alongside the shell's `IndexedStack` tab.
+  final ValueChanged<String>? onOpen;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -40,45 +45,52 @@ class HomeScreen extends ConsumerWidget {
                 mainAxisSpacing: 12,
                 crossAxisSpacing: 12,
                 childAspectRatio: 1.25,
-                children: const <Widget>[
+                children: <Widget>[
                   _NavCard(
                     route: ArenaRoutes.play,
+                    onOpen: onOpen,
                     icon: Icons.sports_esports_outlined,
                     title: 'Play',
                     subtitle: 'Human vs AI over the board',
                   ),
                   _NavCard(
                     route: ArenaRoutes.watch,
+                    onOpen: onOpen,
                     icon: Icons.visibility_outlined,
                     title: 'Watch',
                     subtitle: 'AI vs AI with live reasoning',
                   ),
                   _NavCard(
                     route: ArenaRoutes.arena,
+                    onOpen: onOpen,
                     icon: Icons.emoji_events_outlined,
                     title: 'Arena',
                     subtitle: 'Tournaments + mini boards',
                   ),
                   _NavCard(
                     route: ArenaRoutes.stats,
+                    onOpen: onOpen,
                     icon: Icons.bar_chart_outlined,
                     title: 'Stats',
                     subtitle: 'Outcomes, errors, latency',
                   ),
                   _NavCard(
                     route: ArenaRoutes.review,
+                    onOpen: onOpen,
                     icon: Icons.replay_outlined,
                     title: 'Review',
                     subtitle: 'Replay, evals, key moments',
                   ),
                   _NavCard(
                     route: ArenaRoutes.agents,
+                    onOpen: onOpen,
                     icon: Icons.smart_toy_outlined,
                     title: 'Agents',
                     subtitle: 'Providers, models, prompts',
                   ),
                   _NavCard(
                     route: ArenaRoutes.settings,
+                    onOpen: onOpen,
                     icon: Icons.palette_outlined,
                     title: 'Settings',
                     subtitle: 'Board + piece themes',
@@ -160,10 +172,14 @@ class _NavCard extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.subtitle,
+    this.onOpen,
   });
 
-  /// Route pushed on tap.
+  /// Destination selected on tap.
   final String route;
+
+  /// Optional shell-tab selector; when null the route is pushed.
+  final ValueChanged<String>? onOpen;
 
   /// Card icon.
   final IconData icon;
@@ -180,7 +196,14 @@ class _NavCard extends StatelessWidget {
     return Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => Navigator.pushNamed(context, route),
+        onTap: () {
+          final open = onOpen;
+          if (open != null) {
+            open(route);
+          } else {
+            Navigator.pushNamed(context, route);
+          }
+        },
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Column(

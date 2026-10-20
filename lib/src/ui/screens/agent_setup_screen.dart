@@ -79,6 +79,11 @@ class _AgentSetupScreenState extends ConsumerState<AgentSetupScreen> {
   /// Whether the last test succeeded (drives banner color).
   bool _testOk = false;
 
+  /// Whether a save is in flight. Guards the Save/Create button so a
+  /// double-tap cannot pass the async secure-storage await twice and pop two
+  /// routes (or mint two key refs).
+  bool _saving = false;
+
   @override
   void initState() {
     super.initState();
@@ -283,7 +288,7 @@ class _AgentSetupScreenState extends ConsumerState<AgentSetupScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed: _save,
+                      onPressed: _saving ? null : _save,
                       icon: const Icon(Icons.save_outlined),
                       label: Text(isEdit ? 'Save' : 'Create'),
                     ),
@@ -308,27 +313,27 @@ class _AgentSetupScreenState extends ConsumerState<AgentSetupScreen> {
       children: <Widget>[
         Text('API key', style: theme.textTheme.labelLarge),
         const SizedBox(height: 4),
-        Semantics(
-          label: 'API key, write-only, stored in secure storage',
-          textField: true,
-          child: TextField(
-            controller: _apiKey,
-            obscureText: true,
-            enableSuggestions: false,
-            autocorrect: false,
-            decoration: InputDecoration(
-              labelText: 'API key (write-only)',
-              helperText: 'Encrypted on device; never shown again.',
-              helperMaxLines: 2,
-              border: const OutlineInputBorder(),
-              suffixIcon: _hasStoredKey
-                  ? IconButton(
-                      tooltip: 'Clear stored key',
-                      onPressed: _testing ? null : _clearApiKey,
-                      icon: const Icon(Icons.delete_outline),
-                    )
-                  : null,
-            ),
+        // No extra Semantics(textField: true) wrapper: TextField/EditableText
+        // already publishes a text-field node with this label, and nesting a
+        // second one produced an ambiguous double text-field node in the
+        // accessibility tree.
+        TextField(
+          controller: _apiKey,
+          obscureText: true,
+          enableSuggestions: false,
+          autocorrect: false,
+          decoration: InputDecoration(
+            labelText: 'API key (write-only, stored securely)',
+            helperText: 'Encrypted on device; never shown again.',
+            helperMaxLines: 2,
+            border: const OutlineInputBorder(),
+            suffixIcon: _hasStoredKey
+                ? IconButton(
+                    tooltip: 'Clear stored key',
+                    onPressed: _testing ? null : _clearApiKey,
+                    icon: const Icon(Icons.delete_outline),
+                  )
+                : null,
           ),
         ),
         const SizedBox(height: 4),
@@ -361,6 +366,7 @@ class _AgentSetupScreenState extends ConsumerState<AgentSetupScreen> {
   /// Builds the config from the form, stores a typed key if present, and
   /// upserts into the catalog. Pops afterwards (create and edit alike).
   Future<void> _save() async {
+    if (_saving) return;
     final config = _formConfig();
     final problems = config.validate();
     if (problems.isNotEmpty) {
@@ -368,30 +374,35 @@ class _AgentSetupScreenState extends ConsumerState<AgentSetupScreen> {
           .showSnackBar(SnackBar(content: Text(problems.join(' '))));
       return;
     }
-    final secret = _apiKey.text.trim();
-    var keyRef = _apiKeyRef;
-    var hasKey = _hasStoredKey;
-    if (secret.isNotEmpty) {
-      keyRef ??= const Uuid().v4();
-      try {
-        await _keyStore.writeApiKey(keyRef, secret);
-        hasKey = true;
-      } catch (_) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not save the API key to secure storage.'),
-          ),
-        );
-        return;
+    setState(() => _saving = true);
+    try {
+      final secret = _apiKey.text.trim();
+      var keyRef = _apiKeyRef;
+      var hasKey = _hasStoredKey;
+      if (secret.isNotEmpty) {
+        keyRef ??= const Uuid().v4();
+        try {
+          await _keyStore.writeApiKey(keyRef, secret);
+          hasKey = true;
+        } catch (_) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not save the API key to secure storage.'),
+            ),
+          );
+          return;
+        }
       }
+      if (!mounted) return;
+      final saved = config.copyWith(apiKeyRef: hasKey ? keyRef : null);
+      ref.read(agentListProvider).upsertAgent(saved);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Saved ${saved.name}')));
+      Navigator.maybeOf(context)?.pop();
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
-    if (!mounted) return;
-    final saved = config.copyWith(apiKeyRef: hasKey ? keyRef : null);
-    ref.read(agentListProvider).upsertAgent(saved);
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text('Saved ${saved.name}')));
-    Navigator.maybeOf(context)?.pop();
   }
 
   /// Deletes the stored secret (immediately) and clears the local indicator.

@@ -220,20 +220,29 @@ class Chessboard extends StatelessWidget {
     final isTarget = legalTargets.contains(square);
     final badge = variantBadges[square];
     final labelColor = boardTheme.labelColorFor(isLight);
+    final canTap = interactive && onTapSquare != null;
 
     return Positioned(
       left: displayCol * cell,
       top: displayRow * cell,
       width: cell,
       height: cell,
+      // One real semantics node per square. `container` keeps the 64 cells
+      // from collapsing into a single ancestor node, while `excludeSemantics`
+      // hides the piece glyph / coordinate labels — so the per-cell
+      // AnimatedSwitcher can animate without adding or removing semantics
+      // nodes mid-frame (which produced engine AXTree deserialization
+      // errors). The tap action is declared here so it survives the
+      // descendant exclusion.
       child: Semantics(
-        button: interactive && onTapSquare != null,
+        container: true,
+        excludeSemantics: true,
+        button: canTap,
         label: _semanticLabel(square, raw),
+        onTap: canTap ? () => onTapSquare!(square) : null,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: interactive && onTapSquare != null
-              ? () => onTapSquare!(square)
-              : null,
+          onTap: canTap ? () => onTapSquare!(square) : null,
           child: Stack(
             fit: StackFit.expand,
             children: <Widget>[

@@ -110,6 +110,7 @@ import '../review/wintr_review.dart';
 import '../stats/event_log.dart' as stats_log;
 import '../storage/secure_key_store.dart';
 import '../variant/variant_board.dart';
+import '../variant/variant_replay.dart';
 import 'ui_models.dart' as ui;
 import 'widgets/activity_panel.dart';
 
@@ -349,6 +350,17 @@ Map<String, String> squaresOf(Position position) {
   return <String, String>{
     for (final entry in position.board.entries)
       entry.key.name: entry.value.code,
+  };
+}
+
+/// Renders a [VariantBoard] as a [Chessboard] `squares` map.
+///
+/// Uses the same `wK`…`bP` encoding as [squaresOf], including duplicate/missing
+/// kings (the board does not assume exactly one king per side).
+Map<String, String> squaresOfVariantBoard(VariantBoard board) {
+  return <String, String>{
+    for (final entry in board.squares.entries)
+      entry.key.name: '${colorCode(entry.value.color)}${entry.value.type.letter}',
   };
 }
 
@@ -667,6 +679,12 @@ abstract class StatsLog {
   static final _TelemetryNotifier _changes = _TelemetryNotifier();
   static const Uuid _uuid = Uuid();
 
+  /// Upper bound on retained in-memory records (oldest evicted first).
+  ///
+  /// The event-store mirror is capped independently; this keeps a long
+  /// session with many games/tournaments from growing without limit.
+  static const int maxRetainedRecords = 20000;
+
   /// All logged records (unmodifiable, insertion order).
   static List<stats_log.GameEventRecord> get records =>
       List<stats_log.GameEventRecord>.unmodifiable(_records);
@@ -698,6 +716,9 @@ abstract class StatsLog {
   /// Appends [record] to the log and mirrors it into [store].
   static void _append(stats_log.GameEventRecord record) {
     _records.add(record);
+    if (_records.length > maxRetainedRecords) {
+      _records.removeRange(0, _records.length - maxRetainedRecords);
+    }
     _store.append(record);
     _changes.bump();
   }
@@ -911,6 +932,53 @@ abstract class ReviewLog {
     _games.insert(0, game);
     if (_games.length > 20) {
       _games.removeRange(20, _games.length);
+    }
+    _changes.bump();
+  }
+
+  /// Clears the log.
+  static void clear() {
+    _games.clear();
+    _changes.bump();
+  }
+}
+
+/// Process-local log of chaotic-variant replay records (latest first, capped).
+///
+/// Kept separate from [ReviewLog] because variant records are JSON/board-chain
+/// shaped and must not be forced into the FEN-based standard review model.
+abstract class VariantReviewLog {
+  static final List<VariantGameRecord> _games = <VariantGameRecord>[];
+  static final _TelemetryNotifier _changes = _TelemetryNotifier();
+
+  /// Maximum retained games (memory bound).
+  static const int maxGames = 20;
+
+  /// Logged games, latest first (unmodifiable).
+  static List<VariantGameRecord> get games =>
+      List<VariantGameRecord>.unmodifiable(_games);
+
+  /// Latest game, or `null` when nothing has been recorded yet.
+  static VariantGameRecord? get latest =>
+      _games.isEmpty ? null : _games.first;
+
+  /// Looks up a game by id, or `null`.
+  static VariantGameRecord? byId(String id) {
+    for (final game in _games) {
+      if (game.id == id) return game;
+    }
+    return null;
+  }
+
+  /// Notifies after [record]/[clear].
+  static Listenable get changes => _changes;
+
+  /// Records [game], replacing any same-id entry and capping at [maxGames].
+  static void record(VariantGameRecord game) {
+    _games.removeWhere((g) => g.id == game.id);
+    _games.insert(0, game);
+    if (_games.length > maxGames) {
+      _games.removeRange(maxGames, _games.length);
     }
     _changes.bump();
   }
@@ -1274,14 +1342,14 @@ bool isTerminalOrchestratorState(gs.OrchestratorState state) {
 /// Phrase/fallback metadata for the orchestrator's `moveApplied` entry
 /// [moveIndex] (1-based, matching the event payload's `moveIndex`).
 ///
-/// TODO(shared-pump): play/watch/arena each carry their own sequential
-/// "pump" loop (bind agent → request turn → replay UCIs onto a mirror
-/// position → report terminal) with subtle ordering differences documented
-/// in each screen. Extracting a single `GameMirror`/pump helper is
-/// deliberately **not** done in this pass: byte-identical behavior is not
-/// proven and the three loops diverge on chaotic handling, cancellation and
-/// per-turn stats buffering, so a shared abstraction risks desync bugs.
-/// Revisit only with a behavior-locked test around all three.
+/// **Design note (shared pump):** play/watch/arena each carry their own
+/// sequential "pump" loop (bind agent → request turn → replay UCIs onto a
+/// mirror position → report terminal). The replay step itself is shared via
+/// `game_mirror.dart`'s `replayMoves` (parse/apply/metadata + failure
+/// reporting); the loops and their post-sync hooks (finish/AI-reply/arena
+/// touch) stay local because they diverge on chaotic handling, cancellation
+/// and per-turn stats buffering. `test/game_mirror_test.dart` locks the
+/// shared core's behavior for all three recording shapes.
 ///
 /// Scans [orch]'s persisted [GameOrchestrator.eventLog] backwards for the
 /// matching event and returns its `phrase` (null when absent or when the
@@ -1323,6 +1391,41 @@ Future<void> retireOrchestrator(
     orch.stop(reason: 'superseded');
   }
   orch?.dispose();
+}
+
+/// Extracts the raw tool-call JSON from the last completed call in [result].
+///
+/// Replay/audit uses the exact model payload, not a re-serialized move. Falls
+/// back to [AgentTurnResult.selectedMove] when the event stream did not retain
+/// the raw string. Never throws; unparseable JSON yields a null map but keeps
+/// the raw string.
+({String? rawToolArgsJson, Map<String, Object?>? rawToolCallJson})
+    rawToolCallFrom(AgentTurnResult? result) {
+  if (result == null) {
+    return (rawToolArgsJson: null, rawToolCallJson: null);
+  }
+  for (var i = result.events.length - 1; i >= 0; i--) {
+    final event = result.events[i];
+    if (event.kind != StreamEventKind.toolCallCompleted) continue;
+    final raw = event.toolArgsJson;
+    if (raw == null || raw.isEmpty) continue;
+    Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } catch (_) {
+      decoded = null;
+    }
+    return (
+      rawToolArgsJson: raw,
+      rawToolCallJson:
+          decoded is Map ? Map<String, Object?>.from(decoded) : null,
+    );
+  }
+  final move = result.selectedMove;
+  return (
+    rawToolArgsJson: move == null ? null : jsonEncode(move.toJson()),
+    rawToolCallJson: move?.toJson(),
+  );
 }
 
 /// One turn's stats-backend attribution, buffered per game and flushed at

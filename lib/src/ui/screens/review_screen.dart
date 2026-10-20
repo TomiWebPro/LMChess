@@ -41,6 +41,8 @@ import '../backend_bridge.dart';
 import '../widgets/activity_panel.dart' show redactSecrets;
 import '../widgets/boards.dart';
 import '../widgets/chessboard.dart';
+import '../widgets/tab_visibility.dart';
+import 'variant_replay_screen.dart';
 
 /// Post-game review: replay, evals, move record, commentary, accuracy.
 class ReviewScreen extends ConsumerStatefulWidget {
@@ -74,18 +76,40 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
   /// Failure text of the last run, if any.
   String? _error;
 
+  /// Evaluator provenance for the displayed report. Kept separately so the
+  /// banner/graph stay honest after [_suspend] disposes the handle while the
+  /// tab is hidden.
+  String? _reportSource;
+  String? _reportFallbackReason;
+
   /// Whether a review run is in flight.
   bool _loading = false;
 
   /// Run token: invalidates stale async completions.
   int _runToken = 0;
 
+  /// Whether the shell's Review tab is currently visible.
+  bool _visible = true;
+
   @override
   void initState() {
     super.initState();
     ReviewLog.changes.addListener(_onLogChanged);
-    final games = ReviewLog.games;
-    if (games.isNotEmpty) _selectGame(games.first);
+    // Selection and the review run are deferred to [didChangeDependencies]:
+    // the shell builds every tab eagerly inside its IndexedStack, and this
+    // screen must not spawn Stockfish while its tab is hidden.
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final visible = TabVisibility.of(context);
+    _visible = visible;
+    if (!visible) {
+      _suspend();
+      return;
+    }
+    _ensureSelected(run: true);
   }
 
   @override
@@ -98,33 +122,68 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
     super.dispose();
   }
 
+  /// Selects the newest record when none/stale is selected; with [run],
+  /// starts a review when the current selection has no report yet.
+  void _ensureSelected({required bool run}) {
+    final games = ReviewLog.games;
+    if (games.isEmpty) {
+      if (_gameId != null || _game != null) {
+        setState(() {
+          _game = null;
+          _gameId = null;
+          _fens = const <String>[];
+          _report = null;
+          _error = null;
+          _reportSource = null;
+          _reportFallbackReason = null;
+        });
+      }
+      return;
+    }
+    final stillListed = _gameId != null && games.any((g) => g.id == _gameId);
+    if (!stillListed) {
+      _selectGame(games.first, run: run);
+    } else if (run && _report == null && _error == null && !_loading) {
+      _runReview();
+    }
+  }
+
+  /// Stops in-flight review work and releases the evaluator (Stockfish process
+  /// included) while this tab is hidden.
+  void _suspend() {
+    _runToken++; // Invalidate a completion that is still in flight.
+    final handle = _handle;
+    _handle = null;
+    if (handle != null) unawaited(handle.dispose());
+    if (_loading) {
+      setState(() => _loading = false);
+    }
+  }
+
   /// Re-reads the log when games are recorded: follows the newest entry
   /// while the user has not picked an older one, and drops a selection
   /// whose record fell off the capped log.
   void _onLogChanged() {
-    final games = ReviewLog.games;
     if (!mounted) return;
+    final games = ReviewLog.games;
     if (games.isEmpty) {
-      setState(() {
-        _game = null;
-        _gameId = null;
-        _fens = const <String>[];
-        _report = null;
-        _error = null;
-      });
+      _ensureSelected(run: false);
       return;
     }
     final stillListed =
         _gameId != null && games.any((g) => g.id == _gameId);
     if (!stillListed) {
-      _selectGame(games.first);
+      // Do not spawn a review for a hidden tab; [didChangeDependencies] will
+      // run it when the tab becomes visible again.
+      _selectGame(games.first, run: _visible);
     } else {
       setState(() {});
     }
   }
 
-  /// Selects [game], resets the cursor and kicks off a fresh review run.
-  void _selectGame(ReviewGame game) {
+  /// Selects [game], resets the cursor and — when [run] — kicks off a fresh
+  /// review run.
+  void _selectGame(ReviewGame game, {bool run = true}) {
     setState(() {
       _game = game;
       _gameId = game.id;
@@ -132,8 +191,10 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
       _ply = 0;
       _report = null;
       _error = null;
+      _reportSource = null;
+      _reportFallbackReason = null;
     });
-    _runReview();
+    if (run) _runReview();
   }
 
   /// Re-checks the log and keeps the selection when it still exists.
@@ -146,11 +207,13 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
         _fens = const <String>[];
         _report = null;
         _error = null;
+        _reportSource = null;
+        _reportFallbackReason = null;
       });
       return;
     }
     if (_gameId == null || !games.any((g) => g.id == _gameId)) {
-      _selectGame(games.first);
+      _selectGame(games.first, run: _visible);
       return;
     }
     setState(() {});
@@ -162,6 +225,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
   /// disposes the previous handle, and an outdated run disposes its own
   /// handle without touching the current one.
   Future<void> _runReview() async {
+    if (!_visible) return; // Hidden tab: no evaluator work.
     final game = _game;
     final token = ++_runToken;
     if (game == null) {
@@ -187,6 +251,8 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
         return;
       }
       _handle = handle;
+      _reportSource = handle.resolvedSource;
+      _reportFallbackReason = handle.fallbackReason;
       final service = WintrReviewService(evaluator: handle.evaluator);
       final report = await service.reviewGame(reviewInputsFor(game));
       if (!mounted || token != _runToken) return;
@@ -242,6 +308,8 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
             _buildMoveList(game, report),
             const SizedBox(height: 12),
             _buildKeyMoments(report),
+            const SizedBox(height: 12),
+            _buildVariantReplays(),
           ] else
             const Text('Press “Re-run review” to analyze this game.'),
         ],
@@ -251,33 +319,77 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
 
   /// Empty state when nothing has been recorded yet.
   Widget _buildEmptyState() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            const Icon(Icons.replay_outlined, size: 40),
-            const SizedBox(height: 8),
-            Text(
-              'No games recorded yet',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Finish a watch match, a play game, or a standard arena '
-              'tournament game — it lands here for review automatically.',
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            TextButton.icon(
-              onPressed: _refreshList,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Refresh'),
-            ),
-          ],
-        ),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        children: <Widget>[
+          const Icon(Icons.replay_outlined, size: 40),
+          const SizedBox(height: 8),
+          Text(
+            'No standard games recorded yet',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Finish a watch match, a play game, or a standard arena '
+            'tournament game — it lands here for review automatically.',
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: _refreshList,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Refresh'),
+          ),
+          const SizedBox(height: 16),
+          _buildVariantReplays(),
+        ],
       ),
+    );
+  }
+
+  /// Chaotic-variant replays recorded by the arena.
+  ///
+  /// These are engine-free and live in a separate log; they remain available
+  /// even when no standard game has been recorded.
+  Widget _buildVariantReplays() {
+    return ListenableBuilder(
+      listenable: VariantReviewLog.changes,
+      builder: (context, _) {
+        final games = VariantReviewLog.games;
+        if (games.isEmpty) return const SizedBox.shrink();
+        return Card(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              ListTile(
+                leading: const Icon(Icons.auto_awesome_motion_outlined),
+                title: const Text('Chaotic replays'),
+                subtitle: Text(
+                  '${games.length} recorded · lossless board + interpretation chain',
+                ),
+              ),
+              for (final game in games.take(5))
+                ListTile(
+                  leading: const Icon(Icons.replay_outlined),
+                  title: Text('${game.whiteLabel} vs ${game.blackLabel}'),
+                  subtitle: Text(
+                    '${game.outcome}'
+                    '${game.reason.isEmpty ? '' : ' · ${game.reason}'}'
+                    ' · ${game.plies.length} plies',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => VariantReplayScreen(record: game),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -345,8 +457,8 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
   Widget _buildSourceBanner() {
     final theme = Theme.of(context);
     final handle = _handle;
-    final source = handle?.resolvedSource;
-    final reason = handle?.fallbackReason ?? '';
+    final source = handle?.resolvedSource ?? _reportSource;
+    final reason = handle?.fallbackReason ?? _reportFallbackReason ?? '';
     final isStockfish = source == EngineSources.stockfishUci;
     final color = isStockfish
         ? theme.colorScheme.primaryContainer
@@ -554,7 +666,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
       minY = math.min(minY, spot.y - 0.5);
       maxY = math.max(maxY, spot.y + 0.5);
     }
-    final source = _handle?.resolvedSource ?? 'unknown';
+    final source = _handle?.resolvedSource ?? _reportSource ?? 'unknown';
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),

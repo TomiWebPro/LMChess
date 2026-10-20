@@ -44,6 +44,11 @@ class AttemptedMove {
   /// Human-readable phrase describing the attempt, e.g. `Knight takes e5`.
   final String phrase;
 
+  /// Exact tool-argument JSON string as received from the model, when known.
+  ///
+  /// Kept for replay/audit; never interpreted.
+  final String rawToolArgsJson;
+
   /// Creates an attempted move.
   const AttemptedMove({
     required this.fromSquareName,
@@ -51,6 +56,7 @@ class AttemptedMove {
     this.promotion,
     this.rawToolCallJson = const {},
     this.phrase = '',
+    this.rawToolArgsJson = '',
   });
 
   /// Parsed origin square, or `null` when [fromSquareName] is malformed.
@@ -196,6 +202,19 @@ class CandidateInterpretation {
   @override
   String toString() =>
       'Candidate($strategyId, scoreCp=$scoreCp, king=$capturesKing)';
+
+  /// Whether this is the standard-legal application.
+  bool get isStandard => strategyId == 'standard';
+
+  /// Whether this is the closest-legal recovery strategy.
+  bool get isClosestLegal => strategyId == 'closestLegalMove';
+
+  /// Whether this is the do-nothing fallback.
+  bool get isNoopPass => strategyId == 'noopPass';
+
+  /// Whether this is a genuinely creative (non-recovery) reading.
+  bool get isNonStandardInterpretation =>
+      !isStandard && !isClosestLegal && !isNoopPass;
 }
 
 /// The full outcome of interpreting one [AttemptedMove].
@@ -217,6 +236,15 @@ class InterpretedResult {
   /// scoring notes, selection reason).
   final List<String> events;
 
+  /// Detail from the standard-apply attempt (`legal`, or why it failed).
+  final String standardDetail;
+
+  /// Selection policy name used for this result.
+  final String policy;
+
+  /// Selection seed (only `random` uses it, but recorded for replay).
+  final int seed;
+
   /// Creates a result. Lists are copied into unmodifiable lists.
   InterpretedResult({
     required this.attempt,
@@ -224,6 +252,9 @@ class InterpretedResult {
     required List<CandidateInterpretation> candidates,
     required this.selected,
     List<String> events = const [],
+    this.standardDetail = '',
+    this.policy = 'bestStrategic',
+    this.seed = 0,
   })  : candidates = List<CandidateInterpretation>.unmodifiable(candidates),
         events = List<String>.unmodifiable(events);
 }

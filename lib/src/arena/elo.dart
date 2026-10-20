@@ -157,11 +157,14 @@ class EloService {
   final List<EloHistoryEntry> history = <EloHistoryEntry>[];
 
   /// Creates a service with optional custom defaults.
+  ///
+  /// [maxHistory] is clamped to a positive value: a non-positive cap would
+  /// make the eviction loop call `removeAt(0)` on an empty history.
   EloService({
     this.initialRating = 1500.0,
     this.defaultKFactor = 32.0,
-    this.maxHistory = 10000,
-  });
+    int maxHistory = 10000,
+  }) : maxHistory = maxHistory > 0 ? maxHistory : 10000;
 
   Map<String, double> _table(String mode) {
     _checkMode(mode);
@@ -271,7 +274,7 @@ class EloService {
       blackAfter: blackAfter,
       kFactor: k,
     ));
-    while (history.length > maxHistory) {
+    while (maxHistory > 0 && history.length > maxHistory) {
       history.removeAt(0);
     }
     return true;
@@ -359,7 +362,8 @@ class EloService {
           service.history.add(EloHistoryEntry.fromJson(entry));
         }
       }
-      while (service.history.length > service.maxHistory) {
+      while (service.maxHistory > 0 &&
+          service.history.length > service.maxHistory) {
         service.history.removeAt(0);
       }
     }

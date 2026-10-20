@@ -183,7 +183,25 @@ abstract class EmbeddedEngine {
   /// suitable for a settings-screen error line.
   static Future<String> resolveBinary({String? os, Abi? arch}) {
     if (os == null && arch == null) {
-      return _defaultResolution ??= _resolveBinary(os: os, arch: arch);
+      final pending = _defaultResolution;
+      if (pending != null) return pending;
+      final resolution = _resolveBinary(os: os, arch: arch);
+      _defaultResolution = resolution;
+      // A transient failure (AV lock, disk full, interrupted copy) must not
+      // poison the memo for the rest of the session: clear it on error so the
+      // next call retries. The derived future swallows the error here — the
+      // caller still receives it through `resolution`.
+      unawaited(
+        resolution.then<void>(
+          (_) {},
+          onError: (Object _) {
+            if (identical(_defaultResolution, resolution)) {
+              _defaultResolution = null;
+            }
+          },
+        ),
+      );
+      return resolution;
     }
     return _resolveBinary(os: os, arch: arch);
   }
@@ -314,7 +332,10 @@ abstract class EmbeddedEngine {
       );
     }
     if (pinnedSha != null) {
-      final digest = _sha256Hex(bytes);
+      // Hashing ~100 MB on the UI isolate would jank the first frame; run it
+      // off-isolate (compute falls back to synchronous execution on web,
+      // where this path is unreachable anyway).
+      final digest = await compute(_sha256Hex, bytes);
       if (digest != pinnedSha) {
         throw StateError(
           'bundled engine "$assetDir" sha256 $digest does not match pinned '
@@ -367,7 +388,8 @@ abstract class EmbeddedEngine {
     if (!await target.exists()) return false;
     if (await target.length() != size) return false;
     if (pinnedSha == null) return true;
-    return _sha256Hex(await target.readAsBytes()) == pinnedSha;
+    final cached = await target.readAsBytes();
+    return await compute(_sha256Hex, cached) == pinnedSha;
   }
 
   /// Looks up [binary] on `PATH` (`where` on Windows, `which` else).

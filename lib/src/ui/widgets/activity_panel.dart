@@ -164,7 +164,10 @@ class _AgentActivityPanelState extends State<AgentActivityPanel> {
   void didUpdateWidget(covariant AgentActivityPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.events.length != oldWidget.events.length && _autoScroll) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToEnd());
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _scrollToEnd();
+      });
     }
   }
 
@@ -215,6 +218,10 @@ class _AgentActivityPanelState extends State<AgentActivityPanel> {
       child: Row(
         children: <Widget>[
           Semantics(
+            // A container so the visual-only dot owns its own node; without
+            // it `liveRegion` merges into a large ancestor and the whole
+            // panel is re-announced on every streamed token.
+            container: true,
             label: widget.isThinking ? 'Agent is thinking' : 'Agent idle',
             liveRegion: true,
             child: Container(

@@ -325,8 +325,13 @@ class LocalAppStore implements AppRepository, EventStore {
         // (matching _unwrap) so it is not double-wrapped.
         final data = raw['data'];
         final body = data is Map
-            ? Map<String, Object?>.from(data)
-            : Map<String, Object?>.from(raw);
+            ? _coerceStringMap(data)
+            : _coerceStringMap(raw);
+        if (body == null) {
+          report.corrupt.add('$name/$key');
+          _noteCorrupt(name, key);
+          continue;
+        }
         await box.put(key, _wrap(body));
         report.upgraded[name] = (report.upgraded[name] ?? 0) + 1;
         continue;
@@ -349,9 +354,18 @@ class LocalAppStore implements AppRepository, EventStore {
       }
       // Older writer: canonicalize the data map under the current version.
       final data = raw['data'];
-      final canonical = data is Map
-          ? Map<String, Object?>.from(data)
-          : (Map<String, Object?>.from(raw)..remove('v'));
+      Map<String, Object?>? canonical;
+      if (data is Map) {
+        canonical = _coerceStringMap(data);
+      } else {
+        canonical = _coerceStringMap(raw);
+        canonical?.remove('v');
+      }
+      if (canonical == null) {
+        report.corrupt.add('$name/$key');
+        _noteCorrupt(name, key);
+        continue;
+      }
       await box.put(key, _wrap(canonical));
       report.upgraded[name] = (report.upgraded[name] ?? 0) + 1;
     }
@@ -367,11 +381,25 @@ class LocalAppStore implements AppRepository, EventStore {
   static Map<String, Object?>? _unwrap(Object? raw) {
     if (raw is Map) {
       final data = raw['data'];
-      if (data is Map) return Map<String, Object?>.from(data);
+      if (data is Map) return _coerceStringMap(data);
       // Unenveloped legacy entry: accept bare maps as v1.
-      return Map<String, Object?>.from(raw);
+      return _coerceStringMap(raw);
     }
     return null;
+  }
+
+  /// Best-effort `Map<String, Object?>` coercion for persisted maps.
+  ///
+  /// Returns null when [map] has non-String keys (a corrupt/foreign entry), so
+  /// callers treat it as corrupt instead of throwing a `TypeError` mid-migration.
+  static Map<String, Object?>? _coerceStringMap(Map<Object?, Object?> map) {
+    final result = <String, Object?>{};
+    for (final entry in map.entries) {
+      final key = entry.key;
+      if (key is! String) return null;
+      result[key] = entry.value;
+    }
+    return result;
   }
 
   /// Coerces a redacted value to the entity-map type.
@@ -810,6 +838,15 @@ class LocalAppStore implements AppRepository, EventStore {
   Future<int> pruneEvents({Duration? olderThan, int? keepLastN}) async {
     _requireReady();
     if (olderThan == null && keepLastN == null) return 0;
+    // A negative retention count is nonsensical and would underflow the
+    // `list.length - keepLastN` bound below into a RangeError.
+    if (keepLastN != null && keepLastN < 0) {
+      throw ArgumentError.value(
+        keepLastN,
+        'keepLastN',
+        'must be >= 0',
+      );
+    }
     final cutoff = olderThan == null
         ? null
         : DateTime.now().toUtc().subtract(olderThan);

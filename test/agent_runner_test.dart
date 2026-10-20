@@ -66,8 +66,18 @@ AgentConfig _httpAgent({
 const AgentTurnRequest _turn = AgentTurnRequest(
   positionFenOrJson: _startFen,
   legalMovesUci: <String>['e2e4', 'd2d4'],
+  boardText: '(test board)',
   mode: 'standard',
   color: 'w',
+);
+
+const AgentTurnRequest _chaoticTurn = AgentTurnRequest(
+  positionFenOrJson: _startFen,
+  legalMovesUci: <String>['e2e4'],
+  boardText: '(test board)',
+  mode: 'chaotic',
+  color: 'w',
+  acceptAnyMove: true,
 );
 
 /// Instant, deterministic retry backoff.
@@ -182,6 +192,82 @@ void main() {
       expect(result.failure!.kind, FailureKind.timeout);
       expect(isRetryableFailureKind(result.failure!.kind), isTrue);
       expect(sw.elapsedMilliseconds, lessThan(2000));
+    });
+
+    test('a trickling stream still hits the total attempt deadline', () async {
+      // Each delta arrives well inside the old per-gap timeout, so an
+      // inactivity timeout would never fire. The total deadline must.
+      final provider = _FakeProvider((request, call) async* {
+        yield const LlmStreamEvent(kind: StreamEventKind.started);
+        while (true) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+          yield const LlmStreamEvent(
+            kind: StreamEventKind.textDelta,
+            text: 'x',
+          );
+        }
+      });
+      final sw = Stopwatch()..start();
+      final result = await _runner().runTurn(
+        _agent(maxRetries: 0, timeoutMs: 80),
+        _turn,
+        providerOverride: provider,
+      );
+      sw.stop();
+
+      expect(result.failure!.kind, FailureKind.timeout);
+      expect(sw.elapsedMilliseconds, lessThan(2000));
+    });
+  });
+
+  group('standard vs chaotic validation', () {
+    test('acceptAnyMove lets a well-formed illegal attempt through', () async {
+      final provider = _FakeProvider((request, call) async* {
+        yield const LlmStreamEvent(kind: StreamEventKind.started);
+        yield _toolCall('a1', 'h8');
+        yield const LlmStreamEvent(kind: StreamEventKind.done);
+      });
+
+      final accepted = await _runner().runTurn(
+        _agent(maxRetries: 0),
+        _chaoticTurn,
+        providerOverride: provider,
+      );
+      expect(accepted.isSuccess, isTrue);
+      expect(accepted.selectedMove!.uci, 'a1h8');
+
+      final rejected = await _runner().runTurn(
+        _agent(maxRetries: 0),
+        _turn,
+        providerOverride: provider,
+      );
+      expect(rejected.isSuccess, isFalse);
+      expect(rejected.failure!.kind, FailureKind.illegalMove);
+    });
+
+    test('king-to-rook castling is normalized when the castle is legal',
+        () async {
+      const castleTurn = AgentTurnRequest(
+        positionFenOrJson: _startFen,
+        legalMovesUci: <String>['e1g1'],
+        boardText: '(test board)',
+        mode: 'standard',
+        color: 'w',
+        castlingRights: 'KQkq',
+      );
+      final provider = _FakeProvider((request, call) async* {
+        yield const LlmStreamEvent(kind: StreamEventKind.started);
+        yield _toolCall('e1', 'h1');
+        yield const LlmStreamEvent(kind: StreamEventKind.done);
+      });
+
+      final result = await _runner().runTurn(
+        _agent(maxRetries: 0),
+        castleTurn,
+        providerOverride: provider,
+      );
+      expect(result.isSuccess, isTrue);
+      expect(result.selectedMove!.uci, 'e1g1');
     });
   });
 

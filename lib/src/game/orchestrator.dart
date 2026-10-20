@@ -42,6 +42,8 @@ import 'package:http/http.dart' as http;
 
 import '../agent/agent_config.dart';
 import '../agent/agent_runner.dart';
+import '../chess/fen.dart';
+import '../llm/prompt_board.dart';
 import '../llm/provider.dart';
 import '../llm/validation.dart';
 import 'clock.dart';
@@ -202,6 +204,12 @@ class GameOrchestrator extends ChangeNotifier {
   /// Orchestrator-side discard only — [AgentRunner]'s signature is owned
   /// by another agent and left unchanged.
   int _generation = 0;
+
+  /// Cooperative cancellation handle for the in-flight AI turn, handed to
+  /// [AgentRunner.runTurn] so `stop`/`resign`/`reportTerminal`/`dispose` abort
+  /// the provider stream early instead of letting it keep consuming tokens
+  /// after the game ended (the generation guard only discards the *result*).
+  CancelToken? _turnCancel;
 
   /// Set by [dispose]; [emit], [_transition] and [setPosition] become
   /// no-ops afterwards so post-dispose completions cannot fire listeners
@@ -494,6 +502,7 @@ class GameOrchestrator extends ChangeNotifier {
   void stop({String reason = 'stopped'}) {
     if (_disposed || _isTerminal) return;
     _generation++;
+    _turnCancel?.cancel();
     _turnInFlight = false;
     _pauseRequested = false;
     _gameStopwatch.stop();
@@ -511,6 +520,7 @@ class GameOrchestrator extends ChangeNotifier {
     final loser = _normalizeColor(color);
     final winner = loser == 'w' ? 'b' : 'w';
     _generation++;
+    _turnCancel?.cancel();
     _turnInFlight = false;
     _pauseRequested = false;
     _gameStopwatch.stop();
@@ -552,6 +562,7 @@ class GameOrchestrator extends ChangeNotifier {
       return;
     }
     _generation++;
+    _turnCancel?.cancel();
     _turnInFlight = false;
     _pauseRequested = false;
     _gameStopwatch.stop();
@@ -603,6 +614,44 @@ class GameOrchestrator extends ChangeNotifier {
   }
 
   // -- AI turns ------------------------------------------------------------------
+
+  /// Renders [_position] as the shared prompt state for [color].
+  ///
+  /// Both variants use `renderBoardForPrompt`, so the model sees the same
+  /// format at the same position. Castling rights and the en-passant target
+  /// are included because they are part of the position and the model cannot
+  /// infer them from the piece placement alone. A malformed FEN degrades to a
+  /// placeholder rather than crashing the turn.
+  ({String board, String castling, String enPassant}) _promptState(
+    String color,
+  ) {
+    try {
+      final position = parseFen(_position);
+      final rights = <String>['K', 'Q', 'k', 'q']
+          .where(position.castling.contains)
+          .join();
+      return (
+        board: renderBoardForPrompt(
+          squares: <String, String>{
+            for (final entry in position.board.entries)
+              entry.key.name: promptPieceLetter(
+                entry.value.type.letter,
+                isWhite: entry.value.color.isWhite,
+              ),
+          },
+          sideToMove: color == 'w' ? 'white' : 'black',
+        ),
+        castling: rights.isEmpty ? '-' : rights,
+        enPassant: position.enPassant?.name ?? '-',
+      );
+    } catch (_) {
+      return (
+        board: '(board unavailable)',
+        castling: '-',
+        enPassant: '-',
+      );
+    }
+  }
 
   /// Runs one AI turn for [participantColor] (`w`/`b`).
   ///
@@ -715,6 +764,11 @@ class GameOrchestrator extends ChangeNotifier {
 
     _turnInFlight = true;
     final generation = _generation;
+    // Abort any superseded provider stream and arm a fresh token so a later
+    // stop/resign/reportTerminal can cancel this turn cooperatively.
+    _turnCancel?.cancel();
+    final turnCancel = CancelToken();
+    _turnCancel = turnCancel;
     _transition(OrchestratorState.waitingAi);
     emit('aiTurnStarted', {
       'color': color,
@@ -727,6 +781,7 @@ class GameOrchestrator extends ChangeNotifier {
     });
 
     final turnStopwatch = Stopwatch()..start();
+    final promptState = _promptState(color);
     AgentTurnResult? turnResult;
     try {
       _transition(OrchestratorState.streaming);
@@ -735,6 +790,9 @@ class GameOrchestrator extends ChangeNotifier {
         AgentTurnRequest(
           positionFenOrJson: _position,
           legalMovesUci: List.of(_legalMoves),
+          boardText: promptState.board,
+          castlingRights: promptState.castling,
+          enPassantTarget: promptState.enPassant,
           mode: config.mode.name,
           color: color,
           timersMs: {'white': clock.remainingW, 'black': clock.remainingB},
@@ -743,7 +801,11 @@ class GameOrchestrator extends ChangeNotifier {
         providerOverride: providerOverride,
         apiKeyResolver: apiKeyResolver,
         httpClient: httpClient,
+        cancelToken: turnCancel,
         onEvent: (streamEvent) {
+          // Drop late stream events once this turn is superseded or the game
+          // is over, so a stopped game stops emitting aiStream rows.
+          if (_disposed || _isTerminal || generation != _generation) return;
           emit('aiStream', {
             'color': color,
             'colorName': _colorName(color),
@@ -970,6 +1032,7 @@ class GameOrchestrator extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _generation++;
+    _turnCancel?.cancel();
     _turnInFlight = false;
     _pauseRequested = false;
     if (!_events.isClosed) {

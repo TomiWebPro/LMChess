@@ -396,6 +396,8 @@ class MoveList extends StatelessWidget {
             if (mark != null) ...<Widget>[
               const SizedBox(width: 4),
               Semantics(
+                container: true,
+                excludeSemantics: true,
                 label: 'move quality $mark',
                 child: Text(
                   mark,
@@ -412,6 +414,8 @@ class MoveList extends StatelessWidget {
             if (isError) ...<Widget>[
               const SizedBox(width: 4),
               Semantics(
+                container: true,
+                excludeSemantics: true,
                 label: 'error',
                 child: Text(
                   '⚠',

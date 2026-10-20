@@ -58,19 +58,22 @@ import '../../arena/scheduler.dart';
 import '../../arena/tournament.dart';
 import '../../chess/engine.dart' as chess_eng;
 import '../../chess/fen.dart';
-import '../../chess/move.dart';
 import '../../chess/piece.dart';
 import '../../chess/position.dart';
 import '../../game/clock.dart';
 import '../../game/game_state.dart';
 import '../../game/orchestrator.dart';
+import '../../llm/prompt_board.dart';
 import '../../theme/board_theme.dart';
 import '../../theme/piece_theme.dart';
 import '../../theme/registry.dart';
 import '../../variant/chaotic_engine.dart';
 import '../../variant/interpretation.dart';
 import '../../variant/variant_board.dart';
+import '../../variant/variant_replay.dart';
+import 'variant_replay_screen.dart';
 import '../backend_bridge.dart';
+import '../game_mirror.dart';
 import '../ui_models.dart';
 import '../widgets/boards.dart';
 import '../widgets/chessboard.dart';
@@ -202,6 +205,15 @@ class _LiveGame {
 
   /// Chaotic only: interpretation strategy id per ply (parallel to [ucis]).
   final List<String> interpretations = <String>[];
+
+  /// Chaotic only: lossless replay records (parallel to [ucis]).
+  final List<VariantPlyRecord> variantPlies = <VariantPlyRecord>[];
+
+  /// Chaotic only: starting board for replay.
+  VariantBoard? initialBoard;
+
+  /// Chaotic only: wall-clock start.
+  DateTime? startedAt;
 
   /// Live orchestrator for standard games, while the pump owns it.
   GameOrchestrator? orch;
@@ -738,6 +750,10 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
 
   /// Builds the tournament from the form and starts executing it.
   void _start() {
+    // Guard against re-entry (button is disabled while running, but a
+    // programmatic/second tap must not start two schedulers — `run()` throws
+    // if the scheduler is already running).
+    if (_running) return;
     final catalog = ref.read(agentListProvider);
     final picked = <AgentConfig>[
       for (final a in catalog.agents)
@@ -811,8 +827,9 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
     });
     _scheduler = scheduler;
     setState(() {});
-    unawaited(
-      scheduler.run().then((finished) {
+    unawaited(() async {
+      try {
+        final finished = await scheduler.run();
         if (!mounted) return;
         final played = finished.games
             .where((g) => g.status == TournamentGameStatus.completed)
@@ -831,8 +848,18 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
               : 'Finished: $played/${finished.games.length} games with '
                   'results$failureNote.';
         });
-      }),
-    );
+      } catch (error) {
+        // A throwing run() must not leave the screen stuck on "running" with
+        // an unhandled async error.
+        if (!mounted) return;
+        setState(() {
+          _running = false;
+          _cancelling = false;
+          _noticeIsError = true;
+          _notice = 'Tournament run failed: $error';
+        });
+      }
+    }());
   }
 
   /// Requests cancellation: scheduler stops dispatching, running standard
@@ -1052,7 +1079,8 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
           closeProvider(provider);
         }
         if (!identical(live, _live[pairing.gameId])) break;
-        applied = _syncStandard(live, orch, engine, applied);
+        final replay = _syncStandard(live, orch, engine, applied);
+        applied = replay.applied;
         if (result == null) break; // Rejected: stop/finish raced us.
         final grew = orch.moveHistory.length > before;
         if (grew || !result.isSuccess) {
@@ -1067,13 +1095,15 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
             ),
           );
         }
-        if (applied != orch.moveHistory.length) {
+        if (replay.hasError || applied != orch.moveHistory.length) {
           // Mirror desync: an engine/UI bug, not a normal game outcome.
           for (final turn in pending) {
             turn.flush(gameId: pairing.gameId, tournamentId: state.config.id);
           }
           live.status = 'failed';
-          live.reason = 'mirror desync at ply $applied';
+          live.reason = replay.hasError
+              ? 'mirror desync at ply $applied: ${replay.error}'
+              : 'mirror desync at ply $applied';
           _touch();
           return GameResultSummary(
             gameId: pairing.gameId,
@@ -1169,6 +1199,9 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
     }
     var board = VariantBoard.fromStandard(Position.initial());
     final pending = <PendingTurn>[];
+    live.initialBoard = board;
+    live.variantPlies.clear();
+    live.startedAt = DateTime.now().toUtc();
     var ply = 0;
     var outcome = '*';
     var reason = '';
@@ -1205,14 +1238,21 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
         phrase: '${uiAgent.name} move',
       );
       AgentTurnResult? result;
+      final promptState = _variantPromptState(board);
       try {
         result = await _chaosRunner.runTurn(
           backend,
           AgentTurnRequest(
             positionFenOrJson: jsonEncode(board.toJson()),
             legalMovesUci: attempts,
+            boardText: promptState.board,
+            castlingRights: promptState.castling,
+            enPassantTarget: promptState.enPassant,
             mode: 'chaotic',
             color: moverColor.isWhite ? 'w' : 'b',
+            // Intent-first: any well-formed attempt reaches the interpreter;
+            // the prompt never showed a legal-move list to begin with.
+            acceptAnyMove: true,
           ),
           seed: turnSeed,
           providerOverride: provider,
@@ -1266,17 +1306,75 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
           );
         }
       }
+      final boardBefore = board;
+      final rawTool = rawToolCallFrom(result);
+      final selectedMove = result?.selectedMove;
+      final attemptFrom = selectedMove?.from ??
+          (attemptUci.length >= 2 ? attemptUci.substring(0, 2) : '');
+      final attemptTo = selectedMove?.to ??
+          (attemptUci.length >= 4 ? attemptUci.substring(2, 4) : '');
+      final attemptPromotion = selectedMove?.promotion ??
+          (attemptUci.length > 4 ? attemptUci.substring(4, 5) : null);
+      final attemptRecord = VariantAttemptRecord(
+        uci: attemptUci,
+        fromSquareName: attemptFrom,
+        toSquareName: attemptTo,
+        promotion: attemptPromotion,
+        phrase: phrase ?? '',
+        rawToolArgsJson: rawTool.rawToolArgsJson,
+        rawToolCallJson: rawTool.rawToolCallJson,
+        source: wasFallback
+            ? VariantAttemptSource.fallback
+            : VariantAttemptSource.model,
+      );
       final interpreted = ChaoticRules.interpret(
-        board,
+        boardBefore,
         AttemptedMove(
-          fromSquareName: attemptUci.substring(0, 2),
-          toSquareName: attemptUci.substring(2, 4),
-          promotion: attemptUci.length > 4 ? attemptUci.substring(4, 5) : null,
+          fromSquareName: attemptFrom,
+          toSquareName: attemptTo,
+          promotion: attemptPromotion,
           phrase: phrase ?? '',
-          rawToolCallJson: <String, Object?>{'uci': attemptUci},
+          rawToolCallJson:
+              rawTool.rawToolCallJson ?? <String, Object?>{'uci': attemptUci},
+          rawToolArgsJson: rawTool.rawToolArgsJson ?? '',
         ),
         seed: turnSeed,
       );
+      live.variantPlies.add(VariantPlyRecord(
+        ply: ply,
+        mover: colorName == 'white' ? 'w' : 'b',
+        agentId: backend.id,
+        modelKey: backend.model,
+        seed: turnSeed,
+        fallback: wasFallback,
+        attempt: attemptRecord,
+        wasLegal: interpreted.wasLegal,
+        standardDetail: interpreted.standardDetail,
+        interpretationKind: VariantInterpretationKind.fromStrategyId(
+          interpreted.selected.strategyId,
+        ),
+        selected:
+            VariantInterpretationRecord.fromCandidate(interpreted.selected),
+        candidates: <VariantInterpretationRecord>[
+          for (final c in interpreted.candidates)
+            VariantInterpretationRecord.fromCandidate(c),
+        ],
+        events: interpreted.events,
+        boardAfter: interpreted.selected.resultingBoard,
+        kingFacts: VariantKingFacts.between(
+          boardBefore,
+          interpreted.selected.resultingBoard,
+          moverColor,
+        ),
+        boardHashBefore: boardBefore.boardHash(),
+        boardHashAfter: interpreted.selected.resultingBoard.boardHash(),
+        policy: interpreted.policy,
+        turnFailureKind: result?.failure?.kind.name,
+        turnFailureMessage: result?.failure?.message,
+        latencyMs: result?.latencyMs,
+        inputTokens: result?.usage?.inputTokens,
+        outputTokens: result?.usage?.outputTokens,
+      ));
       board = interpreted.selected.resultingBoard;
       ply++;
       live.ucis.add(attemptUci);
@@ -1321,19 +1419,19 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
   ///
   /// Idempotent (called after every turn); refreshes the check highlight
   /// and returns the new applied count.
-  int _syncStandard(
+  MirrorReplayResult _syncStandard(
     _LiveGame live,
     GameOrchestrator orch,
     Position engine,
     int applied,
   ) {
-    final history = orch.moveHistory;
-    while (applied < history.length) {
-      final uci = history[applied];
-      try {
-        final move = ChessMove.fromUci(uci);
-        final receipt = engine.apply(move);
-        final meta = appliedMetaFor(orch, applied + 1);
+    // Shared replay core; arena's hooks also maintain the mini-board/check
+    // snapshot. Any error is reported to the caller as a mirror desync.
+    return replayMoves(
+      orch: orch,
+      engine: engine,
+      applied: applied,
+      onApplied: (index, uci, move, receipt, meta) {
         live.sans.add(receipt.san);
         live.ucis.add(uci);
         live.phrases.add(meta.isFallback ? null : meta.phrase);
@@ -1343,12 +1441,8 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
         live.lastFrom = move.from.name;
         live.lastTo = move.to.name;
         live.inCheck = checkSquare(engine);
-        applied++;
-      } catch (_) {
-        break; // Desync; the caller turns it into an infra failure.
-      }
-    }
-    return applied;
+      },
+    );
   }
 
   /// Flushes buffered turns, writes result markers, updates Elo (when the
@@ -1389,8 +1483,8 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
         mode: state.config.mode,
       );
     }
-    // Chaotic games are not reviewable yet (see the library **Wiring
-    // point**); standard games land in the review log like watch/play.
+    // Standard games land in the FEN-based review log; chaotic games land in
+    // the lossless variant replay log (board chain + attempts + readings).
     if (state.config.mode == 'standard') {
       ReviewLog.record(
         ReviewGame(
@@ -1407,6 +1501,25 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
           fallbackFlags: List<bool>.of(live.fallbacks),
         ),
       );
+    } else {
+      final initial = live.initialBoard;
+      if (initial != null) {
+        VariantReviewLog.record(VariantGameRecord(
+          id: pairing.gameId,
+          tournamentId: state.config.id,
+          whiteLabel: live.whiteLabel,
+          blackLabel: live.blackLabel,
+          whiteAgentId: pairing.whiteAgentId,
+          blackAgentId: pairing.blackAgentId,
+          seed: live.seed,
+          initialBoard: initial,
+          plies: List<VariantPlyRecord>.of(live.variantPlies),
+          outcome: outcome,
+          reason: reason,
+          startedAt: live.startedAt,
+          finishedAt: DateTime.now().toUtc(),
+        ));
+      }
     }
     _touch();
   }
@@ -1414,6 +1527,34 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
   /// Ping-pong seed for mock scripting/fallback picks (game seed + ply).
   int _turnSeed(int gameSeed, int ply) =>
       (gameSeed + ply * 0x85EBCA6B) & 0x7fffffff;
+
+  /// Renders a [VariantBoard] as the shared LLM prompt state (same format as
+  /// the standard orchestrator uses).
+  ///
+  /// Castling rights come from the board's home-square geometry; en passant is
+  /// always `-` because variant boards carry no double-push history.
+  ({String board, String castling, String enPassant}) _variantPromptState(
+    VariantBoard board,
+  ) {
+    final rights = board.castlingRights;
+    final castling = <String>['K', 'Q', 'k', 'q']
+        .where(rights.contains)
+        .join();
+    return (
+      board: renderBoardForPrompt(
+        squares: <String, String>{
+          for (final e in board.squares.entries)
+            e.key.name: promptPieceLetter(
+              e.value.type.letter,
+              isWhite: e.value.color.isWhite,
+            ),
+        },
+        sideToMove: board.sideToMove.isWhite ? 'white' : 'black',
+      ),
+      castling: castling.isEmpty ? '-' : castling,
+      enPassant: '-',
+    );
+  }
 
   /// Renders a [VariantBoard] as a [Chessboard] `squares` map.
   Map<String, String> _variantSquares(VariantBoard board) {
@@ -1617,6 +1758,7 @@ class _GameDetailDialog extends ConsumerWidget {
       listenable: ticker,
       builder: (context, _) {
         final theme = Theme.of(context);
+        final replay = VariantReviewLog.byId(gameRef.gameId);
         return AlertDialog(
           title: Text(
             '${live.label} · ${live.whiteLabel} vs ${live.blackLabel}',
@@ -1692,6 +1834,19 @@ class _GameDetailDialog extends ConsumerWidget {
             ),
           ),
           actions: <Widget>[
+            if (replay != null)
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => VariantReplayScreen(record: replay),
+                    ),
+                  );
+                },
+                child: const Text('Replay'),
+              ),
             TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text('Close'),

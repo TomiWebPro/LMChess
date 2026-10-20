@@ -148,18 +148,32 @@ Map<String, Object?> parseTournamentExport(Map<String, Object?> json) {
         'Tournament export is missing events (List)');
   }
   // Validate nested shapes eagerly so corrupt files fail fast here
-  // instead of deep in UI code.
-  TournamentConfig.fromJson(
-      Map<String, Object?>.from(tournament['config'] as Map));
+  // instead of deep in UI code. Every cast is guarded so malformed input
+  // surfaces as FormatException, never a TypeError.
+  final rawConfig = tournament['config'];
+  if (rawConfig is! Map) {
+    throw const FormatException(
+        'Tournament export tournament.config must be a Map');
+  }
+  TournamentConfig.fromJson(Map<String, Object?>.from(rawConfig));
   final rawGames = tournament['games'];
   if (rawGames is! List) {
-    throw const FormatException('Tournament export tournament.games must be a List');
+    throw const FormatException(
+        'Tournament export tournament.games must be a List');
   }
   for (final g in rawGames) {
-    TournamentGameRef.fromJson(Map<String, Object?>.from(g as Map));
+    if (g is! Map) {
+      throw const FormatException(
+          'Tournament export game entry must be a Map');
+    }
+    TournamentGameRef.fromJson(Map<String, Object?>.from(g));
   }
   for (final e in (json['events'] as List)) {
-    GameEventRecord.fromJson(Map<String, Object?>.from(e as Map));
+    if (e is! Map) {
+      throw const FormatException(
+          'Tournament export event entry must be a Map');
+    }
+    GameEventRecord.fromJson(Map<String, Object?>.from(e));
   }
   return Map<String, Object?>.of(json);
 }

@@ -32,6 +32,7 @@ import 'ui/screens/settings_screen.dart';
 import 'ui/screens/stats_screen.dart';
 import 'ui/screens/watch_screen.dart';
 import 'ui/ui_models.dart';
+import 'ui/widgets/tab_visibility.dart';
 
 // Re-export the provider surface so `app.dart` is the single import point.
 export 'theme/registry.dart' show themeRegistryProvider, themeModeProvider;
@@ -161,33 +162,41 @@ class _AppShellState extends State<AppShell> {
         final wide = constraints.maxWidth >= 700;
         final body = IndexedStack(
           index: _index,
-          children: <Widget>[for (final d in _destinations) d.screen(context)],
-        );
-        if (wide) {
-          return Scaffold(
-            body: Row(
-              children: <Widget>[
-                NavigationRail(
-                  selectedIndex: _index,
-                  labelType: NavigationRailLabelType.all,
-                  destinations: <NavigationRailDestination>[
-                    for (final d in _destinations)
-                      NavigationRailDestination(
-                        icon: Icon(d.icon),
-                        label: Text(d.label),
-                      ),
-                  ],
-                  onDestinationSelected: (i) => setState(() => _index = i),
+          children: <Widget>[
+            for (var i = 0; i < _destinations.length; i++)
+              // Hidden tabs stay mounted so their state survives tab
+              // switches, but they must not leak semantics into the
+              // accessibility tree. `RenderIndexedStack.index` only calls
+              // markNeedsLayout (never markNeedsSemanticsUpdate), so a switch
+              // can leave the engine holding the previous child's nodes and
+              // the next update is diffed against a stale tree — the source
+              // of the "… will not be in the tree and is not the new root"
+              // AXTree errors. Toggling ExcludeSemantics.excluding forces a
+              // matching semantics update on every switch, and TickerMode
+              // stops hidden tabs' animations from mutating semantics.
+              ExcludeSemantics(
+                key: ValueKey<String>(_destinations[i].label),
+                excluding: i != _index,
+                child: TickerMode(
+                  enabled: i == _index,
+                  child: TabVisibility(
+                    isVisible: i == _index,
+                    child: i == 0
+                        // The dashboard selects shell destinations instead
+                        // of pushing a second live instance of the same
+                        // screen (which doubled board/stream work).
+                        ? HomeScreen(onOpen: _openRoute)
+                        : _destinations[i].screen(context),
+                  ),
                 ),
-                const VerticalDivider(width: 1),
-                Expanded(child: body),
-              ],
-            ),
-          );
-        }
+              ),
+          ],
+        );
         return Scaffold(
-          appBar: AppBar(title: Text(_destinations[_index].label)),
-          drawer: Drawer(
+          appBar: wide
+              ? null
+              : AppBar(title: Text(_destinations[_index].label)),
+          drawer: wide ? null : Drawer(
             child: ListView(
               children: <Widget>[
                 const DrawerHeader(
@@ -209,8 +218,36 @@ class _AppShellState extends State<AppShell> {
               ],
             ),
           ),
-          body: body,
-          bottomNavigationBar: NavigationBar(
+          // One stable tree: `body` always lives in the Expanded at index 2,
+          // so crossing the 700px breakpoint swaps only the leading chrome
+          // instead of tearing down and re-inflating every tab (which also
+          // silently killed running games).
+          body: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              if (wide)
+                NavigationRail(
+                  selectedIndex: _index,
+                  labelType: NavigationRailLabelType.all,
+                  destinations: <NavigationRailDestination>[
+                    for (final d in _destinations)
+                      NavigationRailDestination(
+                        icon: Icon(d.icon),
+                        label: Text(d.label),
+                      ),
+                  ],
+                  onDestinationSelected: (i) => setState(() => _index = i),
+                )
+              else
+                const SizedBox.shrink(),
+              if (wide)
+                const VerticalDivider(width: 1)
+              else
+                const SizedBox.shrink(),
+              Expanded(child: body),
+            ],
+          ),
+          bottomNavigationBar: wide ? null : NavigationBar(
             // The bottom bar folds Stats/Review/Agents/Settings into "More";
             // mirror the real section instead of clamping everything above
             // the first four to Home.
@@ -250,10 +287,27 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
+  /// Shell destination index for each named route used by the home cards.
+  static const Map<String, int> _routeToIndex = <String, int>{
+    ArenaRoutes.play: 1,
+    ArenaRoutes.watch: 2,
+    ArenaRoutes.arena: 3,
+    ArenaRoutes.stats: 4,
+    ArenaRoutes.review: 5,
+    ArenaRoutes.agents: 6,
+    ArenaRoutes.settings: 7,
+  };
+
+  /// Selects the shell destination matching [route] (home-card navigation).
+  void _openRoute(String route) {
+    final index = _routeToIndex[route];
+    if (index != null) setState(() => _index = index);
+  }
+
   /// Opens a sheet listing the destinations the bottom bar folds into
   /// "More" (Stats, Review, Agents, Settings) and selects the tapped one.
   Future<void> _openMore() async {
-    final selected = await showModalBottomSheet<int>(
+    await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       builder: (context) => SafeArea(
@@ -265,15 +319,18 @@ class _AppShellState extends State<AppShell> {
                 leading: Icon(_destinations[i].icon),
                 title: Text(_destinations[i].label),
                 selected: i == _index,
-                onTap: () => Navigator.pop(context, i),
+                // Switch while the sheet still owns the modal barrier, so the
+                // IndexedStack change never lands in the same frame as the
+                // sheet's exit animation (which would churn root semantics).
+                onTap: () {
+                  setState(() => _index = i);
+                  Navigator.pop(context);
+                },
               ),
           ],
         ),
       ),
     );
-    if (selected != null && mounted) {
-      setState(() => _index = selected);
-    }
   }
 }
 
