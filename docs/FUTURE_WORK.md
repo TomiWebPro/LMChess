@@ -1,7 +1,7 @@
 # Future Work
 
 Status: living document
-Last updated: 2026-10-20 (UTC) — §5.1 harness + §5.3 semantics invariants created + tested; §6.3 chessboard widget tests created (26 tests); §6.1 shell navigation tests created (16 tests); §6.4 play screen widget tests created (25 tests); §7 semantics stability test suite created (32 tests); §8 monkey_tap_test.dart created (5 tests); §6.5 watch_screen_test.dart created (21 tests); §6.6 arena_screen_test.dart created (27 tests); §6.8 review_screen_test.dart created (17 tests)
+Last updated: 2026-10-20 (UTC) — §6.10 agent_setup_test.dart created (29 tests); §6.8 review_screen_test.dart created (17 tests)
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -702,6 +702,8 @@ Lifecycle:
 - Cancel/back leaves the catalog untouched.
 - Narrow layout scrolls without overflow.
 
+> Note (2026-10-20): implemented — `test/ui/agent_setup_test.dart`, 29 tests covering all §6.10 items: create/edit mode titles ('New agent'/'Edit agent'), blank default form, display name accepts text input, provider dropdown lists all kAgentProviders values with stable selection, model placeholder 'gpt-4o', temperature slider drag responsive, max tokens numeric input, system/user prompt TextFormFields present, API key TextField exists with obscureText=true, lock-status indicator Row renders below API key field, Test Connection OutlinedButton exists/enabled, tapping Test Connection shows result via injected tester override, spinner during testing (500ms delayed test → CircularProgressIndicator appears then completes cleanly without pending timer), failure result with failing tester override, Save/Create buttons labelled correctly per mode, empty required fields validation snackbar shown, valid form submission succeeds, double-save guard (_saving==true), empty name/provider/model block save with validation messages, navigating away from unsaved form cleans up properly, AppBar back button pops route safely, narrow (<700px) layout scrolls, wide layout renders single column, 10 rapid taps on Create no crash, semantics tree invariant stable after rendering. Uses deterministic fakes (harness.fakeOverrides + connectionTesterProvider override), never hits real network/engine/wall-clock. Evidence: `flutter analyze` clean; `flutter test test/ui/agent_setup_test.dart` 29/29 pass; full regression `flutter test` 401/401 pass (372 old + 29 new). Next: `test/ui/variant_replay_test.dart` (§6.9, P1).
+
 ### 6.11 Settings (`settings_screen_test.dart`, ~14 tests)
 
 - Light/System/Dark segments update `themeModeProvider` and rendered
@@ -1177,7 +1179,7 @@ Implementation order:
 4. Play interaction + monkey tests (the reported repro) — §6.4 DONE, §8 DONE 2026-10-20 (monkey_tap_test.dart, 5 tests).
 5. Windows integration + UIA smoke + CI job.
 6. Watch and Arena.
-7. Agents, Review, Variant replay.
+7. Agents (§6.10 DONE 2026-10-20), Review (§6.8 DONE 2026-10-20), Variant replay (§6.9, TODO).
 8. Stats, Settings, Home, shared widgets.
 
 Why this order: it front-loads the highest-risk surface (semantics + Play),
