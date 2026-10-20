@@ -1,7 +1,7 @@
 # Future Work
 
 Status: living document
-Last updated: 2026-10-20 (UTC) — §5.1 harness + §5.3 semantics invariants created + tested; §6.3 chessboard widget tests created (26 tests); §6.1 shell navigation tests created (16 tests); §6.4 play screen widget tests created (25 tests); §7 semantics stability test suite created (32 tests)
+Last updated: 2026-10-20 (UTC) — §5.1 harness + §5.3 semantics invariants created + tested; §6.3 chessboard widget tests created (26 tests); §6.1 shell navigation tests created (16 tests); §6.4 play screen widget tests created (25 tests); §7 semantics stability test suite created (32 tests); §8 monkey_tap_test.dart created (5 tests)
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -832,6 +832,8 @@ Run this per destination on a fresh app. It reaches icon-only controls via
 their tooltips and directly covers "the button exists but crashes when
 pressed".
 
+> Note (2026-10-20): implemented — `test/ui/monkey_tap_test.dart`, 5 tests. All §8 scenarios covered: narrow grid sweep (600×800 @ 48px), wide grid sweep with Play mounted (1600×1000 @ 48px), 1500 random taps seed 0xC0FFEE, 300 random taps + per-step reparenting guard seed 0xCAFEBABE, bonus `_tapEveryLabelledControl` helper on Home screen. Uses deterministic PRNG (`SeedRng`), async `_tapOffset` (await-compatible tapAt/pump), `captureSemanticsSafe`/`parentMap`/`expectNoReparenting` invariant checks, `_drainRoutes` for dialog/sheet dismissal, `harness.disposeApp` for timer cleanup. No `pumpAndSettle`; uses small pump slices. Each test has `Timeout(Duration(minutes: 2))`. Evidence: `flutter analyze` clean; `flutter test test/ui/monkey_tap_test.dart` 5/5 pass; full regression `flutter test` 307/307 pass (302 old + 5 new). Next: `integration_test/accessibility_windows_test.dart` (§9, P0).
+
 ---
 
 ## 9. Windows integration and native smoke
@@ -1147,7 +1149,7 @@ Approximate target: 250-300 widget tests plus 2 process-level checks.
 | P0 | `test/ui/shell_navigation_test.dart` | 16 |
 | P0 | `test/ui/play_screen_test.dart` | ~30 |
 | P0 | `test/ui/semantics_stability_test.dart` | ~32 |
-| P0 | `test/ui/monkey_tap_test.dart` | 4 |
+| P0 | `test/ui/monkey_tap_test.dart` | 5 |
 | P0 | `integration_test/accessibility_windows_test.dart` | 5 |
 | P0 | `tool/windows_accessibility_smoke.ps1` | 2 checks |
 | P1 | `test/ui/watch_screen_test.dart` | ~22 |
@@ -1165,7 +1167,7 @@ Implementation order:
 1. Refactors 10.1-10.4 and 10.7 — DONE 2026-10-20 (all seams + stable keys).
 2. Harness + semantics checker — DONE 2026-10-20 (arena_test_harness.dart + semantics_invariants.dart, 18 integration tests green).
 3. Chessboard — DONE 2026-10-20 (`test/ui/chessboard_test.dart`, 26 tests); remaining: shell navigation + semantics stability.
-4. Play interaction + monkey tests (the reported repro).
+4. Play interaction + monkey tests (the reported repro) — §6.4 DONE, §8 DONE 2026-10-20 (monkey_tap_test.dart, 5 tests).
 5. Windows integration + UIA smoke + CI job.
 6. Watch and Arena.
 7. Agents, Review, Variant replay.
