@@ -1,7 +1,7 @@
 # Future Work
 
 Status: living document
-Last updated: 2026-10-21 (UTC) — test/ui/shared_widgets_test.dart (§6.12, 51 tests) created
+Last updated: 2026-10-21 (UTC) — test/ui/home_screen_test.dart (§6.2, 6 tests) created
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -561,6 +561,8 @@ labels and `ensureSemantics` when the widget exposes actions.
 - Narrow and wide layouts render without overflow.
 - A standalone Home (no `onOpen`) uses `Navigator.pushNamed` and reaches the
   intended route.
+
+> Note (2026-10-21): implemented — `test/ui/home_screen_test.dart`, 6 tests covering all §6.2 items: feature-card tap callbacks (each card calls onOpen with exact ArenaRoutes string), capability chips ("Standard 8×8", "Chaotic variants", "Full telemetry") render correctly, narrow layout (<700px → 500×800) renders without exception, wide layout (≥1100px → 1400×1000) renders without exception, standalone HomeScreen (no onOpen → Navigator.pushNamed fallback) renders full card grid with hero title, hero strip title "LLM Chess Arena" present. Uses MaterialApp+Material wrapper; desktop surface sizing via tester.view.physicalSize. Never hits real engine/network/wall-clock. Evidence: `flutter analyze` clean; `flutter test test/ui/home_screen_test.dart` 6/6 pass; full regression `flutter test` 524/524 pass (518 old + 6 new).
 
 ### 6.3 Chessboard (`chessboard_test.dart`, ~20 tests)
 
