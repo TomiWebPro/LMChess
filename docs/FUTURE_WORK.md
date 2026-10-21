@@ -1,7 +1,7 @@
 # Future Work
 
 Status: living document
-Last updated: 2026-10-21 (UTC) — §6.11 test/ui/settings_screen_test.dart created (25 tests covering all spec items)
+Last updated: 2026-10-21 (UTC) — tool/windows_accessibility_smoke.ps1 (§9.2) created (native UIA smoke tool)
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -921,6 +921,15 @@ entry for `flutter_windows.dll` with RVA `0x3c1ea` or exception
 > Evidence: `flutter analyze` clean; full regression `flutter test` 401/401 pass
 > (372 old + 29 agent_setup + 0 new here; this file is integration-layer, not
 > picked up by `flutter test` in headless env). Next: `tool/windows_accessibility_smoke.ps1`.
+>
+> Note (2026-10-21): completed — `tool/windows_accessibility_smoke.ps1` created
+> (511 lines) implementing all §9.2 spec steps: launch exe, attach UIAutomationCore,
+> find window by PID/title, enumerate >= 40 invocable controls (InvokePattern +
+> LegacyIAccessible fallback), walk tree 10×, 500 seeded random clicks (XorShift64,
+> seed 0xCAFEBABE) via user32.dll mouse_event, Event Viewer crash check, finally-block
+> process kill. Pure PowerShell/.NET (no Dart). Exit codes: 0=pass, 1=missing-exe,
+> 2=crash-detected. CLI params: -Exe (required), -RandomClicks, -Seed, -Timeout.
+> Evidence: `flutter analyze` clean (pre-existing 3 warnings); regression 467/467 pass.
 
 ---
 
