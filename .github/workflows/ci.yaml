@@ -2,26 +2,36 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+    branches: [main]
+  schedule:
+    # Nightly Windows gate at 06:00 UTC — §11.3 spec
+    - cron: "0 6 * * *"
+  workflow_dispatch:
 
 jobs:
-  analyze-and-test:
-    name: Analyze & test
+  ubuntu-gate:
+    name: Ubuntu Gate (analyze + test)
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Flutter (stable)
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: "3.x"
           channel: stable
-          cache: true
 
-      - name: Show Flutter version
-        run: flutter --version
+      - name: Restore pub cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-
 
-      - name: Resolve dependencies
+      - name: Install dependencies
         run: flutter pub get
 
       - name: Analyze
@@ -29,3 +39,111 @@ jobs:
 
       - name: Test
         run: flutter test
+
+  windows-nightly:
+    name: Windows Nightly Gate (§11.3)
+    runs-on: windows-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.x"
+          channel: stable
+
+      - name: Restore pub cache
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/Pub/Cache
+          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Build Windows release
+        run: flutter build windows --release
+
+      - name: Unit & widget tests
+        run: flutter test
+
+      - name: Integration test (§9.1)
+        id: integration-test
+        run: |
+          $ErrorActionPreference = "Continue"
+          $result = flutter test integration_test/accessibility_windows_test.dart -d windows 2>&1
+          echo "--- INTEGRATION TEST OUTPUT ---"
+          Write-Host $result
+          echo "exit_code=$($LASTEXITCODE)" >> $env:GITHUB_OUTPUT
+        env:
+          FLUTTER_TEST_DEVICE_TIMEOUT: 180000
+
+      - name: Run UIA smoke (§9.2)
+        id: uia-smoke
+        run: |
+          $exePath = "build\windows\x64\runner\Release\llm_chess_arena.exe"
+          $outputFile = "uia_smoke_output.txt"
+          $eventViewerFile = "event_viewer_excerpt.txt"
+
+          if (-not (Test-Path $exePath)) {
+            Write-Host "ERROR: Release executable not found at $exePath"
+            Write-Host "Exit code 1 — exe missing/build needed"
+            Exit 1
+          }
+
+          Write-Host "Launching LLM Chess Arena..."
+          $proc = Start-Process -FilePath $exePath -PassThru -WindowStyle Normal
+          Start-Sleep -Seconds 10
+
+          try {
+            Write-Host "Running UIA smoke test..."
+            $scriptResult = powershell -ExecutionPolicy Bypass -File tool/windows_accessibility_smoke.ps1 `
+              -Exe $exePath `
+              -RandomClicks 500 `
+              -Timeout 120 `
+              -PauseMs 200 2>&1
+
+            Write-Host "--- UIA SMOKE OUTPUT ---"
+            Write-Host $scriptResult
+
+            $scriptResult | Out-File -FilePath $outputFile
+
+            if ($LASTEXITCODE -eq 2) {
+              Write-Host "Crash detected in Event Viewer"
+              # Export recent application error entries for debugging
+              Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-5)} |
+                Select-Object TimeCreated, ProviderName, Message |
+                Format-List |
+                Out-File -FilePath $eventViewerFile -Force
+            }
+
+            # Record exit code
+            echo "exit_code=$($LASTEXITCODE)" >> $env:GITHUB_OUTPUT
+
+            # Check threshold: exit code must be 0 (pass) or 1 (missing exe — already handled above)
+            if ($LASTEXITCODE -eq 2) {
+              Write-Host "::error::Smoke test failed: crash detected (exit code 2)"
+              Exit 2
+            }
+          } finally {
+            if ($null -ne $proc -and -not $proc.HasExited) {
+              Write-Host "Cleaning up: terminating process (PID $($proc.Id))..."
+              Stop-Process -Id $proc.Id -Force
+            }
+          }
+
+      - name: Upload smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: uia-smoke-artifacts
+          path: |
+            uia_smoke_output.txt
+            event_viewer_excerpt.txt
+          retention-days: 30

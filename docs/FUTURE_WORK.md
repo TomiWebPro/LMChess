@@ -82,6 +82,8 @@ Needed:
 **Done when:** a green scheduled Windows run is linked from the repository and
 its artifacts prove the native gate passed.
 
+<!-- 2026-10-21Z — §11.3: CI workflow file `.github/workflows/ci.yaml` created with dual jobs (ubuntu-gate + windows-nightly). Workflow defined; awaiting first scheduled run on Windows runner for native execution validation. -->
+
 ### 11.4 Coverage (P2 — optional, not wired)
 
 `flutter test test/ui --coverage` is documented but not run in CI. Coverage is
