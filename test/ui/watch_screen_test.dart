@@ -4,6 +4,7 @@
 /// tab switches (Activity/Moves/Errors), error-tab states, move-list seek,
 /// dispose lifecycle, and narrow/wide layouts.
 /// Uses deterministic fakes — never touches real network, engine, or wall-clock.
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

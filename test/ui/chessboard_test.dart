@@ -94,7 +94,6 @@ void main() {
       );
       await tester.pump();
 
-      final boardRect = tester.getRect(find.byType(Chessboard));
       // Verify each cell slot (inside the Stack) exists by checking semantic labels.
       expect(tester.takeException(), isNull);
     });

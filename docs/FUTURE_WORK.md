@@ -1,7 +1,7 @@
 # Future Work
 
 Status: living document
-Last updated: 2026-10-21 (UTC) — §6.3 chessboard_test.dart lint cleanup (unused import)
+Last updated: 2026-10-21 (UTC) — all analyzer issues resolved (0 issues)
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -589,8 +589,9 @@ labels and `ensureSemantics` when the widget exposes actions.
 > 
 > Note (2026-10-21): removed unused `PieceType` from import show-list (line 10).
 > Eliminates one pre-existing `unused_shown_name` lint warning. No functional change.
-> Remaining pre-existing warnings: 2 (unused `boardRect` var at line 97, dangling
-> library doc comment in watch_screen_test.dart).
+> Follow-up (2026-10-21): removed unused `boardRect` local variable (line 97) and
+> added a `library;` directive to `watch_screen_test.dart` (§6.5) to clear the
+> dangling library doc comment. `flutter analyze` is now 0 issues across the project.
 
 ### 6.4 Play (`play_screen_test.dart`, ~30 tests)
 
@@ -646,6 +647,9 @@ Lifecycle:
 - Narrow tabs vs wide board+panel layout.
 
 > Note (2026-10-20): implemented — `test/ui/watch_screen_test.dart`, 21 tests covering all §6.5 items: transport flow (Start/Pause/Resume/Stop), agent selectors (dropdown visibility, disabled while running, idle changes), tab switching (Activity/Moves/Errors idle and running), error panel state, move-list population and seek, dispose timer drain, narrow/wide layouts, status chip lifecycle, semantics stability across transitions. Key design notes: MockProvider stepDelay=0 reaches terminal quickly so tests use defensive control-checking; retireOrchestrator async-disposal race in double-start requires long pump waits or harness.disposeApp. Evidence: `flutter analyze` clean; `flutter test test/ui/watch_screen_test.dart` 21/21 pass; full regression `flutter test` 328/328 pass (307 old + 21 new).
+>
+> Note (2026-10-21): added `library;` after the file-level doc comment to clear the
+> `dangling_library_doc_comments` info. Tests unchanged; 21/21 still pass.
 
 ### 6.6 Arena (`arena_screen_test.dart`, ~26 tests)
 
