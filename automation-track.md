@@ -1,7 +1,7 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-21 (UTC) — nightly Windows CI gate + track update
+Last updated: 2026-10-21 (UTC) — added §15 chessboard interaction/motion roadmap
 Related: `docs/FUTURE_WORK.md` (binding roadmap), `ARCHITECTURE.md`, `README.md`
 
 This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every run**.
@@ -225,3 +225,10 @@ suites referenced above now exist. Native Windows execution is tracked in
   `workflow` scope for `.github/workflows/ci.yaml`. Local commit
   `f533241` ready. Requires PAT re-provisioning with `workflow` scope or admin to
   merge. Next: re-push after token scope fix.
+- 2026-10-21Z — ROADMAP (no code): added §15 “Chessboard interaction and
+  motion” to `docs/FUTURE_WORK.md` — P1 drag/drop, explicit from→to motion
+  layer (castling/en passant/promotion/capture), fast ply scrubbing with
+  keyboard + move-list seek, and P2 premove/multipremove queue with
+  simulation/validation/cancel rules. Includes semantics/AXTree constraints,
+  reduced-motion handling, likely touch points, tests, and acceptance criteria.
+  Next: implement 15.2 motion primitive first, then 15.1 drag/drop.
