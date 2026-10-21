@@ -1,7 +1,7 @@
 # Future Work
 
 Status: living document
-Last updated: 2026-10-21 (UTC) — §6.7 test/ui/stats_screen_test.dart created (18 tests covering all spec items)
+Last updated: 2026-10-21 (UTC) — §6.11 test/ui/settings_screen_test.dart created (25 tests covering all spec items)
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -715,6 +715,8 @@ Lifecycle:
 - Preview board is non-interactive and exposes no tap actions.
 - Selection survives a shell tab switch and a rebuild.
 - Narrow layout.
+
+> Note (2026-10-21): implemented — `test/ui/settings_screen_test.dart`, 25 tests covering all §6.11 items: colour-scheme segmented-button toggles (Light/System/Dark), board-theme radio group lists all four built-in themes with "Built-in" subtitles, piece-theme radio group lists all three built-in themes, selecting board/piece themes updates live preview, preview Chessboard non-interactive with onTapSquare=null, preview description shows current combo ("Classic × Meridian"), license & attributions section renders verbatim from EngineAttributions (Stockfish, WintrChess, GPLv3, GURAv1), narrow/wide layouts render cleanly, light/dark theme change crash-free, semantics tree invariants hold across theme switches (no reparenting), rapid radio taps safe, all 4×3=12 combos exhaustible without error, navigate-away-back replacement mount clean. Uses isolated ProviderContainer per test; never hits real engine/network. Evidence: `flutter analyze` clean; `flutter test test/ui/settings_screen_test.dart` 25/25 pass; full regression `flutter test` 467/467 pass (442 old + 25 new). Next: `test/ui/shared_widgets_test.dart` (§6.12, P2).
 
 ### 6.12 Shared widgets (`shared_widgets_test.dart`, ~20 tests)
 
