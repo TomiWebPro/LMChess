@@ -33,9 +33,9 @@
 /// columns) with live squares, check/terminal highlights and status from
 /// the scheduler refs; tapping any card opens the drill-down dialog, which
 /// follows the running game through a screen-scoped ticker. Standings
-/// compute points from the completed refs and Elo from a **session-static**
+/// compute points from the completed refs and Elo from an injectable
 /// [EloService] (mode-keyed ladder, shared across tournaments of this app
-/// session); ratings under the backend's minimum carry a
+/// session by default); ratings under the backend's minimum carry a
 /// "provisional — N games" note, per the Elo docs.
 ///
 /// Stop cancels pending pairings and stops the in-flight orchestrators
@@ -283,16 +283,23 @@ class _Standing {
 /// Tournament arena: config, standings, mini-board grid, drill-down.
 class ArenaScreen extends ConsumerStatefulWidget {
   /// Creates the arena screen.
-  const ArenaScreen({super.key});
+  ///
+  /// [elo] allows tests to inject a fresh [EloService] so tournament ratings
+  /// do not leak across test boundaries via the session-static singleton.
+  const ArenaScreen({super.key, this.elo});
+
+  /// Optional Elo ladders for the tournament. When absent the screen creates
+  /// a fresh [EloService] internally.
+  final EloService? elo;
 
   @override
   ConsumerState<ArenaScreen> createState() => _ArenaScreenState();
 }
 
 class _ArenaScreenState extends ConsumerState<ArenaScreen> {
-  /// Session-static Elo ladders shared by every tournament this app runs
-  /// (mode-keyed; see the `elo.dart` docs on color balance/provisionality).
-  static final EloService _elo = EloService();
+  /// Elo ladders for the tournament. Injected via [ArenaScreen.elo] when tests
+  /// require isolation between test cases; otherwise a fresh service is created.
+  late final EloService _elo;
 
   final _name = TextEditingController(text: 'Autumn Invitational');
 
@@ -357,6 +364,7 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
   @override
   void initState() {
     _clock = ref.read(clockProvider);
+    _elo = widget.elo ?? EloService();
     super.initState();
   }
 

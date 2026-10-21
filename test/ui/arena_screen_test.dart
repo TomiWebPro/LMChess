@@ -8,6 +8,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:llm_chess_arena/src/arena/elo.dart' show EloService;
 import 'package:llm_chess_arena/src/ui/screens/arena_screen.dart' show ArenaScreen;
 import 'package:llm_chess_arena/src/ui/ui_models.dart' show AgentListStore, agentListProvider;
 import '../support/arena_test_harness.dart' as harness;
@@ -29,7 +30,7 @@ Future<void> _pumpArena(WidgetTester tester, {Size? size, List<Override>? overri
   addTearDown(tester.view.reset);
   await tester.pumpWidget(MaterialApp(
     home: Scaffold(
-      body: ProviderScope(overrides: overrides ?? _overrides(), child: const ArenaScreen()),
+      body: ProviderScope(overrides: overrides ?? _overrides(), child: ArenaScreen(elo: EloService())),
     ),
   ));
   await tester.pump();

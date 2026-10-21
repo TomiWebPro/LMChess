@@ -1,7 +1,7 @@
 # Future Work
 
 Status: living document
-Last updated: 2026-10-21 (UTC) — test/ui/home_screen_test.dart (§6.2, 6 tests) created
+Last updated: 2026-10-21 (UTC) — §10.5 Arena Elo injection refactor completed
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -1065,6 +1065,9 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
 }
 ```
 
+> Note (2026-10-21): implemented. Added optional named `EloService? elo` parameter to `ArenaScreen` constructor; replaced `static final EloService _elo = EloService()` in `_ArenaScreenState` with `late final EloService _elo` initialized via `widget.elo ?? EloService()` in `initState`. Updated all call sites (`_computeStandings` ratings + games/provisional lookups, `_concludeGame` updateAfterGame). Existing `test/ui/arena_screen_test.dart` updated to pass fresh `EloService()`. New `test/ui/elo_injection_test.dart` (6 tests): default ctor isolation, injected custom rating, independent Elos across screen instances, backward compat no-arg constructor. Evidence: `flutter analyze` clean; `flutter test test/ui/elo_injection_test.dart` 6/6 pass; `flutter test test/ui/arena_screen_test.dart` 27/27 pass; full regression `flutter test` 530/530 pass (524 old + 6 new). Next: §10.6 Deterministic deep states or §10.8 Dispose audit.
+
+
 ### 10.6 Deterministic deep states
 
 Add `@visibleForTesting` parameters:
@@ -1211,6 +1214,7 @@ Implementation order:
 6. Watch and Arena.
 7. Agents (§6.10 DONE 2026-10-20), Review (§6.8 DONE 2026-10-20), Variant replay (§6.9, TODO).
 8. Stats, Settings, Home, shared widgets.
+9. Testability refactors 10.5–10.8 — Elo injection DONE 2026-10-21; deterministic deep states + dispose audit still TODO.
 
 Why this order: it front-loads the highest-risk surface (semantics + Play),
 gets a native crash gate in place early, then fills breadth. Stats/Settings/
