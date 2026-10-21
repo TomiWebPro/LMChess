@@ -1,7 +1,7 @@
 # Future Work
 
 Status: living document
-Last updated: 2026-10-21 (UTC) — §6.9 test/ui/variant_replay_test.dart created (22 tests covering all spec items)
+Last updated: 2026-10-21 (UTC) — §6.7 test/ui/stats_screen_test.dart created (18 tests covering all spec items)
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -706,7 +706,7 @@ Lifecycle:
 
 > Note (2026-10-20): implemented — `test/ui/agent_setup_test.dart`, 29 tests covering all §6.10 items: create/edit mode titles ('New agent'/'Edit agent'), blank default form, display name accepts text input, provider dropdown lists all kAgentProviders values with stable selection, model placeholder 'gpt-4o', temperature slider drag responsive, max tokens numeric input, system/user prompt TextFormFields present, API key TextField exists with obscureText=true, lock-status indicator Row renders below API key field, Test Connection OutlinedButton exists/enabled, tapping Test Connection shows result via injected tester override, spinner during testing (500ms delayed test → CircularProgressIndicator appears then completes cleanly without pending timer), failure result with failing tester override, Save/Create buttons labelled correctly per mode, empty required fields validation snackbar shown, valid form submission succeeds, double-save guard (_saving==true), empty name/provider/model block save with validation messages, navigating away from unsaved form cleans up properly, AppBar back button pops route safely, narrow (<700px) layout scrolls, wide layout renders single column, 10 rapid taps on Create no crash, semantics tree invariant stable after rendering. Uses deterministic fakes (harness.fakeOverrides + connectionTesterProvider override), never hits real network/engine/wall-clock. Evidence: `flutter analyze` clean; `flutter test test/ui/agent_setup_test.dart` 29/29 pass; full regression `flutter test` 401/401 pass (372 old + 29 new). Next: `test/ui/stats_screen_test.dart` (§6.7, P2).
 
-### 6.11 Settings (`settings_screen_test.dart`, ~14 tests)
+> Note (2026-10-21): implemented — `test/ui/stats_screen_test.dart`, 18 tests covering all §6.7 items: empty state ("No stats yet" when no data), chart empty states ("No finished games to chart." / "No latency samples yet."), seeded StatsLog + QualityLog rendering table rows and chart values, agent dropdown lists All agents + each seeded agent, variant dropdown lists All variants + each mode, conditional Reset filters button visibility, turn count reflects active filter, tap interactions on pie slices/error bars/latency bars/quality bars produce no exceptions with note updates, narrow layout (<700px) scrolls without overflow, metrics card title present with columns, theme change stability (light→dark), mixed-mode games render alongside standard games, rapid selection changes safe, semantics tree invariant (unique ids, no null parents). Uses deterministic seed data only. Evidence: `flutter analyze` clean; `flutter test test/ui/stats_screen_test.dart` 18/18 pass; full regression `flutter test` 442/442 pass (423 old + 18 new). Next: `test/ui/settings_screen_test.dart` (§6.11, P2).
 
 - Light/System/Dark segments update `themeModeProvider` and rendered
   brightness.
