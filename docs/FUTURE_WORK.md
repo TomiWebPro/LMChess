@@ -1,7 +1,7 @@
 # Future Work
 
 Status: living document
-Last updated: 2026-10-21 (UTC) — tool/windows_accessibility_smoke.ps1 (§9.2) created (native UIA smoke tool)
+Last updated: 2026-10-21 (UTC) — test/ui/shared_widgets_test.dart (§6.12, 51 tests) created
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -727,6 +727,8 @@ Lifecycle:
 - `BoardPanelLayout`: `<700` tabs, `700-1100`, `>1100` side-by-side; tab switch
   preserves child state.
 - `StatChip` variants.
+
+> Note (2026-10-21): implemented — `test/ui/shared_widgets_test.dart`, 51 tests covering all §6.12 items: MoveList (empty "No moves yet.", single/multi-move rows, error plies ⚠ via semantics label "error", quality mark !!/? via semantics label "move quality", current-ply bold highlight fontWeight.w700, tap-to-seek callback with ply index, null-onTapMove safe), EvalBar (+/-/zero label formatting, heuristic watermark toggle on/off, fractionFor logistic mapping extremes ±10 → ~1/~0, zero→0.5, +2→>0.6), AgentActivityPanel (empty placeholder, thinking-waiting message, streaming event tiles per-kind, thinking footer spinner+text, error tile, auto-scroll FilterChip interactive), PlayerCard (active with formatted clock "30:00", inactive no accent border, human/person icon, agent/robot icon, long name ellipsis without overflow, subtitle text, null clock hides clock entirely), BoardPanelLayout (wide >1100 Row side-by-side, medium 700–1100 TabBar stacked, narrow <700 Column stacked, tab switch preserves StatefulBuilder child state across Board→Activity→Board round-trip), StatChip (label:value text, optional icon avatar, no-icon mode, multiple coexist in Wrap). Layout/formatter unit tests: layoutModeFor at all breakpoints (500→narrow, 700/1000/1100→medium, 1200→wide), formatClock (0/90/3661/negative edge cases), qualityColorFor light/dark theme values, qualityIconFor all known marks + unknown fallback, redactSecrets (sk-keys/Bearer tokens/api_key assignments + safe passthrough). Uses deterministic data only — never hits real engine/network/wall-clock. Evidence: `flutter analyze` clean (pre-existing 3 issues unchanged); `flutter test test/ui/shared_widgets_test.dart` 51/51 pass; full regression `flutter test` 518/518 pass (467 old + 51 new). Next: `test/ui/home_screen_test.dart` (§6.2, P2).
 
 ---
 
