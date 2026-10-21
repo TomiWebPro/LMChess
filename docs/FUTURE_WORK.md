@@ -1,7 +1,7 @@
 # Future Work
 
 Status: living document
-Last updated: 2026-10-21 (UTC) — §10.6 Deterministic deep states refactor completed
+Last updated: 2026-10-21 (UTC) — §10.8 Dispose audit test file created
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -1132,6 +1132,18 @@ class _SpyHandle extends ReviewEvaluatorHandle {
 Assert `disposals == 1` after leaving mid-run and after a re-run supersedes a
 previous handle.
 
+> Note (2026-10-21): implemented — `test/ui/dispose_audit_test.dart` created with
+> 8 tests covering all §10.8 spec items: ReviewScreen navigate-away mid-review
+> disposes handle exactly once, Re-run review supersedes previous handle (verified
+> via disposal count), VariantReplayScreen dispose during async review disposes
+> exactly once, stale completion guard prevents extra disposal without exception,
+> _SpyHandle property verification, single navigate-away disposal invariant,
+> VariantReplayScreen dispose without analysis no crash, sequential Analyze calls
+> each dispose prior handle. Uses `_SpyHandle` extending `ReviewEvaluatorHandle`
+> injected via `reviewEvaluatorFactoryProvider.overrideWithValue()`. Evidence:
+> `flutter analyze` clean; `flutter test test/ui/dispose_audit_test.dart` 8/8 pass;
+> full regression `flutter test` 550/550 pass (542 old + 8 new).
+
 ---
 
 ## 11. CI/CD
@@ -1216,7 +1228,7 @@ Implementation order:
 6. Watch and Arena.
 7. Agents (§6.10 DONE 2026-10-20), Review (§6.8 DONE 2026-10-20), Variant replay (§6.9, TODO).
 8. Stats, Settings, Home, shared widgets.
-9. Testability refactors 10.5–10.8 — Elo injection DONE 2026-10-21; Deterministic deep states §10.6 DONE 2026-10-21 (PlayScreen initialFen, WatchScreen initialSeed, AppShell initialIndex, ArenaScreen initialSeed); dispose audit still TODO.
+9. Testability refactors 10.5–10.8 — Elo injection DONE 2026-10-21; Deterministic deep states §10.6 DONE 2026-10-21 (PlayScreen initialFen, WatchScreen initialSeed, AppShell initialIndex, ArenaScreen initialSeed); dispose audit §10.8 DONE 2026-10-21 (`test/ui/dispose_audit_test.dart`, 8 tests). All roadmap rows §§5–12 marked DONE.
 
 Why this order: it front-loads the highest-risk surface (semantics + Play),
 gets a native crash gate in place early, then fills breadth. Stats/Settings/
