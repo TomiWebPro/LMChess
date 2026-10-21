@@ -69,7 +69,10 @@ const String kPlayAiAgentId = 'demo-black';
 /// Human (White) vs AI (Black) play surface.
 class PlayScreen extends ConsumerStatefulWidget {
   /// Creates the play screen.
-  const PlayScreen({super.key});
+  const PlayScreen({super.key, this.initialFen});
+
+  /// Starting FEN for testing — skips the first ~40 normal moves.
+  final String? initialFen;
 
   @override
   ConsumerState<PlayScreen> createState() => _PlayScreenState();
@@ -161,9 +164,10 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
   void _newGame() {
     _sub?.cancel();
     _orch?.dispose();
-    _engine = Position.initial();
+    final startFen = widget.initialFen ?? standardStartFen;
+    _engine = parseFen(startFen);
     _sans.clear();
-    _fens = <String>[standardStartFen];
+    _fens = <String>[startFen];
     _phrases.clear();
     _fallbacks.clear();
     _applied = 0;
@@ -198,7 +202,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
       positionUpdater: fenAdvance,
     );
     orch.setPosition(
-      standardStartFen,
+      startFen,
       turn: 'w',
       legalMoves: legalUcis(_engine),
     );

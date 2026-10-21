@@ -145,7 +145,10 @@ final List<_Destination> _destinations = <_Destination>[
 /// Responsive app shell: rail (≥700px) vs. bottom bar + drawer (<700px).
 class AppShell extends StatefulWidget {
   /// Creates the app shell.
-  const AppShell({super.key});
+  const AppShell({super.key, this.initialIndex = 0});
+
+  /// Destination index to start on — tests set this to skip tapping Home cards.
+  final int initialIndex;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -154,6 +157,12 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   /// Selected destination index.
   int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _index = widget.initialIndex;
+  }
 
   @override
   Widget build(BuildContext context) {

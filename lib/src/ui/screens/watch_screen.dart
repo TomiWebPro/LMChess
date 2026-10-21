@@ -58,7 +58,10 @@ const String kWatchGameId = 'watch-game';
 /// AI-vs-AI watch room with selectors, transport controls and telemetry.
 class WatchScreen extends ConsumerStatefulWidget {
   /// Creates the watch screen.
-  const WatchScreen({super.key});
+  const WatchScreen({super.key, this.initialSeed});
+
+  /// Seed for deterministic mock runs — replaces wall-clock randomness.
+  final int? initialSeed;
 
   @override
   ConsumerState<WatchScreen> createState() => _WatchScreenState();
@@ -459,7 +462,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     _pending.clear();
     _finished = false;
     _lastOrchState = null;
-    _watchSeed = _clock().millisecondsSinceEpoch & 0x7fffffff;
+    _watchSeed = widget.initialSeed ?? (_clock().millisecondsSinceEpoch & 0x7fffffff);
     _whiteAgentId = white.id;
     _blackAgentId = black.id;
     _whiteModel = white.model;

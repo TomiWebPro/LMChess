@@ -1,7 +1,7 @@
 # Future Work
 
 Status: living document
-Last updated: 2026-10-21 (UTC) — §10.5 Arena Elo injection refactor completed
+Last updated: 2026-10-21 (UTC) — §10.6 Deterministic deep states refactor completed
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -1077,6 +1077,8 @@ Add `@visibleForTesting` parameters:
 - `ArenaScreen({this.initialSeed, this.elo})`.
 - `AppShell({this.initialIndex = 0})` - test one destination without tapping.
 
+> Note (2026-10-21): implemented. PlayScreen ({this.initialFen}) — parseFen(startFen) replaces Position.initial() in _newGame(), defaulting to standardStartFen. AppShell ({this.initialIndex = 0}) — initState sets _index from widget initialIndex instead of hardcoded 0. WatchScreen({this.initialSeed}) — seed assignment uses widget.initialSeed ?? (clock().msSinceEpoch & 0x7fffffff). ArenaScreen({this.initialSeed, this.elo}) already had elo; initialSeed replaces wall-clock tournament seed at ~line 785. New `test/ui/deterministic_deep_states_test.dart` (12 tests): initialFen overrides starting position with custom FEN, minimal king-only FEN renders correctly, PlayScreen without initialFen uses standard start, AppShell initialIndex values navigate directly, WatchScreen seeds render stably, backward compat const ctors pass. Evidence: `flutter analyze` clean (5 files); `flutter test test/ui/deterministic_deep_states_test.dart` 12/12 pass; full regression `flutter test` 542/542 pass (530 old + 12 new). Next: §10.8 Dispose audit.
+
 ### 10.7 Stable keys
 
 Duplicate labels exist after a game ends (`New game` in the banner and in the
@@ -1214,7 +1216,7 @@ Implementation order:
 6. Watch and Arena.
 7. Agents (§6.10 DONE 2026-10-20), Review (§6.8 DONE 2026-10-20), Variant replay (§6.9, TODO).
 8. Stats, Settings, Home, shared widgets.
-9. Testability refactors 10.5–10.8 — Elo injection DONE 2026-10-21; deterministic deep states + dispose audit still TODO.
+9. Testability refactors 10.5–10.8 — Elo injection DONE 2026-10-21; Deterministic deep states §10.6 DONE 2026-10-21 (PlayScreen initialFen, WatchScreen initialSeed, AppShell initialIndex, ArenaScreen initialSeed); dispose audit still TODO.
 
 Why this order: it front-loads the highest-risk surface (semantics + Play),
 gets a native crash gate in place early, then fills breadth. Stats/Settings/

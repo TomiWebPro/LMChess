@@ -286,11 +286,14 @@ class ArenaScreen extends ConsumerStatefulWidget {
   ///
   /// [elo] allows tests to inject a fresh [EloService] so tournament ratings
   /// do not leak across test boundaries via the session-static singleton.
-  const ArenaScreen({super.key, this.elo});
+  const ArenaScreen({super.key, this.elo, this.initialSeed});
 
   /// Optional Elo ladders for the tournament. When absent the screen creates
   /// a fresh [EloService] internally.
   final EloService? elo;
+
+  /// Seed for deterministic tournaments — replaces wall-clock randomness.
+  final int? initialSeed;
 
   @override
   ConsumerState<ArenaScreen> createState() => _ArenaScreenState();
@@ -779,7 +782,7 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
     if (picked.length < 2) return; // Button is disabled; double-guard.
     final pairs = picked.length * (picked.length - 1) ~/ 2;
     final mode = _chaos ? 'chaotic' : 'standard';
-    final seed = _clock().millisecondsSinceEpoch & 0x7fffffff;
+    final seed = widget.initialSeed ?? (_clock().millisecondsSinceEpoch & 0x7fffffff);
     final config = TournamentConfig(
       id: const Uuid().v4(),
       name: _name.text.trim().isEmpty ? 'Tournament' : _name.text.trim(),
