@@ -6,8 +6,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart' show SemanticsAction, SemanticsNode;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:llm_chess_arena/src/chess/piece.dart'
-    show PieceType, squareName;
+import 'package:llm_chess_arena/src/chess/piece.dart' show squareName;
 import 'package:llm_chess_arena/src/theme/board_theme.dart';
 import 'package:llm_chess_arena/src/theme/piece_theme.dart';
 import 'package:llm_chess_arena/src/ui/widgets/chessboard.dart';

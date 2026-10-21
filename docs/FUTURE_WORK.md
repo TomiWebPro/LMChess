@@ -1,7 +1,7 @@
 # Future Work
 
 Status: living document
-Last updated: 2026-10-21 (UTC) — §10.8 Dispose audit test file created
+Last updated: 2026-10-21 (UTC) — §6.3 chessboard_test.dart lint cleanup (unused import)
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -586,6 +586,11 @@ labels and `ensureSemantics` when the widget exposes actions.
 > on/off, semantic+gesture handler parity, built-in theme variety, responsive sizing
 > down to 120px. Evidence: `flutter test test/ui/chessboard_test.dart` 26/26 pass;
 > full regression `flutter test` 229/229 pass. Next: shell_navigation_test.dart (§6.1).
+> 
+> Note (2026-10-21): removed unused `PieceType` from import show-list (line 10).
+> Eliminates one pre-existing `unused_shown_name` lint warning. No functional change.
+> Remaining pre-existing warnings: 2 (unused `boardRect` var at line 97, dangling
+> library doc comment in watch_screen_test.dart).
 
 ### 6.4 Play (`play_screen_test.dart`, ~30 tests)
 
