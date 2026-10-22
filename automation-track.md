@@ -543,7 +543,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   CI command on this host: `flutter test test/ui --coverage` (Flutter 3.47.6
   stable) — all test/ui suites green and `coverage/lcov.info` generated;
   `flutter analyze` → `No issues found!`; full regression `flutter test`
-  631/631 pass (no Dart changes; regression confirmed). Commit: <TBD>.
+  631/631 pass (no Dart changes; regression confirmed). Commit: 7fb99c6.
   Push **BLOCKED** (same as prior runs): no GitHub credentials on this host
   — `git ls-remote origin main` still shows e1749b3; queued local commits
   remain un-pushed. Re-run the push after credentials are provisioned.
