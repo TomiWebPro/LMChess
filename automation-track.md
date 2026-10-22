@@ -510,8 +510,9 @@ suites referenced above now exist. Native Windows execution is tracked in
   credential helper, token, `gh`, or SSH key); `git ls-remote origin main`
   still shows e1749b3, so 5faf11b..HEAD remain local-only. Re-run the push
   after credentials are provisioned.
-  Next: re-push the queued local commits (5faf11b..HEAD, 9 commits) once
-  GitHub credentials exist — this closes the last Linux-verifiable open item;
-  the remaining open items (§9.1/§9.2 Windows native runs, §11.3 first
-  Windows CI run, §11.4 optional coverage wiring, §2.6 upstream fix) all
-  need a Windows desktop/UIA session or an upstream Flutter release.
+  Next: re-push the queued local commits (origin/main..HEAD, now 15 commits
+  including this run's 985ca4d + cedf076) once GitHub credentials exist —
+  this closes the last Linux-verifiable open item; the remaining open items
+  (§9.1/§9.2 Windows native runs, §11.3 first Windows CI run, §11.4 optional
+  coverage wiring, §2.6 upstream fix) all need a Windows desktop/UIA session
+  or an upstream Flutter release.
