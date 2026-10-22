@@ -475,7 +475,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   Windows-only and could not be executed on this host (no pwsh); syntax
   reviewed manually — the blocks contain only `$LASTEXITCODE` checks,
   `Write-Host`, `Exit`, `Out-File`, and `Get-WinEvent` pipelines.
-  Commit: 430d9a7. Push **BLOCKED** (same as prior runs): no GitHub
+  Commit: 7618098. Push **BLOCKED** (same as prior runs): no GitHub
   credentials on this host — `git ls-remote origin main` still shows
   e1749b3; queued local commits remain un-pushed. Re-run the push after
   credentials are provisioned.
