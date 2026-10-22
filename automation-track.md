@@ -1,7 +1,7 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-22 (UTC) — §3.3 Flutter upgrade gate added to the runbook; acceptance criterion 14.8 met
+Last updated: 2026-10-22 (UTC) — §11.4 coverage wired into CI ubuntu-gate (non-gating lcov artifact)
 Related: `docs/FUTURE_WORK.md` (binding roadmap), `ARCHITECTURE.md`, `README.md`
 
 This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every run**.
@@ -516,3 +516,39 @@ suites referenced above now exist. Native Windows execution is tracked in
   (§9.1/§9.2 Windows native runs, §11.3 first Windows CI run, §11.4 optional
   coverage wiring, §2.6 upstream fix) all need a Windows desktop/UIA session
   or an upstream Flutter release.
+- 2026-10-22Z — INFRA P2 §11.4 (coverage wired into CI, Linux-verifiable
+  slice): closed the last remaining Linux-implementable open item.
+  `flutter test test/ui --coverage` is documented in the §11.4 spec but was
+  not run in CI; it is now wired into the `ubuntu-gate` job as a NON-GATING
+  step (`continue-on-error: true`) that runs the documented command, then
+  uploads `coverage/lcov.info` as a `coverage-lcov` artifact
+  (`if-no-files-found: warn`, 30-day retention) via
+  `actions/upload-artifact@v4`. Coverage is explicitly NOT the success metric
+  (§11.4: every interaction-matrix control exercised + every transition
+  asserts the semantics invariants is the goal, not a line-coverage number) —
+  the step only makes trend reporting possible and can never redden the gate.
+  Files changed:
+  `.github/workflows/ci.yaml` — two new steps in `ubuntu-gate` after `Test`:
+  "Test coverage (§11.4)" (`flutter test test/ui --coverage`,
+  continue-on-error: true) + "Upload coverage artifact" (if: always()).
+  `docs/FUTURE_WORK.md` — §11.4 moved from the open list to DONE (section
+  kept with the run evidence + rationale that coverage is not the success
+  metric); `Last updated:` line bumped.
+  `automation-track.md` — header line + this Run Log entry.
+  No Dart/test files changed.
+  Evidence: workflow YAML re-parses clean via PyYAML (jobs: ubuntu-gate +
+  windows-nightly; ubuntu-gate now 8 steps; coverage step continue-on-error:
+  true; upload inputs name=coverage-lcov/path=coverage/lcov.info/
+  if-no-files-found=warn/retention-days=30). Local verification of the exact
+  CI command on this host: `flutter test test/ui --coverage` (Flutter 3.47.6
+  stable) — all test/ui suites green and `coverage/lcov.info` generated;
+  `flutter analyze` → `No issues found!`; full regression `flutter test`
+  631/631 pass (no Dart changes; regression confirmed). Commit: <TBD>.
+  Push **BLOCKED** (same as prior runs): no GitHub credentials on this host
+  — `git ls-remote origin main` still shows e1749b3; queued local commits
+  remain un-pushed. Re-run the push after credentials are provisioned.
+  Next: §11.3 trigger the first Windows CI run (needs a Windows runner with
+  an interactive desktop/UIA session) or re-push the queued local commits;
+  the remaining open items (§9.1/§9.2 native runs, §11.3 first Windows run,
+  §2.6 upstream fix, §13 open decisions) all need a Windows desktop/UIA
+  session or an upstream Flutter release.

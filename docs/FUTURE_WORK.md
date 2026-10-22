@@ -1,7 +1,7 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-22 (UTC) — §3.3 Flutter upgrade gate added to `docs/RUNBOOK.md` and referenced by the release process (acceptance criterion 14.8 met)
+Last updated: 2026-10-22 (UTC) — §11.4 coverage wired into the CI ubuntu-gate (non-gating `flutter test test/ui --coverage` + `coverage-lcov` artifact)
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -97,11 +97,15 @@ Remaining:
 **Done when:** a green scheduled Windows run is linked from the repository and
 its artifacts prove the native gate passed.
 
-### 11.4 Coverage (P2 — optional, not wired)
+### 11.4 Coverage (P2 — DONE)
 
-`flutter test test/ui --coverage` is documented but not run in CI. Coverage is
-explicitly not the success metric (§11.4); wire it only if trend reporting is
-wanted.
+`flutter test test/ui --coverage` is now run in CI as a non-gating step on the
+ubuntu-gate job (`continue-on-error: true`): it generates `coverage/lcov.info`
+and uploads it as a `coverage-lcov` artifact so coverage trends can be
+reported. Coverage is explicitly not the success metric — the goal is that
+every interaction-matrix control is exercised and every transition asserts
+the semantics invariants, not a line-coverage number. See
+`automation-track.md` for the run evidence.
 
 ---
 

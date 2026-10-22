@@ -40,6 +40,24 @@ jobs:
       - name: Test
         run: flutter test
 
+      - name: Test coverage (§11.4)
+        # Coverage is explicitly NOT the success metric (§11.4): the goal is
+        # that every interaction-matrix control is exercised and every
+        # transition asserts the semantics invariants — not a line-coverage
+        # number. This step only generates the lcov.info artifact so coverage
+        # trends CAN be reported; it never gates the build.
+        continue-on-error: true
+        run: flutter test test/ui --coverage
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: coverage/lcov.info
+          if-no-files-found: warn
+          retention-days: 30
+
   windows-nightly:
     name: Windows Nightly Gate (§11.3)
     runs-on: windows-latest
