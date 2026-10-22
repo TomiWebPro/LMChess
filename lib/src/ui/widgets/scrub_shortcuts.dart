@@ -59,6 +59,7 @@ class ScrubShortcuts extends StatefulWidget {
     super.key,
     required this.enabled,
     required this.onAction,
+    this.onEscape,
     required this.child,
   });
 
@@ -68,6 +69,13 @@ class ScrubShortcuts extends StatefulWidget {
 
   /// Receives the mapped [ScrubAction] for each handled key press.
   final ValueChanged<ScrubAction> onAction;
+
+  /// Optional handler for Escape while the scope owns focus.
+  ///
+  /// Independent of the scrub arrow keys; hosts that keep a cancel-able
+  /// transient state (for example a premove queue on the play screen) wire
+  /// Escape here. `null` leaves the key unhandled.
+  final VoidCallback? onEscape;
 
   /// The subtree that owns the shortcuts.
   final Widget child;
@@ -129,6 +137,14 @@ class _ScrubShortcutsState extends State<ScrubShortcuts> {
   KeyEventResult _handleKey(FocusNode node, KeyEvent event) {
     if (!_visible || !widget.enabled) return KeyEventResult.ignored;
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      final onEscape = widget.onEscape;
+      if (onEscape != null) {
+        onEscape();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
     final action = switch (event.logicalKey) {
       LogicalKeyboardKey.arrowLeft => ScrubAction.stepBack,
       LogicalKeyboardKey.arrowRight => ScrubAction.stepForward,

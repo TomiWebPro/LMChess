@@ -119,6 +119,35 @@ class CellPiece {
   }
 }
 
+/// One queued premove to visualize on the board (§15.4 ghost layer).
+///
+/// The ghost shows the piece at [from] translucent and a numbered marker at
+/// [to]; [promotion] (a lowercase letter such as `'q'`) is appended to the
+/// marker as the premove's promotion indicator.
+class BoardPremove {
+  /// Creates a premove visual.
+  const BoardPremove({required this.from, required this.to, this.promotion});
+
+  /// Origin square (`'d2'`).
+  final String from;
+
+  /// Destination square (`'d4'`).
+  final String to;
+
+  /// Lowercase promotion letter, or `null` for a plain move.
+  final String? promotion;
+
+  @override
+  bool operator ==(Object other) =>
+      other is BoardPremove &&
+      other.from == from &&
+      other.to == to &&
+      other.promotion == promotion;
+
+  @override
+  int get hashCode => Object.hash(from, to, promotion);
+}
+
 /// Interactive chessboard for 8×8 standard and variant games.
 ///
 /// See the library docs above for rendering, animation, highlight
@@ -139,6 +168,8 @@ class Chessboard extends StatefulWidget {
     this.onMoveAttempt,
     this.canDragSquare,
     this.motion,
+    this.premoves = const <BoardPremove>[],
+    this.onRightClick,
     required this.boardTheme,
     required this.pieceTheme,
     this.variantBadges = const <String, String>{},
@@ -202,6 +233,18 @@ class Chessboard extends StatefulWidget {
   /// settings previews). Hosts pass `null` while seeking so scrubbed
   /// snapshots snap instead of animating stale moves.
   final BoardMove? motion;
+
+  /// Queued premoves to show as translucent ghost pieces + numbered
+  /// destination markers (§15.4). Ghosts are purely visual —
+  /// `IgnorePointer` + `ExcludeSemantics` — so neither hit testing nor the
+  /// 64 square semantics nodes change while premoves are queued.
+  final List<BoardPremove> premoves;
+
+  /// Optional secondary-button (right-click) handler, invoked when a
+  /// secondary pointer goes down while no drag is in flight (during a drag,
+  /// right-click still cancels the drag). Hosts use this to cancel the last
+  /// premove; `null` disables the callback.
+  final VoidCallback? onRightClick;
 
   /// Board colors and overlay tints.
   final BoardTheme boardTheme;
@@ -452,6 +495,22 @@ class _ChessboardState extends State<Chessboard> with TickerProviderStateMixin {
                                 displayCol++
                               )
                                 _buildCell(displayRow, displayCol, cell),
+                            // §15.4 premove ghosts: translucent source
+                            // pieces + numbered destination markers. Purely
+                            // visual (IgnorePointer + ExcludeSemantics) so
+                            // neither hit testing nor the 64 square
+                            // semantics nodes change while premoves queue.
+                            if (widget.premoves.isNotEmpty)
+                              Positioned.fill(
+                                key: const ValueKey<String>(
+                                  'chessboard-premove-overlay',
+                                ),
+                                child: IgnorePointer(
+                                  child: ExcludeSemantics(
+                                    child: _buildPremoveLayer(cell),
+                                  ),
+                                ),
+                              ),
                             // Lifted piece follows the pointer. IgnorePointer +
                             // ExcludeSemantics keep the drag purely visual so
                             // neither hit testing nor the 64 square semantics
@@ -799,11 +858,82 @@ class _ChessboardState extends State<Chessboard> with TickerProviderStateMixin {
     );
   }
 
+  /// One §15.4 premove overlay layer: translucent ghosts at each queued
+  /// premove's origin + a numbered marker on its destination.
+  Widget _buildPremoveLayer(double cell) {
+    return Stack(
+      children: <Widget>[
+        for (var i = 0; i < widget.premoves.length; i++) ...[
+          _buildPremoveGhost(widget.premoves[i], i, cell),
+          _buildPremoveMarker(widget.premoves[i], i, cell),
+        ],
+      ],
+    );
+  }
+
+  /// Translucent copy of the piece at [premove.from] on the current board.
+  ///
+  /// The source piece is still on the board (the premove is a future move),
+  /// so the ghost reads as a placeholder. Missing sources (the piece was
+  /// captured while the queue drained) render nothing.
+  Widget _buildPremoveGhost(BoardPremove premove, int index, double cell) {
+    final piece = CellPiece.parse(widget.squares[premove.from]);
+    if (piece == null) return const SizedBox.shrink();
+    final center = _squareCenter(premove.from, cell);
+    return Positioned(
+      key: ValueKey<String>('chessboard-premove-ghost-${premove.from}'),
+      left: center.dx - cell / 2,
+      top: center.dy - cell / 2,
+      width: cell,
+      height: cell,
+      child: Center(
+        child: Opacity(opacity: 0.45, child: _buildGlyph(piece, cell)),
+      ),
+    );
+  }
+
+  /// Numbered marker on [premove.to] showing the queue position (1-based)
+  /// and, for promotion premoves, the default promotion letter.
+  Widget _buildPremoveMarker(BoardPremove premove, int index, double cell) {
+    final center = _squareCenter(premove.to, cell);
+    final radius = cell * 0.18;
+    return Positioned(
+      key: ValueKey<String>('chessboard-premove-marker-${premove.to}'),
+      left: center.dx - radius,
+      top: center.dy - radius,
+      width: radius * 2,
+      height: radius * 2,
+      child: Center(
+        child: Container(
+          alignment: Alignment.center,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.black87,
+          ),
+          child: Text(
+            '${index + 1}${premove.promotion ?? ''}',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: math.max(9, cell * 0.26),
+              height: 1,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   /// Handles a pointer-down: remembers the press for tap-vs-drag detection
-  /// and treats a secondary-button press as “cancel the current drag”.
+  /// and treats a secondary-button press as “cancel the current drag” (or,
+  /// with no drag in flight, the host's right-click hook for premoves).
   void _handlePointerDown(PointerDownEvent event, double size) {
     if ((event.buttons & kSecondaryButton) != 0) {
-      _cancelDrag();
+      if (_dragging) {
+        _cancelDrag();
+      } else {
+        widget.onRightClick?.call();
+      }
       return;
     }
     _pressPosition = event.localPosition;

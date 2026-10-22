@@ -1,7 +1,7 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-22 (UTC) — §15.3 fast ply scrubbing shipped
+Last updated: 2026-10-22 (UTC) — §15.4 premove + multipremove shipped (§15 complete)
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -13,12 +13,13 @@ investigation history are preserved in `automation-track.md` and git history.
 Verified baseline (2026-10-22):
 
 - `flutter analyze` — 0 issues.
-- `flutter test` — 601/601 pass.
+- `flutter test` — 631/631 pass.
 - `flutter build linux --release` — succeeds; release binary starts under Xvfb.
 - Roadmap §12 — 18/18 deliverables present; §10.1–10.8 refactors complete.
 - Interaction matrix §6 — all 12 screen/widget suites present.
-- §15.1 drag-and-drop, §15.2 move-animation layer, and §15.3 fast ply
-  scrubbing shipped.
+- §15 Chessboard interaction & motion is complete: §15.1 drag-and-drop,
+  §15.2 move-animation layer, §15.3 fast ply scrubbing, and §15.4 premove /
+  multipremove shipped.
 
 ---
 
@@ -96,67 +97,16 @@ wanted.
 
 ---
 
-## 15. Chessboard interaction and motion (P1/P2 — in progress)
+## 15. Chessboard interaction and motion (P1/P2 — complete)
 
-The board supports drag-and-drop (§15.1, shipped 2026-10-22), an explicit
-from→to move-animation layer (§15.2, shipped 2026-10-22) on top of the
-click-click tap path, and fast ply scrubbing with keyboard + move-list seek
-(§15.3, shipped 2026-10-22). The remaining UX gap versus chess.com is the
-premove queue.
-
-Target feel: queue premoves while the opponent thinks.
-
-### 15.4 Premove and multipremove (P1 single / P2 multi)
-
-Premove is a UI-level queue until the human turn actually arrives; it must
-never bypass the orchestrator.
-
-- Active during the opponent's turn / while the AI is thinking. Click-click or
-  drag can add a premove; show a translucent ghost piece and a numbered
-  destination marker, plus a “N premoves” status chip.
-- Queue up to five premoves. Validate each against a clone of the current
-  position with earlier queued premoves applied, so multiple queued moves are
-  legal in sequence.
-- On the opponent's move, execute leading legal premoves one at a time through
-  the normal human-move path. The first illegal premove is discarded together
-  with everything queued after it, with a brief visual explanation.
-- Cancel with right-click (last premove), Esc (clear all), or a
-  “Clear premoves” control. Clear the queue on new game, terminal state, and
-  screen dispose.
-- Promotion premoves default to queen (with a visible indicator) or use an
-  explicitly chosen piece; do not open a blocking dialog while the opponent is
-  thinking.
-- Do not request an extra AI turn, double-apply a premove, or leave stale
-  queue state if the game ends mid-queue.
-
-### 15.5 Verification and files
-
-Likely touch points:
-
-- `lib/src/ui/widgets/chessboard.dart` — motion overlay (§15.2, shipped),
-  keyboard seeking (§15.3, shipped), premove ghost pieces.
-- `lib/src/ui/screens/play_screen.dart` — premove queue, `AppliedMove`
-  retention.
-- `lib/src/ui/screens/watch_screen.dart`,
-  `lib/src/ui/screens/review_screen.dart`,
-  `lib/src/ui/screens/variant_replay_screen.dart` — premove is Play-only, but
-  each screen keeps the summary/chip semantics consistent.
-- New tests: `test/ui/premove_test.dart`; extend the existing play suite.
-  (`test/ui/board_motion_test.dart` shipped with §15.2,
-  `test/ui/scrub_shortcuts_test.dart` with §15.3.)
-
-Acceptance:
-
-- A single premove and a multi-premove chain execute after the AI move; an
-  illegal premove is discarded cleanly; cancel/new-game/terminal clears it.
-- (Met by §15.3:) Arrow-key scrub forward and backward animates pieces; 20
-  rapid presses cause no exceptions, pending timers, or duplicate AI turns.
-- (Met by §15.1–15.3:) Semantics tree keeps 64 unique square nodes with zero
-  reparenting through drag, animation, and rapid seeking.
-- `flutter analyze` clean; full `flutter test` green; reduced-motion mode
-  passes without animation.
-
-Suggested order: single premove → multipremove (15.4) → polish.
+The chessboard interaction roadmap is shipped in full: §15.1 drag-and-drop,
+§15.2 explicit from→to move-animation layer, §15.3 keyboard + move-list ply
+scrubbing, and §15.4 premove / multipremove (click-click or drag queue up to
+five premoves with ghost pieces + numbered destination markers, validated in
+sequence, executing one per human turn through the normal move path, with
+right-click/Escape/Clear cancellation and queen-default promotion premoves).
+Evidence for each shipped tranche is in `automation-track.md`; the premove
+suite is `test/ui/premove_test.dart`.
 
 ---
 

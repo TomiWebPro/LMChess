@@ -1,7 +1,7 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-22 (UTC) — §15.3 fast ply scrubbing completed
+Last updated: 2026-10-22 (UTC) — §15.4 premove + multipremove completed (§15 done)
 Related: `docs/FUTURE_WORK.md` (binding roadmap), `ARCHITECTURE.md`, `README.md`
 
 This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every run**.
@@ -378,3 +378,66 @@ suites referenced above now exist. Native Windows execution is tracked in
   credentials are provisioned.
   Next: §15.4 premove single (or a CI/process item such as §11.3 remote-run
   workarounds).
+- 2026-10-22Z — UI P1 §15.4 (premove and multipremove): implemented the
+  premove queue across the play room, completing §15 (chessboard interaction
+  & motion). Files changed:
+  `lib/src/ui/premove.dart` (new, pure Dart) — `PremoveAttempt` (from/to/
+  promotion + `uci`), `kMaxPremoves = 5`, `promotionTypeFor`,
+  `isPromotionMove`, `premoveSimulation` (applies queued premoves as
+  consecutive same-side moves on a clone of the current position, dropping
+  everything after the first illegal/malformed premove, and always returns
+  the mover to move so target dots and validation read naturally),
+  `isLegalPremove` (queue-time AND execution-time legality on a forced-turn
+  probe clone).
+  `lib/src/ui/widgets/chessboard.dart` — `BoardPremove` value type + new
+  `premoves` param rendering the §15.4 ghost layer: translucent source glyph
+  at `from` + numbered destination marker (with the promotion letter, e.g.
+  `1q`) at `to`, inside one `IgnorePointer` + `ExcludeSemantics` overlay so
+  hit testing and the 64 square semantics nodes stay untouched; new
+  `onRightClick` param fired on secondary pointer-down while no drag is in
+  flight (during a drag, right-click still cancels the drag).
+  `lib/src/ui/widgets/scrub_shortcuts.dart` — optional `onEscape` hook so
+  Escape (already owned by the scrub focus scope) can clear the premove
+  queue without touching the scrub arrow keys.
+  `lib/src/ui/screens/play_screen.dart` — `_premoves`/`_premoveNotice`
+  state; `_premoveWindow` (live + no result + not the human's turn) and
+  `_premoveSimulation`; `_onPremoveTap` (select own piece with simulated
+  legal-target dots, queue on a legal destination, tap-again deselects,
+  opponent-piece taps safe); `_queuePremove` shared by the click-click and
+  drag paths (validated in sequence, promotion premoves default to queen
+  with a visible marker and never open a blocking dialog); `_executePremoves`
+  hooked at the end of `_syncBoard` when the human turn arrives with a
+  non-empty queue — plays the leading legal premove through the normal
+  `_applyHumanMove` path one per human turn, so exactly one AI turn is
+  requested per applied premove, and discards the first illegal premove
+  together with everything queued after it plus a brief notice;
+  `_removeLastPremove` (right-click), `_clearPremoves` (Escape / Clear
+  premoves control), `_buildPremoveBar` (“N premoves” chip + Clear premoves
+  + discard notice); queue cleared on new game, terminal state, and dispose;
+  ghosts/chip only shown in the premove window and hidden while scrubbed.
+  Premove is Play-only (per §15.5) — Watch/Review/Variant Replay untouched.
+  New `test/ui/premove_test.dart` (30 tests): 11 unit (uci composition,
+  equality/hashCode, promotionTypeFor, isPromotionMove detection, empty
+  simulation leaves the board and forces the mover to move, single apply,
+  legal chain in sequence, drop-after-illegal, isLegalPremove accept/reject
+  + opponent-piece rejection, pinned-rook king-exposure rejection + pin-line
+  slide acceptance, promotion-as-queen simulation) + 19 widget (tap-to-queue
+  during the AI turn, second premove queues with numbering 1/2, illegal tap
+  rejected, drag-to-queue, right-click removes last, Escape clears all,
+  Clear premoves control, single premove executes after the AI reply with
+  exactly 2 AI turns, multi-premove chain executes one per human turn with
+  exactly 3 AI turns and drains, illegal leading premove discarded with
+  notice and no extra AI turn, promotion premove shows `1q` marker with no
+  “Promote to” dialog and lands a white queen on a8, deselect by re-tap,
+  opponent-piece tap safe, five-move cap rejects a sixth, new game clears,
+  resign clears, semantics 64 square nodes stable with ghosts excluded,
+  right-click with empty queue no-op, ghosts hidden while scrubbed).
+  Deterministic fakes only (`MockProvider` with a scripted legal reply per
+  turn or the engine's first legal UCI, fixed UTC clock); no
+  network/engine/wall-clock.
+  Evidence: `flutter analyze` → `No issues found! (ran in 2.2s)`;
+  `flutter test test/ui/premove_test.dart` 30/30 pass; related suites
+  (play/chessboard/drag/motion/scrub/watch/review/variant_replay) green;
+  full `flutter test` 631/631 pass (601 baseline + 30 new).
+  Next: §11.3 remote-run workaround, §3.3 runbook checklist (docs-only), or
+  re-push the queued local commits once GitHub credentials exist.

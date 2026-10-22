@@ -36,6 +36,12 @@
 ///   UI mirror from the backend. Use New game to restart.
 /// * Promotion shows the standard Q/R/B/N [promotionDialog]; resign asks
 ///   for confirmation and calls `orchestrator.resign('w')`.
+/// * Premoves (§15.4): while the AI is thinking the human can queue up to
+///   five moves (click-click or drag) validated in sequence against the
+///   current position; they execute one at a time through the normal
+///   human-move path once the AI reply lands. Right-click removes the last
+///   premove, Escape / the Clear control empties the queue, and promotion
+///   premoves default to queen with no dialog.
 library;
 
 import 'dart:async';
@@ -55,6 +61,7 @@ import '../../theme/piece_theme.dart';
 import '../../theme/registry.dart';
 import '../backend_bridge.dart';
 import '../game_mirror.dart';
+import '../premove.dart';
 import '../ui_models.dart';
 import '../widgets/activity_panel.dart';
 import '../widgets/boards.dart';
@@ -150,6 +157,13 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
   String _blackAgentId = kPlayAiAgentId;
   String _blackModel = 'mock';
 
+  /// Queued premoves (§15.4), played one per human turn after the AI reply.
+  final List<PremoveAttempt> _premoves = <PremoveAttempt>[];
+
+  /// Brief visual explanation shown when the leading premove was discarded
+  /// together with everything queued after it.
+  String? _premoveNotice;
+
   /// The live orchestrator (recreated per game).
   GameOrchestrator? _orch;
 
@@ -167,6 +181,9 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
     _sub?.cancel();
     _orch?.dispose();
     _activityRevision.dispose();
+    // No stale queue state may outlive the screen (§15.4: clear on dispose).
+    _premoves.clear();
+    _premoveNotice = null;
     super.dispose();
   }
 
@@ -194,6 +211,8 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
     _aiInFlight = false;
     _aiError = null;
     _pending.clear();
+    _premoves.clear();
+    _premoveNotice = null;
     _blackAgentId = kPlayAiAgentId;
     _blackModel = 'mock';
     final orch = GameOrchestrator(
@@ -298,6 +317,13 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
       _finishGame();
     } else if (orch.turn == 'b' && orch.state == OrchestratorState.waitingAi) {
       _requestAiTurn();
+    } else if (_premoves.isNotEmpty &&
+        orch.turn == 'w' &&
+        orch.state == OrchestratorState.waitingHuman) {
+      // Human turn arrived with queued premoves: play them one at a time
+      // through the normal human-move path (§15.4). Each application flips
+      // the turn back to Black, which requests exactly one AI reply.
+      _executePremoves();
     }
   }
 
@@ -324,6 +350,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
     return ScrubShortcuts(
       enabled: _orch != null,
       onAction: _onScrubAction,
+      onEscape: _premoves.isEmpty ? null : _clearPremoves,
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
@@ -358,8 +385,26 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
                   pieceTheme: pieceTheme,
                   onTapSquare: _result == null && viewingLive ? _onTap : null,
                   canDragSquare: (square) => viewingLive && _isOwnPiece(square),
-                  onMoveAttempt: (from, to) =>
-                      unawaited(_attemptMove(from, to)),
+                  onMoveAttempt: (from, to) {
+                    if (_premoveWindow) {
+                      _queuePremove(from, to);
+                    } else {
+                      unawaited(_attemptMove(from, to));
+                    }
+                  },
+                  onRightClick: _premoveWindow && _premoves.isNotEmpty
+                      ? _removeLastPremove
+                      : null,
+                  premoves: _premoveWindow
+                      ? <BoardPremove>[
+                          for (final p in _premoves)
+                            BoardPremove(
+                              from: p.from,
+                              to: p.to,
+                              promotion: p.promotion,
+                            ),
+                        ]
+                      : const <BoardPremove>[],
                   motion: viewingLive ? _lastMotion : _viewMotion,
                 ),
                 panel: ValueListenableBuilder<int>(
@@ -391,6 +436,10 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
                 ),
               ),
             ),
+            if (_premoves.isNotEmpty || _premoveNotice != null) ...[
+              const SizedBox(height: 8),
+              _buildPremoveBar(),
+            ],
             const SizedBox(height: 8),
             PlayerCard(
               name: 'You',
@@ -520,11 +569,15 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
   }
 
   /// Board tap handler: select own piece (engine-legal targets), then
-  /// move / capture / reselect.
+  /// move / capture / reselect. While the AI is thinking (§15.4) taps
+  /// instead queue premoves through [_onPremoveTap].
   Future<void> _onTap(String square) async {
     final orch = _orch;
     if (_result != null || orch == null) return;
-    if (orch.turn != 'w') return;
+    if (orch.turn != 'w') {
+      _onPremoveTap(square);
+      return;
+    }
     // Tapped a legal destination → move (promotion dialog at the end rank).
     if (_selected != null && _legal.contains(square)) {
       await _attemptMove(_selected!, square);
@@ -647,6 +700,177 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
     final tapped = Square.tryParse(square);
     final occupant = tapped == null ? null : _engine.pieceAt(tapped);
     return occupant != null && occupant.color.isWhite;
+  }
+
+  /// True while the premove window is open (§15.4): the game is live, the
+  /// view is on the live position, no result, and it is NOT the human's
+  /// (White) turn — the AI is thinking or about to move.
+  bool get _premoveWindow {
+    final orch = _orch;
+    return orch != null &&
+        _result == null &&
+        _viewPly == _sans.length &&
+        orch.turn != 'w';
+  }
+
+  /// The live position with all queued premoves applied as White moves —
+  /// the reference for queue-time legality and premove target dots.
+  Position get _premoveSimulation =>
+      premoveSimulation(_engine, _premoves, color: PieceColor.white);
+
+  /// Board-tap handling during the AI's turn (§15.4 premove window): a
+  /// White piece selects it (legal targets shown from the simulation), a
+  /// legal destination for the selected piece queues a premove, the same
+  /// square again deselects, anything else clears the selection.
+  void _onPremoveTap(String square) {
+    if (!_premoveWindow) return;
+    if (_selected == square) {
+      setState(() {
+        _selected = null;
+        _legal = const <String>[];
+      });
+      return;
+    }
+    final tapped = Square.tryParse(square);
+    final occupant = tapped == null ? null : _engine.pieceAt(tapped);
+    if (occupant != null && occupant.color.isWhite) {
+      final sim = _premoveSimulation;
+      final targets = <String>[
+        for (final move in sim.legalMoves(forSquare: tapped!)) move.to.name,
+      ];
+      setState(() {
+        _selected = square;
+        _legal = targets;
+      });
+      return;
+    }
+    if (_selected != null) {
+      _queuePremove(_selected!, square);
+      return;
+    }
+    setState(() {
+      _selected = null;
+      _legal = const <String>[];
+    });
+  }
+
+  /// Queues [from]→[to] as a premove, shared by the click-click and drag
+  /// paths. Validated in sequence against the already-queued premoves;
+  /// promotion premoves default to queen (never a blocking dialog while
+  /// the opponent thinks). Silently rejects illegal taps and the queue cap.
+  void _queuePremove(String from, String to) {
+    if (!_premoveWindow) return;
+    if (_premoves.length >= kMaxPremoves) return;
+    final promotion = isPromotionMove(_engine, from, to, PieceColor.white)
+        ? 'q'
+        : null;
+    if (!isLegalPremove(
+      _premoveSimulation,
+      from,
+      to,
+      promotion: promotion,
+      color: PieceColor.white,
+    )) {
+      return;
+    }
+    setState(() {
+      _premoves.add(PremoveAttempt(from: from, to: to, promotion: promotion));
+      _selected = null;
+      _legal = const <String>[];
+      _premoveNotice = null;
+    });
+  }
+
+  /// Plays queued premoves one at a time through the normal human-move path
+  /// (§15.4), invoked when the human turn arrives with a non-empty queue.
+  ///
+  /// The leading premove is re-validated against the LIVE position — the AI
+  /// reply may have made it illegal — and the first illegal premove is
+  /// discarded together with everything queued after it (brief notice). Each
+  /// legal premove applies exactly once via [_applyHumanMove], so the
+  /// orchestrator requests exactly one AI turn per applied premove.
+  void _executePremoves() {
+    final orch = _orch;
+    if (orch == null || _result != null || orch.turn != 'w') return;
+    if (_premoves.isEmpty) return;
+    final head = _premoves.first;
+    if (!isLegalPremove(
+      _engine,
+      head.from,
+      head.to,
+      promotion: head.promotion,
+      color: PieceColor.white,
+    )) {
+      setState(() {
+        _premoveNotice =
+            'Illegal premove ${head.from}-${head.to} was discarded.';
+        _premoves.clear();
+        _selected = null;
+        _legal = const <String>[];
+      });
+      return;
+    }
+    setState(() {
+      _premoves.removeAt(0);
+    });
+    _applyHumanMove(head.from, head.to, head.promotion);
+  }
+
+  /// Removes the last queued premove (right-click).
+  void _removeLastPremove() {
+    if (_premoves.isEmpty) return;
+    setState(() => _premoves.removeLast());
+  }
+
+  /// Empties the whole premove queue and clears the discard notice
+  /// (Escape / the Clear premoves control).
+  void _clearPremoves() {
+    if (_premoves.isEmpty && _premoveNotice == null) return;
+    setState(() {
+      _premoves.clear();
+      _premoveNotice = null;
+      _selected = null;
+      _legal = const <String>[];
+    });
+  }
+
+  /// Premove status row: “N premoves” chip, Clear control, and the brief
+  /// discard notice (§15.4).
+  Widget _buildPremoveBar() {
+    final theme = Theme.of(context);
+    return Row(
+      children: <Widget>[
+        if (_premoves.isNotEmpty) ...[
+          Chip(
+            key: const ValueKey<String>('play-premove-chip'),
+            avatar: const Icon(Icons.schedule_outlined, size: 18),
+            label: Text(
+              '${_premoves.length} '
+              '${_premoves.length == 1 ? 'premove' : 'premoves'}',
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton.icon(
+            key: const ValueKey<String>('play-clear-premoves'),
+            onPressed: _clearPremoves,
+            icon: const Icon(Icons.clear_all_outlined, size: 18),
+            label: const Text('Clear premoves'),
+          ),
+        ],
+        if (_premoveNotice != null) ...[
+          if (_premoves.isNotEmpty) const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _premoveNotice!,
+              key: const ValueKey<String>('play-premove-notice'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
   }
 
   /// Applies the human's move through the orchestrator.
@@ -823,10 +1047,15 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
       setState(() {
         _result = outcome;
         _thinking = false;
+        // Terminal state clears any pending premoves (§15.4).
+        _premoves.clear();
+        _premoveNotice = null;
       });
     } else {
       _result = outcome;
       _thinking = false;
+      _premoves.clear();
+      _premoveNotice = null;
     }
   }
 
