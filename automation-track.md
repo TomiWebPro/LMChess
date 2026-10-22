@@ -370,8 +370,8 @@ suites referenced above now exist. Native Windows execution is tracked in
   test/ui/scrub_shortcuts_test.dart` 20/20 pass; related suites
   (play/watch/review/variant_replay 85/85, chessboard/drag/motion/semantics/
   shell 105/105, monkey/deep-states/stable-keys 21/21) all green; full
-  `flutter test` 601/601 pass (581 baseline + 20 new). Commit: see
-  `git log -1`. Push **BLOCKED** (same as prior runs): no GitHub credentials
+  `flutter test` 601/601 pass (581 baseline + 20 new). Commit:
+  9721d1f. Push **BLOCKED** (same as prior runs): no GitHub credentials
   on this host — `git push origin main` → `could not read Username for
   'https://github.com'`; `git ls-remote` shows remote `main` still at
   e1749b3, so 8eaaa5e..HEAD remain local-only. Re-run the push after
