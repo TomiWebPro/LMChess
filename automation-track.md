@@ -307,7 +307,10 @@ suites referenced above now exist. Native Windows execution is tracked in
   pass; related suites (chessboard, chessboard_drag, play, watch, review,
   variant_replay, semantics_stability + board_motion) 174/174 pass; full
   `flutter test` 581/581 pass (565 baseline + 16 new).
-  Commit: see below. Push **BLOCKED** (same as prior runs): no GitHub
+  Commit: cebc5c7. Push **BLOCKED** (same as prior runs): no GitHub
   credentials on this host (`git push origin main` → `could not read
-  Username`). Local commits remain ahead of remote `main`.
+  Username for 'https://github.com'`; no credential helper, token, `gh`, or
+  SSH key). `git ls-remote` shows remote `main` at e1749b3, so
+  be3ab86/ee07968/77f8de0/cebc5c7 remain local-only. Re-run the push after
+  credentials are provisioned.
   Next: §15.3 fast ply scrubbing.
