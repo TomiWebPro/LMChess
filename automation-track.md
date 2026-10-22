@@ -590,6 +590,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   fixed: unused harness imports + unused shown names from the migration);
   full regression `flutter test` → 631/631 pass (baseline 631, suite count
   unchanged — every telemetry test still present, now instance/scope-based).
+  Commit: 2613751.
   Push **BLOCKED** (same as prior runs): no GitHub credentials on this host
   — `git ls-remote origin main` still shows e1749b3; queued local commits
   remain un-pushed. Re-run the push after credentials are provisioned.
