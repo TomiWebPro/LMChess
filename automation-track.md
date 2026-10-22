@@ -438,6 +438,11 @@ suites referenced above now exist. Native Windows execution is tracked in
   Evidence: `flutter analyze` → `No issues found! (ran in 2.2s)`;
   `flutter test test/ui/premove_test.dart` 30/30 pass; related suites
   (play/chessboard/drag/motion/scrub/watch/review/variant_replay) green;
-  full `flutter test` 631/631 pass (601 baseline + 30 new).
+  full `flutter test` 631/631 pass (601 baseline + 30 new). Commit:
+  26a13c1. Push **BLOCKED** (same as prior runs): no GitHub credentials
+  on this host — `git push origin main` → `could not read Username for
+  'https://github.com'`; `git ls-remote` shows remote `main` still at
+  e1749b3, so 5faf11b..HEAD remain local-only. Re-run the push after
+  credentials are provisioned.
   Next: §11.3 remote-run workaround, §3.3 runbook checklist (docs-only), or
   re-push the queued local commits once GitHub credentials exist.
