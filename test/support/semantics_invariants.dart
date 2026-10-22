@@ -188,7 +188,7 @@ void expectSquareSemantics(
 
 bool _isSquareLabel(String label) {
   // Matches "Empty square e4", "White piece on d5", "Black piece on g7".
-  final regex = RegExp(r'^(?:Empty|White|Black) square .+$');
+  final regex = RegExp(r'^(?:Empty square|White piece on|Black piece on) .+$');
   return regex.hasMatch(label);
 }
 

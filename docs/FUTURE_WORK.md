@@ -1,7 +1,7 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-21 (UTC)
+Last updated: 2026-10-22 (UTC)
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -94,35 +94,15 @@ wanted.
 
 ---
 
-## 15. Chessboard interaction and motion (P1 — not started)
+## 15. Chessboard interaction and motion (P1 — in progress)
 
-The board is currently a snapshot renderer: 64 tap targets, tap-tap moves, and
-a 160 ms scale/fade whenever a square's content changes. There is no drag
-gesture, no premove queue, and ply seeking swaps snapshots. This is the
-largest remaining UX gap versus chess.com.
+The board now supports drag-and-drop (§15.1, shipped 2026-10-22) on top of
+the click-click tap path. It is still a snapshot renderer: there is no
+explicit move animation, no premove queue, and ply seeking swaps snapshots.
+Those gaps are the remaining UX work versus chess.com.
 
-Target feel: pick up and drag a piece, see legal targets, drop it on the
-destination, queue premoves while the opponent thinks, and scrub back/forth
-through the game with pieces sliding across the board.
-
-### 15.1 Drag and drop (P1)
-
-- Add a board-level pointer router that maps global position to a square
-  through the current orientation. Keep the existing per-square tap handler as
-  the click-click path; drag is additive.
-- Drag start on an own piece: select it, show legal dots/capture rings, lift
-  the piece slightly with a shadow, hide the source glyph, and set a
-  grab/grabbing cursor.
-- Drag over the board: highlight the hovered square; show capture rings for
-  occupied legal targets; ignore non-target squares.
-- Drop on a legal target: call a new `onMoveAttempt(from, to)` callback.
-  Drop on an illegal square, outside the board, or cancel (Esc/right-click)
-  snaps the piece back with no state change.
-- Promotion: dropping a pawn on the last rank opens the existing promotion
-  dialog. Cancelling the dialog restores the pawn position.
-- Mouse, trackpad, and touch must all work. Do not require a long press.
-- Keep the 64 square semantics nodes intact; drag must not replace the
-  semantics tap action (screen-reader users still move by tap).
+Target feel: scrub back/forth through the game with pieces sliding across the
+board, and queue premoves while the opponent thinks.
 
 ### 15.2 Move animation layer (P1)
 
@@ -189,20 +169,17 @@ never bypass the orchestrator.
 
 Likely touch points:
 
-- `lib/src/ui/widgets/chessboard.dart` — drag router, motion overlay, keys.
-- `lib/src/ui/screens/play_screen.dart` — drag callback, premove queue,
-  ply shortcuts, `AppliedMove` retention.
+- `lib/src/ui/widgets/chessboard.dart` — motion overlay, keyboard seeking.
+- `lib/src/ui/screens/play_screen.dart` — premove queue, ply shortcuts,
+  `AppliedMove` retention.
 - `lib/src/ui/screens/watch_screen.dart`,
   `lib/src/ui/screens/review_screen.dart`,
   `lib/src/ui/screens/variant_replay_screen.dart` — shared seek/motion.
-- New tests: `test/ui/chessboard_drag_test.dart`,
-  `test/ui/board_motion_test.dart`, `test/ui/premove_test.dart`; extend the
-  existing play/review/variant/watch suites.
+- New tests: `test/ui/board_motion_test.dart`, `test/ui/premove_test.dart`;
+  extend the existing play/review/variant/watch suites.
 
 Acceptance:
 
-- Drag e2→e4 with mouse and touch; illegal drop leaves the position unchanged;
-  promotion drag works and cancel restores the pawn.
 - A single premove and a multi-premove chain execute after the AI move; an
   illegal premove is discarded cleanly; cancel/new-game/terminal clears it.
 - Arrow-key scrub forward and backward animates pieces; 20 rapid presses cause
@@ -212,8 +189,8 @@ Acceptance:
 - `flutter analyze` clean; full `flutter test` green; reduced-motion mode
   passes without animation.
 
-Suggested order: motion primitive and API (15.2) → drag/drop (15.1) → ply
-scrubbing (15.3) → single premove → multipremove (15.4) → polish.
+Suggested order: motion primitive and API (15.2) → ply scrubbing (15.3) →
+single premove → multipremove (15.4) → polish.
 
 ---
 

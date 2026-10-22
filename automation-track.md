@@ -232,3 +232,32 @@ suites referenced above now exist. Native Windows execution is tracked in
   simulation/validation/cancel rules. Includes semantics/AXTree constraints,
   reduced-motion handling, likely touch points, tests, and acceptance criteria.
   Next: implement 15.2 motion primitive first, then 15.1 drag/drop.
+- 2026-10-22Z — UI P1 §15.1 (chessboard drag and drop): completed the
+  interrupted drag-and-drop implementation and wired it into Play. Files
+  changed:
+  `lib/src/ui/widgets/chessboard.dart` — converted to `StatefulWidget`; added a
+  board-level `Listener` pointer router (orientation-aware position→square),
+  `kTouchSlop` drag start (no long press), lifted `IgnorePointer` +
+  `ExcludeSemantics` glyph overlay with drop shadow, hovered-square highlight,
+  hidden source glyph, `canDragSquare` predicate, `onMoveAttempt(from, to)`
+  callback with `onTapSquare(to)` click-click fallback, and Esc / right-click /
+  pointer-cancel / outside-drop snap-back. The 64 per-square semantics nodes and
+  tap actions are untouched; drag state is not in semantics.
+  `lib/src/ui/screens/play_screen.dart` — extracted `_attemptMove(from, to)`
+  (engine validation + promotion dialog + `_applyHumanMove`) shared by the tap
+  and drag paths; added `_isOwnPiece` so drags only start on White pieces; wired
+  `canDragSquare` + `onMoveAttempt` into the board.
+  `test/ui/chessboard_drag_test.dart` (new, 15 tests) — mouse and touch drags,
+  illegal/outside drops, empty-square and opponent-piece rejection, callback
+  fallback, right-click and Esc cancellation, flipped orientation, 64-node
+  semantics/no-reparenting through drag, PlayScreen move integration, and
+  promotion dialog cancel-restores/queen-applies.
+  `test/support/semantics_invariants.dart` — fixed `_isSquareLabel` regex: it
+  required the word “square” after White/Black, so piece squares were not
+  counted (latent helper bug surfaced by the 64-node drag test).
+  `docs/FUTURE_WORK.md` — removed §15.1, updated §15 intro/acceptance/order.
+  Evidence: `flutter analyze` → `No issues found! (ran in 2.2s)`;
+  `flutter test test/ui/chessboard_drag_test.dart` 15/15 pass;
+  `flutter test test/ui/chessboard_test.dart test/ui/play_screen_test.dart`
+  51/51 pass; full `flutter test` 565/565 pass (550 baseline + 15 new).
+  Commit: <PENDING_HASH>. Next: §15.2 explicit from→to move animation layer.

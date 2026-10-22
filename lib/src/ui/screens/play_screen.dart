@@ -348,6 +348,9 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
                 boardTheme: boardTheme,
                 pieceTheme: pieceTheme,
                 onTapSquare: _result == null && viewingLive ? _onTap : null,
+                canDragSquare: _isOwnPiece,
+                onMoveAttempt: (from, to) =>
+                    unawaited(_attemptMove(from, to)),
               ),
               panel: ValueListenableBuilder<int>(
                 valueListenable: _activityRevision,
@@ -526,17 +529,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
     if (orch.turn != 'w') return;
     // Tapped a legal destination → move (promotion dialog at the end rank).
     if (_selected != null && _legal.contains(square)) {
-      final from = _selected!;
-      final fromSq = Square.fromName(from);
-      final occupant = _engine.pieceAt(fromSq);
-      String? promotion;
-      if (occupant != null &&
-          occupant.type == PieceType.pawn &&
-          Square.fromName(square).rank == 7) {
-        promotion = await promotionDialog(context, isWhite: true);
-        if (promotion == null || !mounted) return;
-      }
-      _applyHumanMove(from, square, promotion);
+      await _attemptMove(_selected!, square);
       return;
     }
     // Tapped own (white) piece → select with engine-legal targets.
@@ -558,6 +551,42 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
       _selected = null;
       _legal = const <String>[];
     });
+  }
+
+  /// Attempts a human move from [from] to [to], shared by the click-click tap
+  /// path and board drag-and-drop (§15.1).
+  ///
+  /// Validates against the engine (the board is only a view), asks for a
+  /// promotion piece when a pawn reaches the last rank, and applies through
+  /// [_applyHumanMove]. A cancelled promotion dialog leaves the position
+  /// untouched, which is what a cancelled drag drop needs.
+  Future<void> _attemptMove(String from, String to) async {
+    final orch = _orch;
+    if (_result != null || orch == null || orch.turn != 'w') return;
+    final fromSq = Square.tryParse(from);
+    if (fromSq == null) return;
+    final legal =
+        _engine.legalMoves(forSquare: fromSq).any((m) => m.to.name == to);
+    if (!legal) return;
+    final occupant = _engine.pieceAt(fromSq);
+    String? promotion;
+    if (occupant != null &&
+        occupant.type == PieceType.pawn &&
+        Square.fromName(to).rank == 7) {
+      promotion = await promotionDialog(context, isWhite: true);
+      if (promotion == null || !mounted) return;
+    }
+    _applyHumanMove(from, to, promotion);
+  }
+
+  /// Whether [square] holds a piece the human may pick up (White).
+  ///
+  /// Passed to the board so drag-to-move cannot start on an opponent piece;
+  /// the board's click path already enforces this through [_onTap].
+  bool _isOwnPiece(String square) {
+    final tapped = Square.tryParse(square);
+    final occupant = tapped == null ? null : _engine.pieceAt(tapped);
+    return occupant != null && occupant.color.isWhite;
   }
 
   /// Applies the human's move through the orchestrator.
