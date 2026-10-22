@@ -1,7 +1,7 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-22 (UTC) — §15.4 premove + multipremove shipped (§15 complete)
+Last updated: 2026-10-22 (UTC) — §11.3 CI process fixes (fail-fast on any non-zero exit; single UIA invocation)
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -67,12 +67,25 @@ accessibility client attached (acceptance criteria 14.1–14.2).
 
 ## 11. CI/CD (P0/P1 — incomplete)
 
-### 11.3 Nightly Windows gate (P0 — workflow added, awaiting first run)
+### 11.3 Nightly Windows gate (P0 — workflow fixed, awaiting first Windows run)
 
 `.github/workflows/ci.yaml` now defines a scheduled `windows-nightly` job
 (nightly + `workflow_dispatch`) that builds the Windows release, runs the
 §9.1 integration test, invokes the §9.2 UIA smoke, and uploads output
 artifacts. It has not completed a run yet, so the gate is not proven.
+
+Process fixes shipped 2026-10-22:
+
+- The integration-test and UIA-smoke steps now fail the job on **any**
+  non-zero exit. Previously only the smoke's exit code 2 gated the job — a
+  red §9.1 integration test or a smoke exit code 1 (exe/app failure) could
+  pass silently. Event Viewer excerpt export now triggers on any smoke
+  failure, not only the crash path.
+- The job no longer pre-launches the release exe. The UIA smoke script owns
+  the app lifecycle (it launches via `Start-Process -PassThru` and always
+  kills the process in its own `finally` block, §9.2 steps 3 + 8). The
+  previous job-level `Start-Process` double-launched the app, splitting UIA
+  attachment and seeded random clicks between two windows.
 
 Remaining:
 
@@ -80,11 +93,6 @@ Remaining:
   runner. The UIA smoke needs an interactive desktop/UIA session; GitHub's
   hosted `windows-latest` runner may not provide one, so a dedicated VM may be
   required (see §13).
-- Make the integration-test and smoke steps fail the job on any non-zero exit,
-  not only on smoke exit code 2.
-- Confirm the UIA script is invoked once (the job currently starts the app and
-  the script starts it again) and that artifacts contain the Event Viewer
-  excerpt on failure.
 
 **Done when:** a green scheduled Windows run is linked from the repository and
 its artifacts prove the native gate passed.
