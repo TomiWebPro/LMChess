@@ -33,12 +33,14 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../chess/square.dart';
 import '../../review/engine_adapter.dart' show EngineSources;
 import '../../review/quality.dart' show MoveQuality;
 import '../../review/wintr_review.dart';
 import '../../theme/registry.dart';
 import '../backend_bridge.dart';
 import '../widgets/activity_panel.dart' show redactSecrets;
+import '../widgets/board_motion.dart';
 import '../widgets/boards.dart';
 import '../widgets/chessboard.dart';
 import '../widgets/tab_visibility.dart';
@@ -775,6 +777,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
       int index, {
       String? lastFrom,
       String? lastTo,
+      BoardMove? motion,
     }) {
       return Column(
         children: <Widget>[
@@ -786,6 +789,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
             pieceTheme: pieceTheme,
             lastFrom: lastFrom,
             lastTo: lastTo,
+            motion: motion,
             interactive: false,
             showCoordinates: false,
           ),
@@ -800,6 +804,15 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
       afterIndex,
       lastFrom: bright ? uci.substring(0, 2) : null,
       lastTo: bright ? uci.substring(2, 4) : null,
+      // Animates the final scrubbed transition only; the board derives
+      // capture/en-passant/castle from its before→after snapshot diff, so
+      // the bare from/to UCI pair is a complete motion value.
+      motion: bright
+          ? BoardMove(
+              from: Square.fromName(uci.substring(0, 2)),
+              to: Square.fromName(uci.substring(2, 4)),
+            )
+          : null,
     );
     return Card(
       child: Padding(

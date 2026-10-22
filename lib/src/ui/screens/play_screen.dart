@@ -58,6 +58,7 @@ import '../game_mirror.dart';
 import '../ui_models.dart';
 import '../widgets/activity_panel.dart';
 import '../widgets/boards.dart';
+import '../widgets/board_motion.dart';
 import '../widgets/chessboard.dart';
 
 /// Game id used for stats/review attribution of the play room.
@@ -111,6 +112,10 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
   /// Last-move trail.
   String? _lastFrom;
   String? _lastTo;
+
+  /// Most recently applied transition, fed to the board's §15.2 motion
+  /// layer when the snapshot is live (null while seeking).
+  BoardMove? _lastMotion;
 
   /// Game result (`'1-0'`, `'0-1'`, `'1/2-1/2'`); non-null ends input.
   String? _result;
@@ -176,6 +181,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
     _legal = const <String>[];
     _lastFrom = null;
     _lastTo = null;
+    _lastMotion = null;
     _result = null;
     _events.clear();
     _thinking = false;
@@ -258,6 +264,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
         _fens.add(_engine.toFen());
         _lastFrom = move.from.name;
         _lastTo = move.to.name;
+        _lastMotion = BoardMove.fromApplied(receipt);
       },
     );
     _applied = replay.applied;
@@ -351,6 +358,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
                 canDragSquare: _isOwnPiece,
                 onMoveAttempt: (from, to) =>
                     unawaited(_attemptMove(from, to)),
+                motion: viewingLive ? _lastMotion : null,
               ),
               panel: ValueListenableBuilder<int>(
                 valueListenable: _activityRevision,

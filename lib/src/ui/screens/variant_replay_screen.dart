@@ -13,10 +13,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../theme/registry.dart';
+import '../../chess/square.dart';
 import '../../review/variant_review.dart';
 import '../../variant/variant_replay.dart';
 import '../backend_bridge.dart';
 import '../widgets/activity_panel.dart';
+import '../widgets/board_motion.dart';
 import '../widgets/boards.dart';
 import '../widgets/chessboard.dart';
 
@@ -138,6 +140,18 @@ class _VariantReplayScreenState extends ConsumerState<VariantReplayScreen> {
                     : null,
                 lastTo: current != null && current.wasLegal
                     ? current.attempt.toSquareName
+                    : null,
+                // Forward steps through a legal ply animate via the §15.2
+                // motion layer; the board derives capture/en-passant/castle
+                // from its before→after snapshot diff, so the bare from/to
+                // pair is a complete motion value. Illegal plies and backward
+                // seeks snap (no flight: the origin piece is absent from the
+                // old snapshot).
+                motion: current != null && current.wasLegal
+                    ? BoardMove(
+                        from: Square.fromName(current.attempt.fromSquareName),
+                        to: Square.fromName(current.attempt.toSquareName),
+                      )
                     : null,
               ),
             ),

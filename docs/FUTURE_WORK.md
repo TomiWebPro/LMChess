@@ -1,7 +1,7 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-22 (UTC)
+Last updated: 2026-10-22 (UTC) — §15.2 move animation layer shipped
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -10,13 +10,14 @@ The remaining items are release validation, CI automation, and process
 integration that cannot be closed on Linux. Completed work and the crash
 investigation history are preserved in `automation-track.md` and git history.
 
-Verified baseline (2026-10-21):
+Verified baseline (2026-10-22):
 
 - `flutter analyze` — 0 issues.
-- `flutter test` — 550/550 pass.
+- `flutter test` — 581/581 pass.
 - `flutter build linux --release` — succeeds; release binary starts under Xvfb.
 - Roadmap §12 — 18/18 deliverables present; §10.1–10.8 refactors complete.
 - Interaction matrix §6 — all 12 screen/widget suites present.
+- §15.1 drag-and-drop and §15.2 move-animation layer shipped.
 
 ---
 
@@ -96,36 +97,14 @@ wanted.
 
 ## 15. Chessboard interaction and motion (P1 — in progress)
 
-The board now supports drag-and-drop (§15.1, shipped 2026-10-22) on top of
-the click-click tap path. It is still a snapshot renderer: there is no
-explicit move animation, no premove queue, and ply seeking swaps snapshots.
-Those gaps are the remaining UX work versus chess.com.
+The board supports drag-and-drop (§15.1, shipped 2026-10-22) and an explicit
+from→to move-animation layer (§15.2, shipped 2026-10-22) on top of the
+click-click tap path. It is still not scrub-friendly: ply seeking swaps
+snapshots, and there is no premove queue. Those gaps are the remaining UX
+work versus chess.com.
 
 Target feel: scrub back/forth through the game with pieces sliding across the
 board, and queue premoves while the opponent thinks.
-
-### 15.2 Move animation layer (P1)
-
-Current `AnimatedSwitcher` scale/fade is not a move animation. Add an explicit
-from→to motion layer:
-
-- Accept an `AppliedMove`-style transition (or a small `BoardMove` value) with
-  `from`, `to`, `flag`, `captured`, and `promotion`. The play/watch/review
-  replay paths already have or can retain `AppliedMove` receipts.
-- Render the flying piece in a separate `IgnorePointer` + `ExcludeSemantics`
-  overlay above the 64 stable square nodes. Never move or reparent the square
-  semantics nodes mid-animation — that is the AXTree failure mode this project
-  already guards against.
-- Animate with a short slide (roughly 140–180 ms, ease-out). Interrupting a
-  seek retargets from the current visual position instead of jumping.
-- Handle castling (animate king and rook), en passant (fade the captured pawn
-  on its actual square), promotion (swap the piece at the end of the slide),
-  and captures (fade/scale the captured glyph).
-- Only the overlay layer rebuilds per frame; the 64 cells stay static. Use a
-  `RepaintBoundary` around the board.
-- Honour `MediaQuery.disableAnimations` / reduced-motion: snap instead.
-- Full boards (Play, Watch, Review, Variant Replay) use the motion layer;
-  Arena mini-boards stay static.
 
 ### 15.3 Fast ply scrubbing (P1)
 
@@ -169,14 +148,15 @@ never bypass the orchestrator.
 
 Likely touch points:
 
-- `lib/src/ui/widgets/chessboard.dart` — motion overlay, keyboard seeking.
+- `lib/src/ui/widgets/chessboard.dart` — motion overlay (shipped §15.2),
+  keyboard seeking.
 - `lib/src/ui/screens/play_screen.dart` — premove queue, ply shortcuts,
   `AppliedMove` retention.
 - `lib/src/ui/screens/watch_screen.dart`,
   `lib/src/ui/screens/review_screen.dart`,
   `lib/src/ui/screens/variant_replay_screen.dart` — shared seek/motion.
-- New tests: `test/ui/board_motion_test.dart`, `test/ui/premove_test.dart`;
-  extend the existing play/review/variant/watch suites.
+- New tests: `test/ui/premove_test.dart`; extend the existing play/review/
+  variant/watch suites. (`test/ui/board_motion_test.dart` shipped with §15.2.)
 
 Acceptance:
 
@@ -185,12 +165,12 @@ Acceptance:
 - Arrow-key scrub forward and backward animates pieces; 20 rapid presses cause
   no exceptions, pending timers, or duplicate AI turns.
 - Semantics tree keeps 64 unique square nodes with zero reparenting through
-  drag, animation, and rapid seeking.
+  drag, animation (§15.2 verified), and rapid seeking.
 - `flutter analyze` clean; full `flutter test` green; reduced-motion mode
   passes without animation.
 
-Suggested order: motion primitive and API (15.2) → ply scrubbing (15.3) →
-single premove → multipremove (15.4) → polish.
+Suggested order: ply scrubbing (15.3) → single premove → multipremove (15.4) →
+polish.
 
 ---
 

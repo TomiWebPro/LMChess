@@ -1,7 +1,7 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-21 (UTC) — added §15 chessboard interaction/motion roadmap
+Last updated: 2026-10-22 (UTC) — §15.2 move animation layer completed
 Related: `docs/FUTURE_WORK.md` (binding roadmap), `ARCHITECTURE.md`, `README.md`
 
 This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every run**.
@@ -266,3 +266,48 @@ suites referenced above now exist. Native Windows execution is tracked in
   `git ls-remote` shows remote `main` at e1749b3, so be3ab86/ee07968/77f8de0
   remain local-only. Re-run the push after credentials are provisioned.
   Next: §15.2 explicit from→to move animation layer.
+- 2026-10-22Z — UI P1 §15.2 (move animation layer): finished the interrupted
+  from→to motion layer and added its test suite. Files changed:
+  `lib/src/ui/widgets/board_motion.dart` (new, 72 lines) — `BoardMove` value
+  (from/to/flag/captured/promotion, `==`/`hashCode`/`toString`,
+  `BoardMove.fromApplied` mapping an `AppliedMove` receipt).
+  `lib/src/ui/widgets/chessboard.dart` — converted to `TickerProviderStateMixin`;
+  added `Chessboard.motion` param + `_flight`/`_motionController` (160 ms
+  ease-out) driving an `IgnorePointer` + `ExcludeSemantics` + `RepaintBoundary`
+  overlay (`chessboard-motion-overlay`/`-piece`/`-rook`/`-captured` keys) above
+  the 64 static cells; `didUpdateWidget` starts/retargets the flight on a
+  squares change; `_startFlight` derives capture/en-passant/castle/promotion
+  from the old→new snapshot diff; retarget continues from the current visual
+  position (`Offset.lerp`); reduced-motion snaps (`MediaQuery.disableAnimations`);
+  destination + castling-rook destination glyphs hidden beneath the flight;
+  AnimatedSwitcher drops to `Duration.zero` during a flight so the snap-to-final
+  never pops. Wired into Play (`_lastMotion` via `BoardMove.fromApplied` on
+  every `_syncBoard` apply, `motion: viewingLive ? _lastMotion : null`), Watch
+  (`_lastMotion` same pattern), Review (`BoardMove` from the bright UCI pair
+  on forward scrub — backward snaps by passing null), Variant Replay (forward
+  legal plies animate from `current.attempt`). Arena mini-boards and settings
+  previews pass no motion (static, per §15.2). New
+  `test/ui/board_motion_test.dart` (16 tests): 3 unit (fromApplied mapping,
+  equality/hashCode, toString) + 13 widget — quiet slide starts at origin,
+  passes mid-flight between and ends at destination with overlay teardown,
+  snapshot-without-motion snaps, identical re-supply does not replay, capture
+  glyph fades on destination, en passant fades beside destination (f5),
+  kingside/queenside castling slide king+rook together to exact final cells,
+  promotion swaps to wQ at landing, reduced-motion snaps with no overlay,
+  interrupted flight retargets from the airborne position (not the origin),
+  flipped orientation mirrors coordinates, 64 square semantics nodes stable
+  with zero reparenting mid-flight and post-landing, overlay is
+  IgnorePointer+ExcludeSemantics and taps still reach the cell beneath.
+  All flight pumps deterministic (`_showMove` two-snapshot pattern +
+  `_settle`); no network/engine/wall-clock. Evidence:
+  `flutter analyze` → `No issues found! (ran in 2.2s)` (also fixed 3
+  pre-existing issues in the interrupted work: `promotion!.name` null-check in
+  BoardMove.toString, unused `toRank` local, missing `../../chess/move.dart`
+  import for MoveFlag); `flutter test test/ui/board_motion_test.dart` 16/16
+  pass; related suites (chessboard, chessboard_drag, play, watch, review,
+  variant_replay, semantics_stability + board_motion) 174/174 pass; full
+  `flutter test` 581/581 pass (565 baseline + 16 new).
+  Commit: see below. Push **BLOCKED** (same as prior runs): no GitHub
+  credentials on this host (`git push origin main` → `could not read
+  Username`). Local commits remain ahead of remote `main`.
+  Next: §15.3 fast ply scrubbing.

@@ -50,6 +50,7 @@ import '../game_mirror.dart';
 import '../ui_models.dart';
 import '../widgets/activity_panel.dart';
 import '../widgets/boards.dart';
+import '../widgets/board_motion.dart';
 import '../widgets/chessboard.dart';
 
 /// Game id used by the watch room's stats/review attribution.
@@ -92,6 +93,9 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
   /// Last-move trail.
   String? _lastFrom;
   String? _lastTo;
+
+  /// Most recently applied transition for the board's §15.2 motion layer.
+  BoardMove? _lastMotion;
 
   /// Selected agent ids (dropdowns); default to the seeded demos.
   String? _whiteId = 'demo-white';
@@ -178,6 +182,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
                 terminalSquare: _terminalKingSquare(),
                 boardTheme: boardTheme,
                 pieceTheme: pieceTheme,
+                motion: _lastMotion,
                 interactive: false,
               ),
               panel: ValueListenableBuilder<int>(
@@ -457,6 +462,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     _applied = 0;
     _lastFrom = null;
     _lastTo = null;
+    _lastMotion = null;
     _events.clear();
     _errors.clear();
     _pending.clear();
@@ -570,6 +576,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
         _fens.add(_engine.toFen());
         _lastFrom = move.from.name;
         _lastTo = move.to.name;
+        _lastMotion = BoardMove.fromApplied(receipt);
       },
     );
     _applied = replay.applied;
