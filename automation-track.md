@@ -260,4 +260,4 @@ suites referenced above now exist. Native Windows execution is tracked in
   `flutter test test/ui/chessboard_drag_test.dart` 15/15 pass;
   `flutter test test/ui/chessboard_test.dart test/ui/play_screen_test.dart`
   51/51 pass; full `flutter test` 565/565 pass (550 baseline + 15 new).
-  Commit: <PENDING_HASH>. Next: §15.2 explicit from→to move animation layer.
+  Commit: 77f8de0. Next: §15.2 explicit from→to move animation layer.
