@@ -82,13 +82,17 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
       ),
     );
     String nameOf(String id) => names[id] ?? id;
+    // Per-scope stores (§13 telemetry isolation); read once per build so the
+    // ListenableBuilder below subscribes to their change notifiers.
+    final statsLog = ref.read(statsLogProvider);
+    final qualityLog = ref.read(qualityLogProvider);
     return ListenableBuilder(
       listenable: Listenable.merge(<Listenable>[
-        StatsLog.changes,
-        QualityLog.changes,
+        statsLog.changes,
+        qualityLog.changes,
       ]),
       builder: (context, _) {
-        final all = StatsLog.store.listAll();
+        final all = statsLog.store.listAll();
         final filtered = <GameEventRecord>[
           for (final r in all)
             if (_passes(r)) r,
@@ -106,7 +110,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
             if (r.payloadJson['latencyMs'] is num)
               (r.payloadJson['latencyMs']! as num).toInt(),
         ];
-        final marks = QualityLog.marks;
+        final marks = qualityLog.marks;
         final hasData = all.isNotEmpty || marks.isNotEmpty;
         return SingleChildScrollView(
           padding: const EdgeInsets.all(16),

@@ -153,7 +153,6 @@ Future<void> _settle(WidgetTester tester, {int steps = 12}) async {
 }
 
 void main() {
-  setUp(harness.resetTelemetry);
 
   group('§15.4 premove domain', () {
     test('PremoveAttempt composes UCI', () {

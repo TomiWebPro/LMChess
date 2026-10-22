@@ -12,69 +12,91 @@ import 'package:llm_chess_arena/src/agent/agent_config.dart';
 import 'package:llm_chess_arena/src/llm/mock_provider.dart';
 import 'package:llm_chess_arena/src/llm/provider.dart' show ProviderId;
 import 'package:llm_chess_arena/src/ui/backend_bridge.dart'
-    show QualityLog, ReviewGame, ReviewLog, StatsLog, VariantReviewLog, clockProvider, turnProviderFactoryProvider;
+    show
+        QualityLog,
+        ReviewGame,
+        ReviewLog,
+        StatsLog,
+        VariantReviewLog,
+        clockProvider,
+        statsLogProvider,
+        turnProviderFactoryProvider;
 
 import 'arena_test_harness.dart' as harness;
 import 'semantics_invariants.dart' as semantics;
 
 void main() {
   // ------------------------------------------------------------------------
-  // Telemetry reset
+  // Telemetry stores (per-provider-scope isolation)
   // ------------------------------------------------------------------------
 
   group('harness telemetry', () {
-    setUp(harness.resetTelemetry);
-
-    test('StatsLog.clear empties records and store', () {
-      StatsLog.logTurn(
-        gameId: 'game-1', agentId: 'a', modelKey: 'm',
-        latencyMs: 100, inputTokens: 64, outputTokens: 32,
+    test('StatsLog instance seeds records and mirrors them to the event store', () {
+      final stats = StatsLog();
+      stats.logTurn(
+        gameId: 'game-1',
+        agentId: 'a',
+        modelKey: 'm',
+        latencyMs: 100,
+        inputTokens: 64,
+        outputTokens: 32,
       );
-      expect(StatsLog.records.length, 1);
-      expect(StatsLog.store.listAll().length, 1);
-
-      harness.resetTelemetry();
-
-      expect(StatsLog.records, isEmpty);
-      expect(StatsLog.store.listAll(), isEmpty);
+      expect(stats.records.length, 1);
+      expect(stats.store.listAll().length, 1);
     });
 
-    test('QualityLog.clear resets marks', () {
-      QualityLog.setAll(const ['!!', '!', '?']);
-      expect(QualityLog.marks.length, 3);
+    test('QualityLog and ReviewLog seed and read their own instances', () {
+      final quality = QualityLog();
+      quality.setAll(const ['!!', '!', '?']);
+      expect(quality.marks.length, 3);
 
-      harness.resetTelemetry();
-      expect(QualityLog.marks, const <String>[]);
+      final review = ReviewLog();
+      review.record(
+        const ReviewGame(
+          id: 'seeded-game',
+          whiteLabel: 'White',
+          blackLabel: 'Black',
+        ),
+      );
+      expect(review.games.length, greaterThanOrEqualTo(1));
     });
 
-    test('ReviewLog.clear empties games list', () {
-      ReviewLog.record(const ReviewGame(id: 'seeded-game', whiteLabel: 'White', blackLabel: 'Black'));
-      expect(ReviewLog.games.length, greaterThanOrEqualTo(1));
-
-      harness.resetTelemetry();
-      expect(ReviewLog.games, isEmpty);
+    test('VariantReviewLog starts empty on a fresh instance', () {
+      final variant = VariantReviewLog();
+      expect(variant.games, isEmpty);
+      variant.clear();
+      expect(variant.games, isEmpty);
     });
 
-    test('VariantReviewLog.clear does not throw when empty', () {
-      expect(VariantReviewLog.games, isEmpty);
+    test('independent StatsLog instances never share state', () {
+      final seeded = StatsLog();
+      seeded.logTurn(
+        gameId: 'g',
+        agentId: 'a',
+        modelKey: 'm',
+        color: 'white',
+      );
+      final other = StatsLog();
 
-      harness.resetTelemetry();
-
-      expect(VariantReviewLog.games, isEmpty);
+      expect(seeded.records, hasLength(1));
+      expect(other.records, isEmpty);
+      expect(other.store.listAll(), isEmpty);
     });
 
-    test('resetTelemetry clears all four stores in sequence', () {
-      StatsLog.logTurn(gameId: 'g', agentId: 'a', modelKey: 'm', color: 'white');
-      QualityLog.setAll(['ok']);
-      ReviewLog.record(const ReviewGame(id: 'r1', whiteLabel: 'W', blackLabel: 'B'));
-      // VariantReviewLog has no public record constructor accessible from here;
-      // but the clear call should not throw even when empty.
+    test('statsLogProvider builds a fresh store per ProviderContainer', () {
+      final containerA = ProviderContainer();
+      final containerB = ProviderContainer();
+      addTearDown(containerA.dispose);
+      addTearDown(containerB.dispose);
 
-      harness.resetTelemetry();
+      final logA = containerA.read(statsLogProvider);
+      final logB = containerB.read(statsLogProvider);
+      expect(identical(logA, logB), isFalse);
 
-      expect(StatsLog.records, isEmpty);
-      expect(QualityLog.marks, isEmpty);
-      expect(ReviewLog.games, isEmpty);
+      logA.logTurn(gameId: 'g', agentId: 'a', modelKey: 'm');
+
+      expect(logA.records, hasLength(1));
+      expect(logB.records, isEmpty);
     });
   });
 

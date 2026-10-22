@@ -170,9 +170,17 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
   /// Subscription mapping [GameEvent]s into [_events].
   StreamSubscription<GameEvent>? _sub;
 
+  /// Per-scope stats store (§13 telemetry isolation).
+  late final StatsLog _statsLog;
+
+  /// Per-scope review-game store (§13 telemetry isolation).
+  late final ReviewLog _reviewLog;
+
   @override
   void initState() {
     super.initState();
+    _statsLog = ref.read(statsLogProvider);
+    _reviewLog = ref.read(reviewLogProvider);
     _newGame();
   }
 
@@ -1015,12 +1023,13 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
       outcome = mapped.outcome;
     }
     for (final turn in _pending) {
-      turn.flush(gameId: kPlayGameId);
+      turn.flush(log: _statsLog, gameId: kPlayGameId);
     }
     _pending.clear();
     final aiName =
         ref.read(agentListProvider).byId(_blackAgentId)?.name ?? 'AI Opponent';
     logGameResults(
+      log: _statsLog,
       gameId: kPlayGameId,
       whiteAgentId: 'human',
       blackAgentId: _blackAgentId,
@@ -1029,7 +1038,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
       mode: 'standard',
       outcome: outcome,
     );
-    ReviewLog.record(
+    _reviewLog.record(
       ReviewGame(
         id: kPlayGameId,
         whiteLabel: 'You',

@@ -101,11 +101,19 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
   /// Whether the shell's Review tab is currently visible.
   bool _visible = true;
 
+  /// Per-scope stores (§13 telemetry isolation).
+  late final ReviewLog _reviewLog;
+  late final VariantReviewLog _variantReviewLog;
+  late final QualityLog _qualityLog;
+
   @override
   void initState() {
     super.initState();
     _evalFactory = ref.read(reviewEvaluatorFactoryProvider);
-    ReviewLog.changes.addListener(_onLogChanged);
+    _reviewLog = ref.read(reviewLogProvider);
+    _variantReviewLog = ref.read(variantReviewLogProvider);
+    _qualityLog = ref.read(qualityLogProvider);
+    _reviewLog.changes.addListener(_onLogChanged);
     // Selection and the review run are deferred to [didChangeDependencies]:
     // the shell builds every tab eagerly inside its IndexedStack, and this
     // screen must not spawn Stockfish while its tab is hidden.
@@ -126,7 +134,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
   @override
   void dispose() {
     _runToken++;
-    ReviewLog.changes.removeListener(_onLogChanged);
+    _reviewLog.changes.removeListener(_onLogChanged);
     final handle = _handle;
     _handle = null;
     if (handle != null) unawaited(handle.dispose());
@@ -136,7 +144,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
   /// Selects the newest record when none/stale is selected; with [run],
   /// starts a review when the current selection has no report yet.
   void _ensureSelected({required bool run}) {
-    final games = ReviewLog.games;
+    final games = _reviewLog.games;
     if (games.isEmpty) {
       if (_gameId != null || _game != null) {
         setState(() {
@@ -177,7 +185,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
   /// whose record fell off the capped log.
   void _onLogChanged() {
     if (!mounted) return;
-    final games = ReviewLog.games;
+    final games = _reviewLog.games;
     if (games.isEmpty) {
       _ensureSelected(run: false);
       return;
@@ -243,7 +251,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
 
   /// Re-checks the log and keeps the selection when it still exists.
   void _refreshList() {
-    final games = ReviewLog.games;
+    final games = _reviewLog.games;
     if (games.isEmpty) {
       setState(() {
         _game = null;
@@ -301,7 +309,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
       final service = WintrReviewService(evaluator: handle.evaluator);
       final report = await service.reviewGame(reviewInputsFor(game));
       if (!mounted || token != _runToken) return;
-      QualityLog.setAll(<String>[
+      _qualityLog.setAll(<String>[
         for (final move in report.moves)
           qualityMarkFor(move.assessment.quality),
       ]);
@@ -320,7 +328,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final games = ReviewLog.games;
+    final games = _reviewLog.games;
     if (games.isEmpty) return _buildEmptyState();
     final game = _game ?? games.first;
     final report = _report;
@@ -416,9 +424,9 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
   /// even when no standard game has been recorded.
   Widget _buildVariantReplays() {
     return ListenableBuilder(
-      listenable: VariantReviewLog.changes,
+      listenable: _variantReviewLog.changes,
       builder: (context, _) {
-        final games = VariantReviewLog.games;
+        final games = _variantReviewLog.games;
         if (games.isEmpty) return const SizedBox.shrink();
         return Card(
           child: Column(

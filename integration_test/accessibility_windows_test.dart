@@ -16,13 +16,7 @@ import 'package:integration_test/integration_test.dart'
     show IntegrationTestWidgetsFlutterBinding;
 import 'package:llm_chess_arena/src/app.dart' show ArenaApp;
 import 'package:llm_chess_arena/src/ui/backend_bridge.dart'
-    show
-        QualityLog,
-        ReviewLog,
-        StatsLog,
-        VariantReviewLog,
-        clockProvider,
-        turnProviderFactoryProvider;
+    show clockProvider, turnProviderFactoryProvider;
 import 'package:llm_chess_arena/src/llm/mock_provider.dart';
 import 'package:llm_chess_arena/src/llm/tool_schema.dart' show MoveToolCall;
 import 'package:llm_chess_arena/src/llm/validation.dart' show FailureKind;
@@ -86,13 +80,6 @@ List<Override> _fakeOverrides() => <Override>[
       clockProvider.overrideWithValue(() => DateTime.utc(2026, 1, 1)),
     ];
 
-void _clearTelemetry() {
-  StatsLog.clear();
-  QualityLog.clear();
-  ReviewLog.clear();
-  VariantReviewLog.clear();
-}
-
 Future<void> _pumpApp(
   WidgetTester tester, {
   Size size = const Size(1400, 1000),
@@ -116,8 +103,6 @@ Future<void> _pumpApp(
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
-
-  setUp(_clearTelemetry);
 
   group('accessibility_windows', () {
     // -- Step 1: launch app --

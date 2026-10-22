@@ -19,7 +19,7 @@ import 'package:llm_chess_arena/src/variant/variant_board.dart';
 import 'package:llm_chess_arena/src/variant/variant_replay.dart';
 import 'package:llm_chess_arena/src/ui/backend_bridge.dart'
     show ReviewLog, ReviewGame, reviewEvaluatorFactoryProvider,
-        ReviewEvaluatorHandle, VariantReviewLog;
+        ReviewEvaluatorHandle;
 import 'package:llm_chess_arena/src/ui/screens/review_screen.dart'
     show ReviewScreen;
 import 'package:llm_chess_arena/src/ui/screens/variant_replay_screen.dart';
@@ -85,11 +85,6 @@ Future<void> _pumpReviewApp(
 // ─── Tests ──────────────────────────────────────────────────────────
 
 void main() {
-  setUp(() {
-    ReviewLog.clear();
-    VariantReviewLog.clear();
-  });
-
   // ── §10.8 ReviewScreen: navigate away mid-review disposes exactly once ──
   // Pattern: seed game first, then pump with spy factory override. The
   // ReviewScreen auto-triggers review on mount via didChangeDependencies.
@@ -99,7 +94,8 @@ void main() {
       final handle = _SpyHandle();
 
       // Seed game FIRST (before pump — required for auto-trigger path)
-      ReviewLog.record(
+      final review = ReviewLog();
+      review.record(
         ReviewGame(
           id: 'game-1',
           whiteLabel: 'White Agent',
@@ -113,6 +109,7 @@ void main() {
       // Pump with spy factory — handle created automatically by ReviewScreen
       await _pumpReviewApp(tester, overrides: [
         reviewEvaluatorFactoryProvider.overrideWithValue(() async => handle),
+        ...harness.telemetryOverrides(review: review),
       ]);
 
       expect(handle.disposals, 0); // Handle still active
@@ -134,7 +131,8 @@ void main() {
     (tester) async {
       final handle = _SpyHandle();
 
-      ReviewLog.record(
+      final review = ReviewLog();
+      review.record(
         ReviewGame(
           id: 'rerun-test',
           whiteLabel: 'W',
@@ -147,6 +145,7 @@ void main() {
 
       await _pumpReviewApp(tester, overrides: [
         reviewEvaluatorFactoryProvider.overrideWithValue(() async => handle),
+        ...harness.telemetryOverrides(review: review),
       ]);
 
       expect(handle.disposals, 0); // Handle active from initial review
@@ -205,7 +204,8 @@ void main() {
     (tester) async {
       final handle = _SpyHandle();
 
-      ReviewLog.record(
+      final review = ReviewLog();
+      review.record(
         ReviewGame(
           id: 'stale-game',
           whiteLabel: 'W',
@@ -218,6 +218,7 @@ void main() {
 
       await _pumpReviewApp(tester, overrides: [
         reviewEvaluatorFactoryProvider.overrideWithValue(() async => handle),
+        ...harness.telemetryOverrides(review: review),
       ]);
 
       expect(handle.disposals, 0); // Still active
@@ -258,7 +259,8 @@ void main() {
     (tester) async {
       final handle = _SpyHandle();
 
-      ReviewLog.record(
+      final review = ReviewLog();
+      review.record(
         ReviewGame(
           id: 'nav-test',
           whiteLabel: 'W',
@@ -271,6 +273,7 @@ void main() {
 
       await _pumpReviewApp(tester, overrides: [
         reviewEvaluatorFactoryProvider.overrideWithValue(() async => handle),
+        ...harness.telemetryOverrides(review: review),
       ]);
 
       // Navigate away

@@ -364,10 +364,22 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
   /// Wall-clock source (§10.3 seam); tests override via [clockProvider].
   late DateTime Function() _clock;
 
+  /// Per-scope stats store (§13 telemetry isolation).
+  late final StatsLog _statsLog;
+
+  /// Per-scope review-game store (§13 telemetry isolation).
+  late final ReviewLog _reviewLog;
+
+  /// Per-scope variant-replay store (§13 telemetry isolation).
+  late final VariantReviewLog _variantReviewLog;
+
   @override
   void initState() {
     _clock = ref.read(clockProvider);
     _elo = widget.elo ?? EloService();
+    _statsLog = ref.read(statsLogProvider);
+    _reviewLog = ref.read(reviewLogProvider);
+    _variantReviewLog = ref.read(variantReviewLogProvider);
     super.initState();
   }
 
@@ -1118,7 +1130,11 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
         if (replay.hasError || applied != orch.moveHistory.length) {
           // Mirror desync: an engine/UI bug, not a normal game outcome.
           for (final turn in pending) {
-            turn.flush(gameId: pairing.gameId, tournamentId: state.config.id);
+            turn.flush(
+              log: _statsLog,
+              gameId: pairing.gameId,
+              tournamentId: state.config.id,
+            );
           }
           live.status = 'failed';
           live.reason = replay.hasError
@@ -1162,7 +1178,11 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
     }
     if (orch.state == OrchestratorState.failed) {
       for (final turn in pending) {
-        turn.flush(gameId: pairing.gameId, tournamentId: state.config.id);
+        turn.flush(
+          log: _statsLog,
+          gameId: pairing.gameId,
+          tournamentId: state.config.id,
+        );
       }
       live.status = 'failed';
       live.reason = orch.failureMessage ?? 'orchestrator failed';
@@ -1315,7 +1335,7 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
             ),
           );
         } else {
-          StatsLog.logTurn(
+          _statsLog.logTurn(
             gameId: pairing.gameId,
             agentId: backend.id,
             tournamentId: state.config.id,
@@ -1481,10 +1501,15 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
         result == null ? null : (outcome == '*' ? 'draw' : outcome);
     live.reason = reason;
     for (final turn in pending) {
-      turn.flush(gameId: pairing.gameId, tournamentId: state.config.id);
+      turn.flush(
+        log: _statsLog,
+        gameId: pairing.gameId,
+        tournamentId: state.config.id,
+      );
     }
     pending.clear();
     logGameResults(
+      log: _statsLog,
       gameId: pairing.gameId,
       whiteAgentId: pairing.whiteAgentId,
       blackAgentId: pairing.blackAgentId,
@@ -1506,7 +1531,7 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
     // Standard games land in the FEN-based review log; chaotic games land in
     // the lossless variant replay log (board chain + attempts + readings).
     if (state.config.mode == 'standard') {
-      ReviewLog.record(
+      _reviewLog.record(
         ReviewGame(
           id: pairing.gameId,
           whiteLabel: live.whiteLabel,
@@ -1524,7 +1549,7 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
     } else {
       final initial = live.initialBoard;
       if (initial != null) {
-        VariantReviewLog.record(VariantGameRecord(
+        _variantReviewLog.record(VariantGameRecord(
           id: pairing.gameId,
           tournamentId: state.config.id,
           whiteLabel: live.whiteLabel,
@@ -1778,7 +1803,9 @@ class _GameDetailDialog extends ConsumerWidget {
       listenable: ticker,
       builder: (context, _) {
         final theme = Theme.of(context);
-        final replay = VariantReviewLog.byId(gameRef.gameId);
+        final replay = ref.read(variantReviewLogProvider).byId(
+          gameRef.gameId,
+        );
         return AlertDialog(
           title: Text(
             '${live.label} · ${live.whiteLabel} vs ${live.blackLabel}',

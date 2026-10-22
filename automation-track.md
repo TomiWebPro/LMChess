@@ -1,7 +1,7 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-22 (UTC) — §11.4 coverage wired into CI ubuntu-gate (non-gating lcov artifact)
+Last updated: 2026-10-23 (UTC) — §13 telemetry isolation: injectable per-`ProviderScope` stores replace process-static singletons + `resetTelemetry`
 Related: `docs/FUTURE_WORK.md` (binding roadmap), `ARCHITECTURE.md`, `README.md`
 
 This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every run**.
@@ -551,4 +551,50 @@ suites referenced above now exist. Native Windows execution is tracked in
   an interactive desktop/UIA session) or re-push the queued local commits;
   the remaining open items (§9.1/§9.2 native runs, §11.3 first Windows run,
   §2.6 upstream fix, §13 open decisions) all need a Windows desktop/UIA
+  session or an upstream Flutter release.
+- 2026-10-23Z — REFACTOR §13 (telemetry isolation: injectable stores replace
+  process-static singletons). Decided the §13 "Telemetry isolation" open
+  question **YES** — `StatsLog`, `QualityLog`, `ReviewLog`, and
+  `VariantReviewLog` are now per-`ProviderScope` stores; the old
+  `resetTelemetry` test hygiene is gone. Files changed:
+  `lib/src/ui/backend_bridge.dart` — the four classes converted from
+  `abstract class` process-static singletons (all `static` fields/methods)
+  to concrete instance classes with identical APIs; added `statsLogProvider`
+  / `qualityLogProvider` / `reviewLogProvider` / `variantReviewLogProvider`
+  (plain `Provider`, one fresh store per `ProviderScope`); `logTurnOutcome`
+  / `logGameResults` gained a `required StatsLog log` parameter;
+  `PendingTurn.flush` gained `required StatsLog log`.
+  `lib/src/ui/screens/{play,watch,arena,review,stats}_screen.dart` — each
+  `ConsumerState` captures its stores via `ref.read(<...>Provider)` in
+  `initState` (stats_screen reads both stores in `build` and feeds their
+  `changes` into its existing `ListenableBuilder`); all direct static calls
+  rewritten to instance calls; arena's `_GameDetailDialog` uses
+  `ref.read(variantReviewLogProvider)`.
+  `test/support/arena_test_harness.dart` — `resetTelemetry()` REMOVED; new
+  `telemetryOverrides({stats, quality, review, variant})` helper returns
+  fresh (or caller-seeded) store overrides for `ProviderScope`.
+  `test/game_mirror_test.dart` — fresh `StatsLog` instance per test,
+  `flush(log: ...)`, `log.records` reads; clear/tearDown dropped.
+  `test/support/integration_test.dart` — telemetry group rewritten to assert
+  per-instance isolation plus fresh-stores-per-`ProviderContainer` (two
+  containers never share a `StatsLog`).
+  `test/ui/{stats_screen,review_screen,dispose_audit,scrub_shortcuts}_test.dart`
+  — seeding migrated to fresh `StatsLog()`/`QualityLog()`/`ReviewLog()`
+  instances wired via `harness.telemetryOverrides(...)` merged into each
+  pump's `ProviderScope` overrides.
+  `integration_test/accessibility_windows_test.dart` — `_clearTelemetry`
+  setUp removed (fresh scope per test isolates stores).
+  Eleven more test files: removed the now-obsolete
+  `setUp(...resetTelemetry)` lines / harness imports.
+  Evidence: `flutter analyze` → `No issues found! (ran in 2.4s)` (10 issues
+  fixed: unused harness imports + unused shown names from the migration);
+  full regression `flutter test` → 631/631 pass (baseline 631, suite count
+  unchanged — every telemetry test still present, now instance/scope-based).
+  Push **BLOCKED** (same as prior runs): no GitHub credentials on this host
+  — `git ls-remote origin main` still shows e1749b3; queued local commits
+  remain un-pushed. Re-run the push after credentials are provisioned.
+  Next: §13 Windows-runner / safe-mode decisions, or trigger the first
+  §11.3 Windows CI run (needs a Windows runner with an interactive
+  desktop/UIA session); the remaining open items (§9.1/§9.2 native runs,
+  §11.3 first Windows run, §2.6 upstream fix) all need a Windows desktop/UIA
   session or an upstream Flutter release.

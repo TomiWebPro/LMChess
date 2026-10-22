@@ -37,17 +37,21 @@
 ///   an [ActivityEvent] for [AgentActivityPanel]. `positionSet` is dropped
 ///   (per-move intake noise); everything else keeps its message, tokens
 ///   and latency.
-/// * **Telemetry singletons** ([StatsLog]/[QualityLog]/[ReviewLog]):
-///   the stats backend ([AgentMetrics.compute]) needs `agentId`-keyed
-///   [GameEventRecord]s the activity panel does not carry, so screens log
-///   turns/game-ends here (with the metrics payload contract) and review
-///   appends per-ply quality marks + full [ReviewGame]s. Stats and review
-///   screens read these — no new Riverpod providers, no duplicates with
-///   `ui_models.dart`. [StatsLog] additionally mirrors every record into
-///   a real [stats_log.InMemoryEventStore] (idempotent by UUID key) and
-///   exposes [StatsLog.store] + [StatsLog.changes], so the stats screen
-///   consumes the real `EventStore` contract and re-renders when a game
-///   finishes; [QualityLog.changes] does the same for quality marks.
+/// * **Telemetry stores** ([StatsLog]/[QualityLog]/[ReviewLog]/
+///   [VariantReviewLog]): the stats backend ([AgentMetrics.compute]) needs
+///   `agentId`-keyed [GameEventRecord]s the activity panel does not carry,
+///   so screens log turns/game-ends here (with the metrics payload contract)
+///   and review appends per-ply quality marks + full [ReviewGame]s. Stats
+///   and review screens read these through the `statsLogProvider` /
+///   `qualityLogProvider` / `reviewLogProvider` /
+///   `variantReviewLogProvider` Riverpod providers — every `ProviderScope`
+///   gets its own isolated store instances (no process-global state, so
+///   tests get fresh stores per pump instead of calling `resetTelemetry`).
+///   [StatsLog] additionally mirrors every record into a real
+///   [stats_log.InMemoryEventStore] (idempotent by UUID key) and exposes
+///   [StatsLog.store] + [StatsLog.changes], so the stats screen consumes
+///   the real `EventStore` contract and re-renders when a game finishes;
+///   [QualityLog.changes] does the same for quality marks.
 /// * **Stats categorization** ([statsErrorCategory]): maps one
 ///   [stats_log.GameEventRecord]'s failure flags to the stats screen's
 ///   error-category vocabulary (`none`/`illegal`/`timeout`/`parse`/
@@ -732,7 +736,7 @@ ActivityEvent? activityFromGameEvent(GameEvent event) {
   }
 }
 
-/// In-memory stats-backend log shared by all screens.
+/// In-memory stats-backend log, isolated per `ProviderScope`.
 ///
 /// The activity panel's [ActivityEvent]s carry no `agentId`, so
 /// [AgentMetrics.compute] would skip them all. Screens therefore log one
@@ -747,14 +751,17 @@ ActivityEvent? activityFromGameEvent(GameEvent event) {
 /// (idempotent by UUID key) — [store] — so consumers exercise the actual
 /// [stats_log.EventStore] contract; [changes] fires after every append so
 /// listening screens re-render when a game finishes. Not durable
-/// (process-local); persistence owns the Hive boxes.
-abstract class StatsLog {
-  static final List<stats_log.GameEventRecord> _records =
+/// (in-memory, per `ProviderScope`); persistence owns the Hive boxes.
+///
+/// Create one via [statsLogProvider]; tests may build a fresh instance to
+/// seed before pumping and hand it to the same provider override.
+class StatsLog {
+  final List<stats_log.GameEventRecord> _records =
       <stats_log.GameEventRecord>[];
-  static final Map<String, int> _seqByGame = <String, int>{};
-  static final stats_log.InMemoryEventStore _store =
+  final Map<String, int> _seqByGame = <String, int>{};
+  final stats_log.InMemoryEventStore _store =
       stats_log.InMemoryEventStore();
-  static final _TelemetryNotifier _changes = _TelemetryNotifier();
+  final _TelemetryNotifier _changes = _TelemetryNotifier();
   static const Uuid _uuid = Uuid();
 
   /// Upper bound on retained in-memory records (oldest evicted first).
@@ -764,7 +771,7 @@ abstract class StatsLog {
   static const int maxRetainedRecords = 20000;
 
   /// All logged records (unmodifiable, insertion order).
-  static List<stats_log.GameEventRecord> get records =>
+  List<stats_log.GameEventRecord> get records =>
       List<stats_log.GameEventRecord>.unmodifiable(_records);
 
   /// The event-store mirror every record is also appended to.
@@ -772,27 +779,27 @@ abstract class StatsLog {
   /// Read via [stats_log.EventStore.listAll]/`listByGame`/
   /// `listByTournament`; appends are idempotent by [GameEventRecord.key]
   /// so a replayed flush can never double-count.
-  static stats_log.EventStore get store => _store;
+  stats_log.EventStore get store => _store;
 
   /// Notifies after every append and on [clear] (see the library docs).
-  static Listenable get changes => _changes;
+  Listenable get changes => _changes;
 
   /// Clears the log + store (used by watch/arena restarts).
-  static void clear() {
+  void clear() {
     _records.clear();
     _seqByGame.clear();
     _store.clear();
     _changes.bump();
   }
 
-  static int _nextSeq(String gameId) {
+  int _nextSeq(String gameId) {
     final next = (_seqByGame[gameId] ?? 0) + 1;
     _seqByGame[gameId] = next;
     return next - 1;
   }
 
   /// Appends [record] to the log and mirrors it into [store].
-  static void _append(stats_log.GameEventRecord record) {
+  void _append(stats_log.GameEventRecord record) {
     _records.add(record);
     if (_records.length > maxRetainedRecords) {
       _records.removeRange(0, _records.length - maxRetainedRecords);
@@ -802,7 +809,7 @@ abstract class StatsLog {
   }
 
   /// Logs one turn for [agentId] with metrics flags.
-  static void logTurn({
+  void logTurn({
     required String gameId,
     required String agentId,
     String? tournamentId,
@@ -857,7 +864,7 @@ abstract class StatsLog {
   ///
   /// [result] is `'win'`, `'loss'` or `'draw'` from that agent's
   /// perspective — the only values [AgentMetrics.compute] counts.
-  static void logGameEnd({
+  void logGameEnd({
     required String gameId,
     required String agentId,
     String? tournamentId,
@@ -886,42 +893,42 @@ abstract class StatsLog {
   }
 }
 
-/// Private change notifier for the telemetry singletons.
+/// Private change notifier for the telemetry stores.
 ///
-/// They are process-lived (never disposed), so the only exposed capability
-/// is "something was appended" via [bump] — listeners cannot fire bogus
-/// notifications or dispose shared state.
+/// Stores are owned by their provider (one per `ProviderScope`), so the
+/// only exposed capability is "something was appended" via [bump] —
+/// listeners cannot fire bogus notifications or dispose shared state.
 class _TelemetryNotifier extends ChangeNotifier {
   /// Notifies listeners (see class docs).
   void bump() => notifyListeners();
 }
 
-/// Shared per-ply quality marks backing the stats quality chart.
+/// Per-scope per-ply quality marks backing the stats quality chart.
 ///
 /// Review appends the UI marks (`'!!'`…`'??'`) it derives from
 /// [classify] here (overwriting per game reviewed); stats renders the
 /// distribution and re-renders on [changes]. Empty until the first review
 /// runs — the chart shows a wiring-point empty state meanwhile. A future
 /// storage wiring will move these to the `evaluations` box keyed by
-/// `<game>:<seq>`.
-abstract class QualityLog {
-  static List<String> _marks = const <String>[];
-  static final _TelemetryNotifier _changes = _TelemetryNotifier();
+/// `<game>:<seq>`. Create one via [qualityLogProvider].
+class QualityLog {
+  List<String> _marks = const <String>[];
+  final _TelemetryNotifier _changes = _TelemetryNotifier();
 
   /// Current marks (unmodifiable).
-  static List<String> get marks => List<String>.unmodifiable(_marks);
+  List<String> get marks => List<String>.unmodifiable(_marks);
 
   /// Notifies after [setAll]/[clear] (see the library docs).
-  static Listenable get changes => _changes;
+  Listenable get changes => _changes;
 
   /// Replaces the marks with [marks] (one review's distribution).
-  static void setAll(List<String> marks) {
+  void setAll(List<String> marks) {
     _marks = List<String>.of(marks);
     _changes.bump();
   }
 
   /// Clears the marks.
-  static void clear() {
+  void clear() {
     _marks = const <String>[];
     _changes.bump();
   }
@@ -985,27 +992,28 @@ class ReviewGame {
   final List<bool> fallbackFlags;
 }
 
-/// Process-local review-game log (latest-finished-first, capped).
+/// Per-scope review-game log (latest-finished-first, capped).
 ///
 /// Play/watch record their finished games here; arena records each
 /// completed standard tournament game; review reads the latest (or a
 /// picked) entry and re-renders on [changes]. Cap of 20 keeps memory
-/// bounded; re-recording an id replaces it.
-abstract class ReviewLog {
-  static final List<ReviewGame> _games = <ReviewGame>[];
-  static final _TelemetryNotifier _changes = _TelemetryNotifier();
+/// bounded; re-recording an id replaces it. Create one via
+/// [reviewLogProvider].
+class ReviewLog {
+  final List<ReviewGame> _games = <ReviewGame>[];
+  final _TelemetryNotifier _changes = _TelemetryNotifier();
 
   /// Logged games, latest first (unmodifiable).
-  static List<ReviewGame> get games => List<ReviewGame>.unmodifiable(_games);
+  List<ReviewGame> get games => List<ReviewGame>.unmodifiable(_games);
 
   /// Latest game, or `null` when nothing has been recorded yet.
-  static ReviewGame? get latest => _games.isEmpty ? null : _games.first;
+  ReviewGame? get latest => _games.isEmpty ? null : _games.first;
 
   /// Notifies after [record]/[clear] (see the library docs).
-  static Listenable get changes => _changes;
+  Listenable get changes => _changes;
 
   /// Records [game], replacing any same-id entry and capping at 20.
-  static void record(ReviewGame game) {
+  void record(ReviewGame game) {
     _games.removeWhere((g) => g.id == game.id);
     _games.insert(0, game);
     if (_games.length > 20) {
@@ -1015,33 +1023,34 @@ abstract class ReviewLog {
   }
 
   /// Clears the log.
-  static void clear() {
+  void clear() {
     _games.clear();
     _changes.bump();
   }
 }
 
-/// Process-local log of chaotic-variant replay records (latest first, capped).
+/// Per-scope log of chaotic-variant replay records (latest first, capped).
 ///
 /// Kept separate from [ReviewLog] because variant records are JSON/board-chain
 /// shaped and must not be forced into the FEN-based standard review model.
-abstract class VariantReviewLog {
-  static final List<VariantGameRecord> _games = <VariantGameRecord>[];
-  static final _TelemetryNotifier _changes = _TelemetryNotifier();
+/// Create one via [variantReviewLogProvider].
+class VariantReviewLog {
+  final List<VariantGameRecord> _games = <VariantGameRecord>[];
+  final _TelemetryNotifier _changes = _TelemetryNotifier();
 
   /// Maximum retained games (memory bound).
   static const int maxGames = 20;
 
   /// Logged games, latest first (unmodifiable).
-  static List<VariantGameRecord> get games =>
+  List<VariantGameRecord> get games =>
       List<VariantGameRecord>.unmodifiable(_games);
 
   /// Latest game, or `null` when nothing has been recorded yet.
-  static VariantGameRecord? get latest =>
+  VariantGameRecord? get latest =>
       _games.isEmpty ? null : _games.first;
 
   /// Looks up a game by id, or `null`.
-  static VariantGameRecord? byId(String id) {
+  VariantGameRecord? byId(String id) {
     for (final game in _games) {
       if (game.id == id) return game;
     }
@@ -1049,10 +1058,10 @@ abstract class VariantReviewLog {
   }
 
   /// Notifies after [record]/[clear].
-  static Listenable get changes => _changes;
+  Listenable get changes => _changes;
 
   /// Records [game], replacing any same-id entry and capping at [maxGames].
-  static void record(VariantGameRecord game) {
+  void record(VariantGameRecord game) {
     _games.removeWhere((g) => g.id == game.id);
     _games.insert(0, game);
     if (_games.length > maxGames) {
@@ -1062,11 +1071,28 @@ abstract class VariantReviewLog {
   }
 
   /// Clears the log.
-  static void clear() {
+  void clear() {
     _games.clear();
     _changes.bump();
   }
 }
+
+/// The app's shared [StatsLog], isolated per `ProviderScope`.
+///
+/// Screens read/write turns through this provider; tests get a fresh scope
+/// (or override this provider) instead of clearing process-global state.
+final statsLogProvider = Provider<StatsLog>((ref) => StatsLog());
+
+/// The app's shared [QualityLog], isolated per `ProviderScope`.
+final qualityLogProvider = Provider<QualityLog>((ref) => QualityLog());
+
+/// The app's shared [ReviewLog], isolated per `ProviderScope`.
+final reviewLogProvider = Provider<ReviewLog>((ref) => ReviewLog());
+
+/// The app's shared [VariantReviewLog], isolated per `ProviderScope`.
+final variantReviewLogProvider = Provider<VariantReviewLog>(
+  (ref) => VariantReviewLog(),
+);
 
 /// Maps a [MoveQuality] tier to the UI quality mark vocabulary.
 ///
@@ -1254,6 +1280,7 @@ List<ReviewMoveInput> reviewInputsFor(ReviewGame game) {
 /// Token counts come from the runner's last usage event ([MockProvider]
 /// scripted turns report 128 in / 16 out).
 void logTurnOutcome({
+  required StatsLog log,
   required String gameId,
   required String agentId,
   String? tournamentId,
@@ -1291,7 +1318,7 @@ void logTurnOutcome({
         missingTool = true;
     }
   }
-  StatsLog.logTurn(
+  log.logTurn(
     gameId: gameId,
     agentId: agentId,
     tournamentId: tournamentId,
@@ -1320,6 +1347,7 @@ void logTurnOutcome({
 /// that agent's perspective). `'*'` (aborted/undecided) logs nothing — an
 /// abandoned game is not evidence of skill.
 void logGameResults({
+  required StatsLog log,
   required String gameId,
   required String whiteAgentId,
   required String blackAgentId,
@@ -1331,7 +1359,7 @@ void logGameResults({
 }) {
   switch (outcome) {
     case '1-0':
-      StatsLog.logGameEnd(
+      log.logGameEnd(
         gameId: gameId,
         agentId: whiteAgentId,
         tournamentId: tournamentId,
@@ -1340,7 +1368,7 @@ void logGameResults({
         color: 'white',
         mode: mode,
       );
-      StatsLog.logGameEnd(
+      log.logGameEnd(
         gameId: gameId,
         agentId: blackAgentId,
         tournamentId: tournamentId,
@@ -1350,7 +1378,7 @@ void logGameResults({
         mode: mode,
       );
     case '0-1':
-      StatsLog.logGameEnd(
+      log.logGameEnd(
         gameId: gameId,
         agentId: whiteAgentId,
         tournamentId: tournamentId,
@@ -1359,7 +1387,7 @@ void logGameResults({
         color: 'white',
         mode: mode,
       );
-      StatsLog.logGameEnd(
+      log.logGameEnd(
         gameId: gameId,
         agentId: blackAgentId,
         tournamentId: tournamentId,
@@ -1369,7 +1397,7 @@ void logGameResults({
         mode: mode,
       );
     case '1/2-1/2':
-      StatsLog.logGameEnd(
+      log.logGameEnd(
         gameId: gameId,
         agentId: whiteAgentId,
         tournamentId: tournamentId,
@@ -1378,7 +1406,7 @@ void logGameResults({
         color: 'white',
         mode: mode,
       );
-      StatsLog.logGameEnd(
+      log.logGameEnd(
         gameId: gameId,
         agentId: blackAgentId,
         tournamentId: tournamentId,
@@ -1570,10 +1598,14 @@ class PendingTurn {
     fallback: fallback,
   );
 
-  /// Writes this turn to [StatsLog].
-  void flush({required String gameId, String? tournamentId}) {
+  /// Writes this turn to [log].
+  void flush({
+    required StatsLog log,
+    required String gameId,
+    String? tournamentId,
+  }) {
     if (human || result == null) {
-      StatsLog.logTurn(
+      log.logTurn(
         gameId: gameId,
         agentId: agentId,
         tournamentId: tournamentId,
@@ -1587,6 +1619,7 @@ class PendingTurn {
       return;
     }
     logTurnOutcome(
+      log: log,
       gameId: gameId,
       agentId: agentId,
       tournamentId: tournamentId,

@@ -13,7 +13,7 @@ import 'package:llm_chess_arena/src/review/engine_adapter.dart'
     show EngineSources, HeuristicEvaluator;
 import 'package:llm_chess_arena/src/ui/backend_bridge.dart'
     show ReviewLog, ReviewGame, reviewEvaluatorFactoryProvider,
-        ReviewEvaluatorHandle, VariantReviewLog;
+        ReviewEvaluatorHandle;
 import 'package:llm_chess_arena/src/ui/screens/review_screen.dart'
     show ReviewScreen;
 
@@ -23,12 +23,6 @@ import '../support/semantics_invariants.dart';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-void resetLogs() {
-  // Full teardown of every static log singleton used by ReviewScreen.
-  ReviewLog.clear();
-  VariantReviewLog.clear();
-}
 
 Future<void> _pumpShell(
   WidgetTester tester, {
@@ -89,11 +83,6 @@ Future<ReviewEvaluatorHandle> _throwEval() =>
 // ---------------------------------------------------------------------------
 
 void main() {
-  setUp(() {
-    // Reset ALL log singletons before each test for isolation.
-    resetLogs();
-  });
-
   group('empty state (§6.8)', () {
     testWidgets('empty ReviewLog shows prompt text', (tester) async {
       await _pumpShell(tester);
@@ -119,7 +108,8 @@ void main() {
 
   group('seeding + picker (§6.8)', () {
     testWidgets('seeded game appears in picker dropdown', (tester) async {
-      ReviewLog.record(
+      final review = ReviewLog();
+      review.record(
         ReviewGame(
           id: 'picker-test-1',
           whiteLabel: 'Demo White',
@@ -134,7 +124,10 @@ void main() {
           fallbackFlags: const <bool>[false],
         ),
       );
-      await _pumpShell(tester);
+      await _pumpShell(
+        tester,
+        overrides: harness.telemetryOverrides(review: review),
+      );
       // Dropdown label visible
       expect(find.text('Game'), findsAtLeastNWidgets(1));
       // Picker option rendered with the game's display name (found 2x — 
@@ -143,7 +136,8 @@ void main() {
     });
 
     testWidgets('selected game row shows info subtitle', (tester) async {
-      ReviewLog.record(
+      final review = ReviewLog();
+      review.record(
         ReviewGame(
           id: 'sub-game',
           whiteLabel: 'White',
@@ -158,7 +152,10 @@ void main() {
           fallbackFlags: const <bool>[false],
         ),
       );
-      await _pumpShell(tester);
+      await _pumpShell(
+        tester,
+        overrides: harness.telemetryOverrides(review: review),
+      );
       // Subtitle format: "{n} of {total}"
       expect(find.textContaining('of '), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -168,7 +165,8 @@ void main() {
   group('Re-run review with fake evaluator (§6.8)', () {
     testWidgets('Re-run renders source banner after evaluation',
         (tester) async {
-      ReviewLog.record(
+      final review = ReviewLog();
+      review.record(
         ReviewGame(
           id: 'rerun-eval',
           whiteLabel: 'W',
@@ -186,6 +184,7 @@ void main() {
       );
       final overrides = <Override>[
         reviewEvaluatorFactoryProvider.overrideWithValue(_quickEval),
+        ...harness.telemetryOverrides(review: review),
       ];
       await _pumpShell(tester, overrides: overrides);
       // Auto-selected game → auto-run → quick eval finishes before next assert
@@ -197,7 +196,8 @@ void main() {
 
   group('evaluator failure (§6.8)', () {
     testWidgets('thrown evaluator → error card + Retry button', (tester) async {
-      ReviewLog.record(
+      final review = ReviewLog();
+      review.record(
         ReviewGame(
           id: 'fail-eval',
           whiteLabel: 'W',
@@ -214,6 +214,7 @@ void main() {
       );
       final overrides = <Override>[
         reviewEvaluatorFactoryProvider.overrideWithValue(_throwEval),
+        ...harness.telemetryOverrides(review: review),
       ];
       await _pumpShell(tester, overrides: overrides);
       await tester.tap(find.text('Re-run review'));
@@ -227,7 +228,8 @@ void main() {
   group('key moments (§6.8)', () {
     testWidgets('key-moments card title always exists after review',
         (tester) async {
-      ReviewLog.record(
+      final review = ReviewLog();
+      review.record(
         ReviewGame(
           id: 'key-moments',
           whiteLabel: 'W',
@@ -245,6 +247,7 @@ void main() {
       );
       final overrides = <Override>[
         reviewEvaluatorFactoryProvider.overrideWithValue(_quickEval),
+        ...harness.telemetryOverrides(review: review),
       ];
       await _pumpShell(tester, overrides: overrides);
       expect(find.text('Key moments'), findsOneWidget);
@@ -254,7 +257,8 @@ void main() {
 
   group('replay slider (§6.8)', () {
     testWidgets('MoveList card present after successful review', (tester) async {
-      ReviewLog.record(
+      final review = ReviewLog();
+      review.record(
         ReviewGame(
           id: 'moves-list',
           whiteLabel: 'W',
@@ -272,6 +276,7 @@ void main() {
       );
       final overrides = <Override>[
         reviewEvaluatorFactoryProvider.overrideWithValue(_quickEval),
+        ...harness.telemetryOverrides(review: review),
       ];
       await _pumpShell(tester, overrides: overrides);
       expect(find.text('Moves'), findsOneWidget);
@@ -282,17 +287,25 @@ void main() {
   group('navigate-away-back stability (§6.8)', () {
     testWidgets('swapping out ReviewScreen and restoring has no exception',
         (tester) async {
-      await _pumpShell(tester);
+      final review = ReviewLog();
+      await _pumpShell(
+        tester,
+        overrides: harness.telemetryOverrides(review: review),
+      );
       // Simulate tab-switch away
       await tester.pumpWidget(
         ProviderScope(
+            overrides: harness.telemetryOverrides(review: review),
             child: MaterialApp(
                 home: const Scaffold(body: Center(child: Text('Away'))))),
       );
       await tester.pump();
       expect(tester.takeException(), isNull);
       // Simulate tab-switch back
-      await _pumpShell(tester);
+      await _pumpShell(
+        tester,
+        overrides: harness.telemetryOverrides(review: review),
+      );
       expect(tester.takeException(), isNull);
     });
   });
@@ -309,7 +322,8 @@ void main() {
     });
 
     testWidgets('theme change during review does not crash', (tester) async {
-      ReviewLog.record(
+      final review = ReviewLog();
+      review.record(
         ReviewGame(
           id: 'theme-test',
           whiteLabel: 'W',
@@ -326,6 +340,7 @@ void main() {
       );
       final overrides = <Override>[
         reviewEvaluatorFactoryProvider.overrideWithValue(_quickEval),
+        ...harness.telemetryOverrides(review: review),
       ];
       await _pumpShell(tester, overrides: overrides);
       // Re-mount with light/dark themes toggled
@@ -347,7 +362,8 @@ void main() {
   group('semantics stability (§6.8)', () {
     testWidgets('captured semantics contains game-related nodes',
         (tester) async {
-      ReviewLog.record(
+      final review = ReviewLog();
+      review.record(
         ReviewGame(
           id: 'sem-game',
           whiteLabel: 'White',
@@ -362,7 +378,10 @@ void main() {
           fallbackFlags: const <bool>[false],
         ),
       );
-      await _pumpShell(tester);
+      await _pumpShell(
+        tester,
+        overrides: harness.telemetryOverrides(review: review),
+      );
       final cap = captureSemanticsSafe(tester);
       // At minimum, there should be square-label semantics nodes
       expect(cap.nodes.length, greaterThan(0));
@@ -381,8 +400,9 @@ void main() {
     });
 
     testWidgets('capped capacity respects 20-item limit', (tester) async {
+      final review = ReviewLog();
       for (var i = 0; i < 25; i++) {
-        ReviewLog.record(
+        review.record(
           ReviewGame(
             id: 'cap-$i',
             whiteLabel: 'W$i',
@@ -398,7 +418,10 @@ void main() {
           ),
         );
       }
-      await _pumpShell(tester);
+      await _pumpShell(
+        tester,
+        overrides: harness.telemetryOverrides(review: review),
+      );
       // After cap enforcement, header shows "{20} recorded games"
       expect(find.textContaining('recorded games'), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -406,7 +429,8 @@ void main() {
 
     testWidgets('mixed-mode games render alongside standard games',
         (tester) async {
-      ReviewLog.record(
+      final review = ReviewLog();
+      review.record(
         ReviewGame(
           id: 'mixed-mode',
           whiteLabel: 'Chaos W',
@@ -421,7 +445,7 @@ void main() {
           fallbackFlags: const <bool>[false],
         ),
       );
-      ReviewLog.record(
+      review.record(
         ReviewGame(
           id: 'mixed-standard',
           whiteLabel: 'Std W',
@@ -436,7 +460,10 @@ void main() {
           fallbackFlags: const <bool>[false],
         ),
       );
-      await _pumpShell(tester);
+      await _pumpShell(
+        tester,
+        overrides: harness.telemetryOverrides(review: review),
+      );
       expect(tester.takeException(), isNull);
     });
   });

@@ -12,8 +12,6 @@ import 'package:llm_chess_arena/src/variant/variant_replay.dart';
 import 'package:llm_chess_arena/src/ui/screens/variant_replay_screen.dart';
 import 'package:llm_chess_arena/src/ui/backend_bridge.dart' show clockProvider;
 
-import '../support/arena_test_harness.dart' show resetTelemetry;
-
 // --- Test fixture builders ---
 
 VariantPlyRecord _buildPly({
@@ -136,7 +134,6 @@ VariantGameRecord _singlePlyGame() {
 }
 
 void main() {
-  setUp(resetTelemetry);
 
   // ======================================================================
   // §6.9 (1) First / Previous / Next / Last boundary checks

@@ -14,7 +14,6 @@ import 'package:llm_chess_arena/src/llm/validation.dart' show FailureKind;
 import 'package:llm_chess_arena/src/ui/backend_bridge.dart'
     show clockProvider, turnProviderFactoryProvider;
 import 'package:llm_chess_arena/src/ui/widgets/boards.dart' show PlayerCard;
-import '../support/arena_test_harness.dart' as harness;
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -74,7 +73,6 @@ Future<void> _pumpPlayApp(
 }
 
 void main() {
-  setUp(harness.resetTelemetry);
 
   group('PlayScreen board interaction', () {
     // -- Piece selection & deselection --------------------------------------

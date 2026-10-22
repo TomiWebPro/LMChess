@@ -267,7 +267,6 @@ String _semanticsSummary(WidgetTester tester) {
 // ---------------------------------------------------------------------------
 
 void main() {
-  setUp(harness.resetTelemetry);
 
   // -----------------------------------------------------------------------
   // Test 1: Narrow-layout grid sweep (600 × 800, 48 px spacing)

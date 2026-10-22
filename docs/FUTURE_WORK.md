@@ -1,7 +1,7 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-22 (UTC) — §11.4 coverage wired into the CI ubuntu-gate (non-gating `flutter test test/ui --coverage` + `coverage-lcov` artifact)
+Last updated: 2026-10-23 (UTC) — §13 telemetry isolation decided: `StatsLog`/`QualityLog`/`ReviewLog`/`VariantReviewLog` are now per-`ProviderScope` injectable stores (`resetTelemetry` removed)
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -146,9 +146,13 @@ or the upstream issue is closed and the workaround is formally retired.
 - **Safe mode:** should the app disable custom semantics for screen-reader
   users until the engine fix lands? Current preference is to fix/ship the tree,
   not add an accessibility regression.
-- **Telemetry isolation:** should `StatsLog`, `QualityLog`, `ReviewLog`, and
-  `VariantReviewLog` become injectable stores instead of process-static
-  abstractions? Test hygiene is currently handled by `resetTelemetry`.
+- ~~**Telemetry isolation**~~ **DECIDED 2026-10-23:** `StatsLog`,
+  `QualityLog`, `ReviewLog`, and `VariantReviewLog` are now injectable stores
+  (per-`ProviderScope` instances exposed through `statsLogProvider` /
+  `qualityLogProvider` / `reviewLogProvider` / `variantReviewLogProvider`).
+  Screens read/write their store via `ref.read`, so each `ProviderScope`
+  gets fully isolated state and the old process-static singletons +
+  `resetTelemetry` test hygiene are gone. Run evidence: `automation-track.md`.
 
 ---
 

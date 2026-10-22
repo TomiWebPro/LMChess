@@ -32,7 +32,6 @@ import 'package:llm_chess_arena/src/llm/validation.dart' show FailureKind;
 import 'package:llm_chess_arena/src/ui/backend_bridge.dart'
     show clockProvider, turnProviderFactoryProvider;
 
-import '../support/arena_test_harness.dart' as harness;
 import '../support/semantics_invariants.dart'
     show
         captureSemantics,
@@ -129,7 +128,6 @@ Future<void> _goTo(WidgetTester tester, int index) async {
 // ===========================================================================
 
 void main() {
-  setUp(harness.resetTelemetry);
 
   // -----------------------------------------------------------------------
   // §7 – Destination invariants (all 8 at wide)

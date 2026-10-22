@@ -10,7 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llm_chess_arena/src/ui/backend_bridge.dart'
-    show QualityLog, ReviewLog, StatsLog, VariantReviewLog;
+    show QualityLog, StatsLog;
 import 'package:llm_chess_arena/src/ui/screens/stats_screen.dart'
     show StatsScreen;
 
@@ -21,21 +21,14 @@ import '../support/semantics_invariants.dart';
 // Helpers
 // ---------------------------------------------------------------------------
 
-void resetLogs() {
-  // Full teardown of every static log singleton used by StatsScreen.
-  StatsLog.clear();
-  QualityLog.clear();
-  ReviewLog.clear();
-  VariantReviewLog.clear();
-}
-
 Future<void> _pumpShell(
   WidgetTester tester, {
   Size size = const Size(1400, 1000),
+  List<Override> overrides = const <Override>[],
 }) async {
   harness.useDesktopSurface(tester, size: size);
   await tester.pumpWidget(
-    ProviderScope(child: const _TestShell()),
+    ProviderScope(overrides: overrides, child: const _TestShell()),
   );
   await tester.pump(); // didChangeDependencies
   await tester.pump(); // second pump for setState
@@ -72,8 +65,6 @@ class _TestShellState extends ConsumerState<_TestShell> {
 // ---------------------------------------------------------------------------
 
 void main() {
-  setUp(resetLogs);
-
   // -----------------------------------------------------------------------
   // Empty State
   // -----------------------------------------------------------------------
@@ -93,13 +84,17 @@ void main() {
   group('seeded data rendering', () {
     testWidgets('Seeding StatsLog and QualityLog shows non-empty content',
         (tester) async {
-      StatsLog.logTurn(gameId: 'g1', agentId: 'agentA');
-      StatsLog.logGameEnd(gameId: 'g1', agentId: 'agentA', result: 'win');
-      StatsLog.logTurn(gameId: 'g2', agentId: 'agentB');
-      StatsLog.logGameEnd(gameId: 'g2', agentId: 'agentB', result: 'loss');
-      QualityLog.setAll(['!!', '!', 'ok']);
+      final stats = StatsLog();
+      stats.logTurn(gameId: 'g1', agentId: 'agentA');
+      stats.logGameEnd(gameId: 'g1', agentId: 'agentA', result: 'win');
+      stats.logTurn(gameId: 'g2', agentId: 'agentB');
+      stats.logGameEnd(gameId: 'g2', agentId: 'agentB', result: 'loss');
+      final quality = QualityLog()..setAll(['!!', '!', 'ok']);
 
-      await _pumpShell(tester);
+      await _pumpShell(
+        tester,
+        overrides: harness.telemetryOverrides(stats: stats, quality: quality),
+      );
       // Empty state gone — "No stats yet" absent.
       expect(find.text('No stats yet'), findsNothing);
       // All four chart-card titles appear together.
@@ -114,8 +109,12 @@ void main() {
       // Turns without game-end or latencyMs → outcome & latency bars show
       // their own wired-point empty states.  No quality marks → quality bar
       // also shows an empty message.
-      StatsLog.logTurn(gameId: 'g1', agentId: 'agentX');
-      await _pumpShell(tester);
+      final stats = StatsLog();
+      stats.logTurn(gameId: 'g1', agentId: 'agentX');
+      await _pumpShell(
+        tester,
+        overrides: harness.telemetryOverrides(stats: stats),
+      );
 
       expect(
         find.textContaining('No finished games to chart.'),
@@ -130,11 +129,15 @@ void main() {
     });
 
     testWidgets('Table rows rendered after seeding agents', (tester) async {
-      StatsLog.logTurn(gameId: 'g1', agentId: 'agentAlpha');
-      StatsLog.logGameEnd(gameId: 'g1', agentId: 'agentAlpha', result: 'draw');
-      QualityLog.setAll(['!!', '!', 'ok', '!?']);
+      final stats = StatsLog();
+      stats.logTurn(gameId: 'g1', agentId: 'agentAlpha');
+      stats.logGameEnd(gameId: 'g1', agentId: 'agentAlpha', result: 'draw');
+      final quality = QualityLog()..setAll(['!!', '!', 'ok', '!?']);
 
-      await _pumpShell(tester);
+      await _pumpShell(
+        tester,
+        overrides: harness.telemetryOverrides(stats: stats, quality: quality),
+      );
       // Agent id visible via nameOf(id) fallback in the metrics table row.
       expect(find.textContaining('agentAlpha'), findsWidgets);
       expect(tester.takeException(), isNull);
@@ -143,10 +146,14 @@ void main() {
     testWidgets('Outcome-pie sections exist after seeding results',
         (tester) async {
       // Seed one win so the pie chart has at least one section.
-      StatsLog.logTurn(gameId: 'g1', agentId: 'pie', latencyMs: 300);
-      StatsLog.logGameEnd(gameId: 'g1', agentId: 'pie', result: 'win');
+      final stats = StatsLog();
+      stats.logTurn(gameId: 'g1', agentId: 'pie', latencyMs: 300);
+      stats.logGameEnd(gameId: 'g1', agentId: 'pie', result: 'win');
 
-      await _pumpShell(tester);
+      await _pumpShell(
+        tester,
+        overrides: harness.telemetryOverrides(stats: stats),
+      );
       // Verify the Outcomes card renders with chart content.
       expect(
         find.descendant(
@@ -166,11 +173,15 @@ void main() {
   group('filters', () {
     testWidgets('Agent dropdown lists All agents plus each seeded agent',
         (tester) async {
-      StatsLog.logTurn(gameId: 'g1', agentId: 'charlie');
-      StatsLog.logTurn(gameId: 'g2', agentId: 'alpha');
-      QualityLog.setAll(['ok']);
+      final stats = StatsLog();
+      stats.logTurn(gameId: 'g1', agentId: 'charlie');
+      stats.logTurn(gameId: 'g2', agentId: 'alpha');
+      final quality = QualityLog()..setAll(['ok']);
 
-      await _pumpShell(tester);
+      await _pumpShell(
+        tester,
+        overrides: harness.telemetryOverrides(stats: stats, quality: quality),
+      );
       expect(find.text('All agents'), findsWidgets);
       expect(find.text('charlie'), findsWidgets);
       expect(find.text('alpha'), findsWidgets);
@@ -179,10 +190,14 @@ void main() {
 
     testWidgets('Variant dropdown lists All variants plus each mode',
         (tester) async {
-      StatsLog.logTurn(gameId: 'g1', agentId: 'a1', mode: 'standard');
-      StatsLog.logTurn(gameId: 'g2', agentId: 'a1', mode: 'chaotic');
+      final stats = StatsLog();
+      stats.logTurn(gameId: 'g1', agentId: 'a1', mode: 'standard');
+      stats.logTurn(gameId: 'g2', agentId: 'a1', mode: 'chaotic');
 
-      await _pumpShell(tester);
+      await _pumpShell(
+        tester,
+        overrides: harness.telemetryOverrides(stats: stats),
+      );
       expect(find.text('All variants'), findsWidgets);
       expect(find.text('standard'), findsWidgets);
       expect(find.text('chaotic'), findsWidgets);
@@ -194,10 +209,14 @@ void main() {
       // Seed a single unique agent — we don't need to interact with the
       // DropdownMenu (overlay-based and fragile in widget tests).  We just
       // verify the Reset button behaviour via the state-driven UI.
-      StatsLog.logTurn(gameId: 'g1', agentId: 'rfa9xqz');
-      QualityLog.setAll(['ok']);
+      final stats = StatsLog();
+      stats.logTurn(gameId: 'g1', agentId: 'rfa9xqz');
+      final quality = QualityLog()..setAll(['ok']);
 
-      await _pumpShell(tester);
+      await _pumpShell(
+        tester,
+        overrides: harness.telemetryOverrides(stats: stats, quality: quality),
+      );
       // Initially no filters set → Reset button hidden.
       expect(find.text('Reset filters'), findsNothing);
 
@@ -208,11 +227,15 @@ void main() {
 
     testWidgets('Turn count reflects active agent filter', (tester) async {
       // Use short but unique ids; each appears exactly once in the view.
-      StatsLog.logTurn(gameId: 'g1', agentId: 'tc-x-9z');
-      StatsLog.logTurn(gameId: 'g2', agentId: 'tc-y-9z');
-      StatsLog.logTurn(gameId: 'g3', agentId: 'tc-x-9z');
+      final stats = StatsLog();
+      stats.logTurn(gameId: 'g1', agentId: 'tc-x-9z');
+      stats.logTurn(gameId: 'g2', agentId: 'tc-y-9z');
+      stats.logTurn(gameId: 'g3', agentId: 'tc-x-9z');
 
-      await _pumpShell(tester);
+      await _pumpShell(
+        tester,
+        overrides: harness.telemetryOverrides(stats: stats),
+      );
       // Unfiltered – all 3 turns visible.
       expect(find.text('3 turns match the filters'), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -226,14 +249,18 @@ void main() {
   group('chart interactions', () {
     testWidgets('Tapping pie slices updates outcome note', (tester) async {
       // Seed two wins + one draw so outcome counts are unambiguous.
-      StatsLog.logTurn(gameId: 'g1', agentId: 'a-pie', latencyMs: 300);
-      StatsLog.logGameEnd(gameId: 'g1', agentId: 'a-pie', result: 'win');
-      StatsLog.logTurn(gameId: 'g2', agentId: 'b-pie', latencyMs: 400);
-      StatsLog.logGameEnd(gameId: 'g2', agentId: 'b-pie', result: 'win');
-      StatsLog.logTurn(gameId: 'g3', agentId: 'c-pie', latencyMs: 500);
-      StatsLog.logGameEnd(gameId: 'g3', agentId: 'c-pie', result: 'draw');
+      final stats = StatsLog();
+      stats.logTurn(gameId: 'g1', agentId: 'a-pie', latencyMs: 300);
+      stats.logGameEnd(gameId: 'g1', agentId: 'a-pie', result: 'win');
+      stats.logTurn(gameId: 'g2', agentId: 'b-pie', latencyMs: 400);
+      stats.logGameEnd(gameId: 'g2', agentId: 'b-pie', result: 'win');
+      stats.logTurn(gameId: 'g3', agentId: 'c-pie', latencyMs: 500);
+      stats.logGameEnd(gameId: 'g3', agentId: 'c-pie', result: 'draw');
 
-      await _pumpShell(tester);
+      await _pumpShell(
+        tester,
+        overrides: harness.telemetryOverrides(stats: stats),
+      );
 
       // Confirm initial note is present before interaction.
       expect(
@@ -263,11 +290,15 @@ void main() {
     });
 
     testWidgets('Tapping error bars produces no exceptions', (tester) async {
-      StatsLog.logTurn(gameId: 'g1', agentId: 'a1');
-      StatsLog.logTurn(gameId: 'g2', agentId: 'a2', illegalAttempt: true);
-      StatsLog.logTurn(gameId: 'g3', agentId: 'a1', latencyMs: 400);
+      final stats = StatsLog();
+      stats.logTurn(gameId: 'g1', agentId: 'a1');
+      stats.logTurn(gameId: 'g2', agentId: 'a2', illegalAttempt: true);
+      stats.logTurn(gameId: 'g3', agentId: 'a1', latencyMs: 400);
 
-      await _pumpShell(tester);
+      await _pumpShell(
+        tester,
+        overrides: harness.telemetryOverrides(stats: stats),
+      );
 
       final cardFinder = find.descendant(
         of: find.byType(Card),
@@ -286,10 +317,14 @@ void main() {
     });
 
     testWidgets('Tapping latency bars produces no exceptions', (tester) async {
-      StatsLog.logTurn(gameId: 'g1', agentId: 'a1', latencyMs: 300);
-      StatsLog.logTurn(gameId: 'g2', agentId: 'a2', latencyMs: 800);
+      final stats = StatsLog();
+      stats.logTurn(gameId: 'g1', agentId: 'a1', latencyMs: 300);
+      stats.logTurn(gameId: 'g2', agentId: 'a2', latencyMs: 800);
 
-      await _pumpShell(tester);
+      await _pumpShell(
+        tester,
+        overrides: harness.telemetryOverrides(stats: stats),
+      );
 
       final cardFinder = find.descendant(
         of: find.byType(Card),
@@ -307,10 +342,14 @@ void main() {
     });
 
     testWidgets('Tapping quality bars updates quality note', (tester) async {
-      QualityLog.setAll(['!!', '!', '?', '??', 'ok', '!?']);
-      StatsLog.logTurn(gameId: 'g1', agentId: 'a1', latencyMs: 500);
+      final quality = QualityLog()..setAll(['!!', '!', '?', '??', 'ok', '!?']);
+      final stats = StatsLog();
+      stats.logTurn(gameId: 'g1', agentId: 'a1', latencyMs: 500);
 
-      await _pumpShell(tester);
+      await _pumpShell(
+        tester,
+        overrides: harness.telemetryOverrides(stats: stats, quality: quality),
+      );
 
       final cardFinder = find.descendant(
         of: find.byType(Card),
@@ -338,14 +377,17 @@ void main() {
   group('layout', () {
     testWidgets('Narrow layout (<700 px) scrolls without overflow',
         (tester) async {
-      StatsLog.logTurn(gameId: 'g1', agentId: 'narrow');
-      StatsLog.logGameEnd(gameId: 'g1', agentId: 'narrow', result: 'win');
-      QualityLog.setAll(['!!']);
+      final stats = StatsLog();
+      stats.logTurn(gameId: 'g1', agentId: 'narrow');
+      stats.logGameEnd(gameId: 'g1', agentId: 'narrow', result: 'win');
+      final quality = QualityLog()..setAll(['!!']);
+      final overrides =
+          harness.telemetryOverrides(stats: stats, quality: quality);
 
       // Resize BEFORE pumping so LayoutBuilder sees the narrow width.
       harness.useDesktopSurface(tester, size: const Size(500, 800));
       await tester.pumpWidget(
-        ProviderScope(child: const _TestShell()),
+        ProviderScope(overrides: overrides, child: const _TestShell()),
       );
       await tester.pump();
       await tester.pump();
@@ -362,13 +404,17 @@ void main() {
 
   group('metrics table columns', () {
     testWidgets('Metrics card title present with seeded data', (tester) async {
-      StatsLog.logTurn(gameId: 'g1', agentId: 'agentM');
-      StatsLog.logGameEnd(gameId: 'g1', agentId: 'agentM', result: 'draw');
-      StatsLog.logTurn(gameId: 'g2', agentId: 'agentN');
-      StatsLog.logGameEnd(gameId: 'g2', agentId: 'agentN', result: 'loss');
-      QualityLog.setAll(['!']);
+      final stats = StatsLog();
+      stats.logTurn(gameId: 'g1', agentId: 'agentM');
+      stats.logGameEnd(gameId: 'g1', agentId: 'agentM', result: 'draw');
+      stats.logTurn(gameId: 'g2', agentId: 'agentN');
+      stats.logGameEnd(gameId: 'g2', agentId: 'agentN', result: 'loss');
+      final quality = QualityLog()..setAll(['!']);
 
-      await _pumpShell(tester);
+      await _pumpShell(
+        tester,
+        overrides: harness.telemetryOverrides(stats: stats, quality: quality),
+      );
       expect(find.text('Agent metrics'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
@@ -381,11 +427,15 @@ void main() {
   group('theme change stability', () {
     testWidgets('Switching between light and dark themes causes no crash',
         (tester) async {
-      StatsLog.logTurn(gameId: 'g1', agentId: 'theming');
-      StatsLog.logGameEnd(gameId: 'g1', agentId: 'theming', result: 'win');
-      QualityLog.setAll(['!!', 'ok']);
+      final stats = StatsLog();
+      stats.logTurn(gameId: 'g1', agentId: 'theming');
+      stats.logGameEnd(gameId: 'g1', agentId: 'theming', result: 'win');
+      final quality = QualityLog()..setAll(['!!', 'ok']);
 
-      await _pumpShell(tester);
+      await _pumpShell(
+        tester,
+        overrides: harness.telemetryOverrides(stats: stats, quality: quality),
+      );
 
       // Re-mount with explicitly-specified light then dark theme.
       for (final brightness in <Brightness>[Brightness.light, Brightness.dark]) {
@@ -394,6 +444,7 @@ void main() {
             : ThemeData.dark();
         await tester.pumpWidget(
           ProviderScope(
+            overrides: harness.telemetryOverrides(stats: stats, quality: quality),
             child: MaterialApp(
               theme: themeData,
               darkTheme: themeData,
@@ -415,11 +466,15 @@ void main() {
   group('semantics tree invariant check', () {
     testWidgets('Captured semantics tree has unique ids and no null parents',
         (tester) async {
-      StatsLog.logTurn(gameId: 'g1', agentId: 'sema');
-      StatsLog.logGameEnd(gameId: 'g1', agentId: 'sema', result: 'win');
-      QualityLog.setAll(['!!']);
+      final stats = StatsLog();
+      stats.logTurn(gameId: 'g1', agentId: 'sema');
+      stats.logGameEnd(gameId: 'g1', agentId: 'sema', result: 'win');
+      final quality = QualityLog()..setAll(['!!']);
 
-      await _pumpShell(tester);
+      await _pumpShell(
+        tester,
+        overrides: harness.telemetryOverrides(stats: stats, quality: quality),
+      );
       final cap = captureSemanticsSafe(tester);
       expect(cap.nodes.length, greaterThan(0));
       expectSemanticsTreeInvariants(tester);
@@ -434,12 +489,16 @@ void main() {
   group('edge cases', () {
     testWidgets('Mixed-mode games render alongside standard games',
         (tester) async {
-      StatsLog.logTurn(gameId: 'g1', agentId: 'chaos', mode: 'chaotic');
-      StatsLog.logTurn(gameId: 'g2', agentId: 'std', mode: 'standard');
-      StatsLog.logTurn(gameId: 'g3', agentId: 'std', mode: 'standard');
-      QualityLog.setAll(['!!', 'ok']);
+      final stats = StatsLog();
+      stats.logTurn(gameId: 'g1', agentId: 'chaos', mode: 'chaotic');
+      stats.logTurn(gameId: 'g2', agentId: 'std', mode: 'standard');
+      stats.logTurn(gameId: 'g3', agentId: 'std', mode: 'standard');
+      final quality = QualityLog()..setAll(['!!', 'ok']);
 
-      await _pumpShell(tester);
+      await _pumpShell(
+        tester,
+        overrides: harness.telemetryOverrides(stats: stats, quality: quality),
+      );
       // Both modes visible in variant dropdown.
       expect(find.text('chaotic'), findsWidgets);
       expect(find.text('standard'), findsWidgets);
@@ -450,11 +509,15 @@ void main() {
     });
 
     testWidgets('Rapid selection changes produce no exceptions', (tester) async {
-      StatsLog.logTurn(gameId: 'g1', agentId: 'rapid-a');
-      StatsLog.logTurn(gameId: 'g2', agentId: 'rapid-b', mode: 'standard');
-      QualityLog.setAll(['ok', '!?', '??']);
+      final stats = StatsLog();
+      stats.logTurn(gameId: 'g1', agentId: 'rapid-a');
+      stats.logTurn(gameId: 'g2', agentId: 'rapid-b', mode: 'standard');
+      final quality = QualityLog()..setAll(['ok', '!?', '??']);
 
-      await _pumpShell(tester);
+      await _pumpShell(
+        tester,
+        overrides: harness.telemetryOverrides(stats: stats, quality: quality),
+      );
 
       // Rapidly open/close the agent dropdown.
       final dropdownKey =

@@ -83,7 +83,6 @@ int _moveCount(WidgetTester tester) {
 }
 
 void main() {
-  setUp(harness.resetTelemetry);
 
   // =========================================================================
   // Transport flow

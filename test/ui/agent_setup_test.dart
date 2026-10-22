@@ -60,7 +60,6 @@ Future<void> _pumpSetup(
 // ===================================================================
 
 void main() {
-  setUp(harness.resetTelemetry);
 
   // --- List + entry point --------------------------------------------------
 

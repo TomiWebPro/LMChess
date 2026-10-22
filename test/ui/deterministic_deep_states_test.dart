@@ -23,7 +23,6 @@ const String _pawnOnE5Fen =
 const String _twoKingsFen = '8/8/8/3K4/8/k7/8/8 w - - 0 1';
 
 void main() {
-  setUp(harness.resetTelemetry);
 
   group('PlayScreen initialFen', () {
     testWidgets(

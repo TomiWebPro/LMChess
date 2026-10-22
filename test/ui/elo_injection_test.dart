@@ -44,7 +44,6 @@ Future<void> _pumpArena(
 }
 
 void main() {
-  setUp(harness.resetTelemetry);
 
   // =========================================================================
   // Default factory (widget.elo == null → fresh EloService)

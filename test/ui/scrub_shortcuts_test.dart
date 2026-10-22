@@ -169,7 +169,8 @@ Future<ReviewEvaluatorHandle> _quickEval() => Future.value(
 
 /// Seeds one two-ply standard game and pumps ReviewScreen inside a shell.
 Future<void> _pumpReview(WidgetTester tester) async {
-  ReviewLog.record(
+  final review = ReviewLog();
+  review.record(
     ReviewGame(
       id: 'scrub-review',
       whiteLabel: 'W',
@@ -192,6 +193,7 @@ Future<void> _pumpReview(WidgetTester tester) async {
     ProviderScope(
       overrides: <Override>[
         reviewEvaluatorFactoryProvider.overrideWithValue(_quickEval),
+        ...harness.telemetryOverrides(review: review),
       ],
       child: const MaterialApp(home: Scaffold(body: ReviewScreen())),
     ),
@@ -351,7 +353,6 @@ Future<void> _pumpWatch(
 // ---------------------------------------------------------------------------
 
 void main() {
-  setUp(harness.resetTelemetry);
 
   group('scrubMotionFor helper', () {
     test('forward +1 returns a forward BoardMove', () {

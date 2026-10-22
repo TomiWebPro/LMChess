@@ -155,9 +155,17 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
   /// stream events no longer repaint the board).
   OrchestratorState? _lastOrchState;
 
+  /// Per-scope stats store (§13 telemetry isolation).
+  late final StatsLog _statsLog;
+
+  /// Per-scope review-game store (§13 telemetry isolation).
+  late final ReviewLog _reviewLog;
+
   @override
   void initState() {
     _clock = ref.read(clockProvider);
+    _statsLog = ref.read(statsLogProvider);
+    _reviewLog = ref.read(reviewLogProvider);
     super.initState();
   }
 
@@ -829,11 +837,12 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     _finished = true;
     final scored = outcome;
     for (final turn in _pending) {
-      turn.flush(gameId: kWatchGameId);
+      turn.flush(log: _statsLog, gameId: kWatchGameId);
     }
     _pending.clear();
     final agents = ref.read(agentListProvider);
     logGameResults(
+      log: _statsLog,
       gameId: kWatchGameId,
       whiteAgentId: _whiteAgentId,
       blackAgentId: _blackAgentId,
@@ -842,7 +851,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
       mode: 'standard',
       outcome: scored,
     );
-    ReviewLog.record(
+    _reviewLog.record(
       ReviewGame(
         id: '$kWatchGameId-${_clock().millisecondsSinceEpoch}',
         whiteLabel: agents.byId(_whiteAgentId)?.name ?? 'White',

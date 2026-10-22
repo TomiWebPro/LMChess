@@ -328,10 +328,9 @@ void main() {
 
   group('per-turn stats buffering', () {
     test('flush keeps clean and fallback turns distinct', () {
-      StatsLog.clear();
-      addTearDown(StatsLog.clear);
+      final log = StatsLog();
 
-      PendingTurn.human().flush(gameId: 'lock-game');
+      PendingTurn.human().flush(log: log, gameId: 'lock-game');
       const failed = AgentTurnResult(
         outcome: ValidationOutcome(
           kind: FailureKind.timeout,
@@ -347,9 +346,9 @@ void main() {
         mode: 'standard',
         result: failed,
         fallback: true,
-      ).flush(gameId: 'lock-game');
+      ).flush(log: log, gameId: 'lock-game');
 
-      final records = StatsLog.records;
+      final records = log.records;
       expect(records, hasLength(2));
       expect(records[0].type, 'turn.completed');
       expect(records[0].payloadJson['agentId'], 'human');

@@ -1,14 +1,17 @@
 /// Shared test harness for LMChess widget tests.
 ///
-/// Provides surface-size setup, app-pumping helpers, telemetry reset, and
-/// timer-drain utilities so individual UI tests stay fast, deterministic, and
-/// leak-free.
+/// Provides surface-size setup, app-pumping helpers, telemetry store
+/// helpers, and timer-drain utilities so individual UI tests stay fast,
+/// deterministic, and leak-free.
 ///
 /// **Conventions adopted from this repository:**
 /// * No `pumpAndSettle` around spinners / live loops — use [pumpSteps].
 /// * Never hit real network or spawn Stockfish in widget tests — override
 ///   providers via [pumpArenaApp] overrides.
-/// * Clear telemetry before every test to avoid cross-test pollution.
+/// * Telemetry stores are per-`ProviderScope` (§13 isolation): pumping a
+///   fresh scope already gives fresh `StatsLog`/`QualityLog`/`ReviewLog`/
+///   `VariantReviewLog` instances, so no reset between tests is needed.
+///   Use [telemetryOverrides] only to seed a store before pumping.
 /// * Call [disposeApp] at test end to drain timers; pending-timer failures
 ///   are the most common source of flaky teardowns.
 /// * Use a desktop surface (`Size(1400, 1000)`) unless you explicitly need
@@ -16,8 +19,6 @@
 ///
 /// ```dart
 /// void main() {
-///   setUp(resetTelemetry);
-///
 ///   testWidgets('example', (tester) async {
 ///     await pumpArenaApp(tester);
 ///     // ... interact ...
@@ -37,7 +38,17 @@ import 'package:llm_chess_arena/src/llm/provider.dart' show ProviderId;
 import 'package:llm_chess_arena/src/llm/tool_schema.dart' show MoveToolCall;
 import 'package:llm_chess_arena/src/llm/validation.dart' show FailureKind;
 import 'package:llm_chess_arena/src/ui/backend_bridge.dart'
-    show QualityLog, ReviewLog, StatsLog, VariantReviewLog, turnProviderFactoryProvider, clockProvider;
+    show
+        QualityLog,
+        ReviewLog,
+        StatsLog,
+        VariantReviewLog,
+        clockProvider,
+        qualityLogProvider,
+        reviewLogProvider,
+        statsLogProvider,
+        turnProviderFactoryProvider,
+        variantReviewLogProvider;
 
 // ---------------------------------------------------------------------------
 // Surface size helpers
@@ -96,21 +107,34 @@ Future<void> disposeApp(WidgetTester tester) async {
 }
 
 // ---------------------------------------------------------------------------
-// Telemetry reset (prevents cross-test pollution)
+// Telemetry store helpers (per-scope isolation replaces process-global reset)
 // ---------------------------------------------------------------------------
 
-/// Reset all process-local telemetry singletons.
+/// Fresh, isolated telemetry stores wired as provider overrides.
 ///
-/// Must be called at least once per test (typically via `setUp(resetTelemetry)`):
+/// Every `ProviderScope` already builds its own store instances (see
+/// `statsLogProvider`/`qualityLogProvider`/`reviewLogProvider`/
+/// `variantReviewLogProvider` in `backend_bridge.dart`), so widget tests
+/// need **no** reset between tests. Use this helper only when a test seeds
+/// a store *before* pumping: create the store, seed it, and pass it here so
+/// the scope hands that exact instance to the screen under test.
+///
 /// * `StatsLog` — turn/game-end records + event store mirror.
 /// * `QualityLog` — per-ply quality marks.
 /// * `ReviewLog` — finished games awaiting review.
 /// * `VariantReviewLog` — variant replay records.
-void resetTelemetry() {
-  StatsLog.clear();
-  QualityLog.clear();
-  ReviewLog.clear();
-  VariantReviewLog.clear();
+List<Override> telemetryOverrides({
+  StatsLog? stats,
+  QualityLog? quality,
+  ReviewLog? review,
+  VariantReviewLog? variant,
+}) {
+  return <Override>[
+    statsLogProvider.overrideWithValue(stats ?? StatsLog()),
+    qualityLogProvider.overrideWithValue(quality ?? QualityLog()),
+    reviewLogProvider.overrideWithValue(review ?? ReviewLog()),
+    variantReviewLogProvider.overrideWithValue(variant ?? VariantReviewLog()),
+  ];
 }
 
 // ---------------------------------------------------------------------------

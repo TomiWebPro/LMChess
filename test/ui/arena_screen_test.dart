@@ -43,7 +43,6 @@ Future<void> _pumpSteps(WidgetTester tester, {int steps = 12}) async {
 }
 
 void main() {
-  setUp(harness.resetTelemetry);
 
   // =========================================================================
   // Config form: fields, labels, bounds

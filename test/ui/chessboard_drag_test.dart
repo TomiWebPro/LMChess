@@ -20,7 +20,6 @@ import 'package:llm_chess_arena/src/ui/screens/play_screen.dart'
     show PlayScreen;
 import 'package:llm_chess_arena/src/ui/widgets/chessboard.dart';
 
-import '../support/arena_test_harness.dart' as harness;
 import '../support/semantics_invariants.dart';
 
 // ---------------------------------------------------------------------------
@@ -246,7 +245,6 @@ Future<void> _dragSemanticSquares(
 }
 
 void main() {
-  setUp(harness.resetTelemetry);
 
   group('§15.1 drag and drop', () {
     testWidgets('mouse drag e2→e4 selects, lifts, and calls onMoveAttempt', (
