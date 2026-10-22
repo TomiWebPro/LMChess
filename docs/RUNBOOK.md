@@ -38,6 +38,48 @@ flutter build linux --release    # standalone artifact
 Agents → New → provider (OpenAI/Anthropic/Gemini/Ollama-compatible) → model,
 endpoint, key (secure storage) → **Test connection** → Save.
 
+## Flutter upgrade gate (release block, acceptance criterion 14.8)
+
+Run before cutting any release. The Windows accessibility crash root cause is
+tracked upstream in `flutter/flutter#175041`; until a validated Flutter
+revision fixes it, keep the semantics hardening and the known-issue note at
+the bottom of this section.
+
+1. Check the Flutter engine revision against upstream issue
+   `flutter/flutter#175041` — `flutter --version` prints the exact revision;
+   confirm whether the fix has landed and in which revision.
+2. Upgrade or pin a known-good Flutter version (`flutter upgrade`, or
+   `flutter downgrade <known-good>` when the latest is not known-good), then
+   `flutter pub get`.
+3. Run the full fast suite:
+   ```bash
+   flutter analyze     # must end with "No issues found!"
+   flutter test        # full regression, zero pending timers
+   ```
+4. Run the Windows integration test (§9.1):
+   ```bash
+   flutter test integration_test/accessibility_windows_test.dart -d windows
+   ```
+5. Build the Windows release and run the UIA smoke with 500 random clicks
+   (§9.2):
+   ```bash
+   flutter build windows --release
+   powershell -ExecutionPolicy Bypass -File tool/windows_accessibility_smoke.ps1 `
+     -Exe build\windows\x64\runner\Release\llm_chess_arena.exe `
+     -RandomClicks 500
+   ```
+6. Repeat the smoke once with Narrator or Inspect.exe attached.
+7. Check Event Viewer for any new `flutter_windows.dll` fault
+   (`0xC0000005` / `0xC000041D`) from both smoke runs.
+8. Only then remove the known-issue note below from the release checklist.
+
+**Known-issue note (do not remove until steps 4–7 pass on the shipped
+revision):** the Flutter Windows accessibility bridge has a crash root cause
+tracked in `flutter/flutter#175041`; the app-level semantics hardening
+(`ExcludeSemantics`/`IndexedStack` hidden-tab guard and stable semantics
+roots) is a mitigation, not a fix. The note is referenced by
+`docs/FUTURE_WORK.md` §2.6.
+
 ## Troubleshooting
 
 - Provider 401 → key wrong; 429 → backoff + lower concurrency.

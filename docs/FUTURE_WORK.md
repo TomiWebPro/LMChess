@@ -1,7 +1,7 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-22 (UTC) — §11.3 CI process fixes (fail-fast on any non-zero exit; single UIA invocation)
+Last updated: 2026-10-22 (UTC) — §3.3 Flutter upgrade gate added to `docs/RUNBOOK.md` and referenced by the release process (acceptance criterion 14.8 met)
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -118,32 +118,12 @@ suite is `test/ui/premove_test.dart`.
 
 ---
 
-## 3.3 Upgrade and verification checklist (P1 — not in the runbook)
-
-`docs/RUNBOOK.md` does not yet contain the Flutter upgrade gate. The checklist
-must live in the release process, not only in this document.
-
-Add to the runbook:
-
-1. Check the Flutter engine revision against upstream issue `flutter/flutter#175041`.
-2. Upgrade or pin a known-good Flutter version.
-3. Run the full fast suite (`flutter analyze`, `flutter test`).
-4. Run the Windows integration test (§9.1).
-5. Build the Windows release and run the UIA smoke with `-RandomClicks 500` (§9.2).
-6. Repeat the smoke with Narrator or Inspect.exe attached.
-7. Check Event Viewer for any new `flutter_windows.dll` fault.
-8. Only then remove the known-issue note from the release checklist.
-
-**Done when:** the checklist is part of `docs/RUNBOOK.md` and referenced by the
-release process (acceptance criterion 14.8).
-
----
-
 ## 2.6 Upstream dependency (P1 — external)
 
 The root cause is in the Flutter Windows accessibility bridge
 (`flutter/flutter#175041`); the app-level semantics hardening is a mitigation,
-not a fix. On each Flutter upgrade:
+not a fix. The known-issue note is now part of the Flutter upgrade gate in
+`docs/RUNBOOK.md` (step 8 removes it). On each Flutter upgrade:
 
 - Check whether the upstream fix has landed and in which revision.
 - Re-run the §9.1/§9.2 gates before removing the known-issue warning.
@@ -176,12 +156,13 @@ Only these are still open:
       invocations on a release build, with Narrator or Inspect.exe attached.
 - [ ] **14.2** Event Viewer shows no new `flutter_windows.dll` `0xC0000005`
       during the smoke.
-- [ ] **14.8** The §3.3 upgrade checklist is part of the release runbook.
 
 Already met: 14.3 (`flutter test` green, zero pending timers), 14.4 (every
 matrix control has an observable-behavior test), 14.5 (semantics suite reports
 zero duplicate ids/null parents/reparenting), 14.6 (monkey sweeps complete
-without Dart exceptions), 14.7 (`flutter analyze` clean).
+without Dart exceptions), 14.7 (`flutter analyze` clean), 14.8 (Flutter
+upgrade gate is part of `docs/RUNBOOK.md` and referenced by the release
+process in `docs/ENGINE_RUNTIME.md`).
 
 ---
 

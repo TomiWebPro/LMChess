@@ -1,7 +1,7 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-22 (UTC) — §11.3 CI process fixes (fail-fast on any non-zero exit; single UIA invocation)
+Last updated: 2026-10-22 (UTC) — §3.3 Flutter upgrade gate added to the runbook; acceptance criterion 14.8 met
 Related: `docs/FUTURE_WORK.md` (binding roadmap), `ARCHITECTURE.md`, `README.md`
 
 This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every run**.
@@ -481,3 +481,37 @@ suites referenced above now exist. Native Windows execution is tracked in
   credentials are provisioned.
   Next: §3.3 upgrade checklist into `docs/RUNBOOK.md` (P1, docs-only,
   closes acceptance criterion 14.8), or re-push once credentials exist.
+- 2026-10-22Z — DOCS P1 §3.3 (Flutter upgrade gate → runbook): added the
+  "Flutter upgrade gate (release block, acceptance criterion 14.8)" section to
+  `docs/RUNBOOK.md` — the full 8-step §3.3 checklist: (1) check the Flutter
+  engine revision against upstream `flutter/flutter#175041`, (2) upgrade or
+  pin a known-good Flutter, (3) run the full fast suite (`flutter analyze`
+  → "No issues found!", `flutter test` → zero pending timers), (4) run the
+  §9.1 Windows integration test (`flutter test
+  integration_test/accessibility_windows_test.dart -d windows`), (5) build
+  the Windows release and run the §9.2 UIA smoke with `-RandomClicks 500`,
+  (6) repeat the smoke with Narrator or Inspect.exe attached, (7) check
+  Event Viewer for any new `flutter_windows.dll` fault (`0xC0000005` /
+  `0xC000041D`), (8) only then remove the known-issue note. The section also
+  carries the known-issue note itself (Flutter Windows accessibility bridge
+  crash root cause `flutter/flutter#175041`; app-level semantics hardening is
+  a mitigation, not a fix) so step 8 is actionable. Release process wiring:
+  `docs/ENGINE_RUNTIME.md` "Release checklist (before distributing
+  binaries)" now requires the upgrade gate before cutting a release;
+  `docs/FUTURE_WORK.md` §2.6 points at the runbook note. `docs/FUTURE_WORK.md`
+  updated open-items-only: §3.3 removed from the open list, header bumped,
+  acceptance criterion 14.8 moved from open to "Already met" (14.8: gate is
+  part of the runbook and referenced by the release process).
+  No Dart/test files changed. Evidence: `flutter analyze` → `No issues
+  found! (ran in 2.1s)`; full `flutter test` 631/631 pass (no Dart changes;
+  regression confirmed). Commit: 473c388. Push **BLOCKED**
+  (same as prior runs): no GitHub credentials on this host — `git push
+  origin main` → `could not read Username for 'https://github.com'` (no
+  credential helper, token, `gh`, or SSH key); `git ls-remote origin main`
+  still shows e1749b3, so 5faf11b..HEAD remain local-only. Re-run the push
+  after credentials are provisioned.
+  Next: re-push the queued local commits (5faf11b..HEAD, 9 commits) once
+  GitHub credentials exist — this closes the last Linux-verifiable open item;
+  the remaining open items (§9.1/§9.2 Windows native runs, §11.3 first
+  Windows CI run, §11.4 optional coverage wiring, §2.6 upstream fix) all
+  need a Windows desktop/UIA session or an upstream Flutter release.
