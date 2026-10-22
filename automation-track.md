@@ -1,7 +1,7 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-22 (UTC) — §15.2 move animation layer completed
+Last updated: 2026-10-22 (UTC) — §15.3 fast ply scrubbing completed
 Related: `docs/FUTURE_WORK.md` (binding roadmap), `ARCHITECTURE.md`, `README.md`
 
 This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every run**.
@@ -314,3 +314,67 @@ suites referenced above now exist. Native Windows execution is tracked in
   be3ab86/ee07968/77f8de0/cebc5c7 remain local-only. Re-run the push after
   credentials are provisioned.
   Next: §15.3 fast ply scrubbing.
+- 2026-10-22Z — UI P1 §15.3 (fast ply scrubbing): finished the interrupted
+  keyboard scrub work and shipped it on all four replay-capable screens.
+  Files changed:
+  `lib/src/ui/widgets/scrub_shortcuts.dart` (new) — `ScrubShortcuts` Focus
+  wrapper owning Left/Right/Home/End (`ScrubAction` enum), focus follows the
+  shell's `TabVisibility` (hidden IndexedStack tabs release the arrow keys) via
+  a deferred post-frame sync; `scrubMotionFor(uci, delta)` helper maps one-ply
+  steps to §15.2 `BoardMove`s (backward steps reverse from/to so the piece
+  slides back) and returns null (snap) for multi-ply jumps (§15.3 large-jump
+  budget).
+  `lib/src/ui/screens/play_screen.dart` — `ScrubShortcuts(enabled: _orch !=
+  null)` wraps the screen; `_onScrubAction`/`_seekViewPly`/`_scrubMotionFor`
+  drive the pre-existing `_viewPly` cursor clamped to `[0, _sans.length]`;
+  scrubbed snapshots read `squaresOfFen(_fens[_viewPly])`; board is read-only
+  while scrubbed (`onTapSquare` null, `canDragSquare` requires `viewingLive`,
+  `_attemptMove` guard); `motion: viewingLive ? _lastMotion : _viewMotion`
+  animates adjacent seek steps; move-list taps route through `_seekViewPly`;
+  "Return to live position" TextButton in the moves panel restores live input.
+  `lib/src/ui/screens/watch_screen.dart` — same wiring plus a `_followLive`
+  flag fix: the cursor now starts following the live tail (`_viewPly` is only
+  meaningful once the user seeks), so the board shows live play after Start
+  instead of pinning to ply 0 (regression caught by the new tests);
+  `_effectiveViewPly` getter feeds the scrub math and the MoveList highlight.
+  `lib/src/ui/screens/review_screen.dart` — ScrubShortcuts + `_seekPly` with
+  `_scrubDelta`; direction-aware motion UCI (`_ply - 1` forward, `_ply`
+  backward) on the after-board; slider and move-list/key-moment taps route
+  through `_seekPly`.
+  `lib/src/ui/screens/variant_replay_screen.dart` — ScrubShortcuts + `_seek`
+  with `_scrubDelta`; fixed backward scrubs (the motion index when seeking
+  back to a ply is `_ply`, the move leaving the viewed position — previously
+  `current` was null at ply 0 so backward steps snapped).
+  `lib/src/ui/widgets/chessboard.dart` — pure `dart format` brace cleanup in
+  `_startFlight` (no behavior change).
+  `test/ui/scrub_shortcuts_test.dart` (new, 20 tests) — `scrubMotionFor`
+  unit mapping (forward/backward/multi-ply/malformed UCI), ScrubShortcuts key
+  mapping/disabled/hidden-tab focus release, Play scrub (arrow steps with
+  motion overlay, adjacent-step animation + retarget, read-only past plies via
+  tap AND drag, Return to live restores input, 20 rapid arrows coalesce with
+  zero exceptions/timers, semantics 64-nodes/zero-reparenting through rapid
+  seeking), Review scrub (cursor + forward/backward after-board animation,
+  multi-ply End snaps), Variant Replay scrub (clamped cursor, forward/backward
+  legal animation), Watch scrub (follow-live after Start, arrows pin past
+  snapshots + End returns, backward animation, move-list tap seek + Return to
+  live). Deleted the temporary `test/ui/scrub_probe_test.dart` debug file
+  (created during the interrupted run).
+  Key test-harness fix: the scrub tests are the first to tap content inside a
+  shell `TabBarView` page — the page's `DrivenScrollActivity` keeps the
+  viewport pointer-ignored until its ticker future completes, and a single
+  `pump(300ms)` can land exactly on the boundary (flaky hit-testing). Pages
+  are now entered via a `_switchTab` helper that pumps six 100 ms slices so
+  buttons always register; the Watch `_followLive` fix and the variant
+  backward-motion fix were both caught by these tests.
+  Evidence: `flutter analyze` → `No issues found!`; `flutter test
+  test/ui/scrub_shortcuts_test.dart` 20/20 pass; related suites
+  (play/watch/review/variant_replay 85/85, chessboard/drag/motion/semantics/
+  shell 105/105, monkey/deep-states/stable-keys 21/21) all green; full
+  `flutter test` 601/601 pass (581 baseline + 20 new). Commit: see
+  `git log -1`. Push **BLOCKED** (same as prior runs): no GitHub credentials
+  on this host — `git push origin main` → `could not read Username for
+  'https://github.com'`; `git ls-remote` shows remote `main` still at
+  e1749b3, so 8eaaa5e..HEAD remain local-only. Re-run the push after
+  credentials are provisioned.
+  Next: §15.4 premove single (or a CI/process item such as §11.3 remote-run
+  workarounds).

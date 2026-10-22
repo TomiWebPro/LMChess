@@ -222,8 +222,7 @@ class Chessboard extends StatefulWidget {
   State<Chessboard> createState() => _ChessboardState();
 }
 
-class _ChessboardState extends State<Chessboard>
-    with TickerProviderStateMixin {
+class _ChessboardState extends State<Chessboard> with TickerProviderStateMixin {
   final FocusNode _focusNode = FocusNode(debugLabel: 'chessboard-drag');
 
   /// Origin square of the in-flight drag, or `null` when not dragging.
@@ -257,18 +256,19 @@ class _ChessboardState extends State<Chessboard>
   @override
   void initState() {
     super.initState();
-    _motionController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 160),
-    )..addStatusListener((status) {
-        if (status == AnimationStatus.completed && _flight != null) {
-          if (mounted) {
-            setState(() => _flight = null);
-          } else {
-            _flight = null;
+    _motionController =
+        AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 160),
+        )..addStatusListener((status) {
+          if (status == AnimationStatus.completed && _flight != null) {
+            if (mounted) {
+              setState(() => _flight = null);
+            } else {
+              _flight = null;
+            }
           }
-        }
-      });
+        });
     _motionCurve = CurvedAnimation(
       parent: _motionController,
       curve: Curves.easeOut,
@@ -304,8 +304,12 @@ class _ChessboardState extends State<Chessboard>
   /// position, so no flight is created.
   void _startFlight(BoardMove move, Map<String, String> oldSquares) {
     final fromRaw = oldSquares[move.from.name];
-    if (fromRaw == null || fromRaw.isEmpty) return;
-    if (MediaQuery.disableAnimationsOf(context)) return;
+    if (fromRaw == null || fromRaw.isEmpty) {
+      return;
+    }
+    if (MediaQuery.disableAnimationsOf(context)) {
+      return;
+    }
 
     final from = move.from.name;
     final to = move.to.name;
@@ -316,8 +320,7 @@ class _ChessboardState extends State<Chessboard>
     final fromRank = fromPos.$2;
     final toFile = toPos.$1;
     final movingGlyph = CellPiece.parse(fromRaw);
-    final isKing = movingGlyph != null &&
-        (fromRaw == 'wK' || fromRaw == 'bK');
+    final isKing = movingGlyph != null && (fromRaw == 'wK' || fromRaw == 'bK');
 
     // A diff component is "the build-up": any retarget continues from the
     // current visual position rather than jumping back to the new origin.
@@ -385,10 +388,7 @@ class _ChessboardState extends State<Chessboard>
     if (pos == null) return Offset.zero;
     final displayCol = widget.orientationWhite ? pos.$1 : 7 - pos.$1;
     final displayRow = widget.orientationWhite ? 7 - pos.$2 : pos.$2;
-    return Offset(
-      (displayCol + 0.5) * cell,
-      (displayRow + 0.5) * cell,
-    );
+    return Offset((displayCol + 0.5) * cell, (displayRow + 0.5) * cell);
   }
 
   @override
@@ -637,8 +637,9 @@ class _ChessboardState extends State<Chessboard>
                     : Center(
                         key: ValueKey<String>('piece-$square-$raw'),
                         child: Opacity(
-                          opacity:
-                              (_dragFrom == square || hiddenByFlight) ? 0 : 1,
+                          opacity: (_dragFrom == square || hiddenByFlight)
+                              ? 0
+                              : 1,
                           child: _buildGlyph(piece, cell),
                         ),
                       ),
@@ -794,9 +795,7 @@ class _ChessboardState extends State<Chessboard>
       top: center.dy - cell / 2,
       width: cell,
       height: cell,
-      child: Center(
-        child: _buildGlyph(glyph, cell, lifted: true),
-      ),
+      child: Center(child: _buildGlyph(glyph, cell, lifted: true)),
     );
   }
 

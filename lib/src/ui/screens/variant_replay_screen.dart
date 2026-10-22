@@ -13,14 +13,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../theme/registry.dart';
-import '../../chess/square.dart';
 import '../../review/variant_review.dart';
 import '../../variant/variant_replay.dart';
 import '../backend_bridge.dart';
 import '../widgets/activity_panel.dart';
-import '../widgets/board_motion.dart';
 import '../widgets/boards.dart';
 import '../widgets/chessboard.dart';
+import '../widgets/scrub_shortcuts.dart';
 
 /// Step-through replay for one [VariantGameRecord].
 class VariantReplayScreen extends ConsumerStatefulWidget {
@@ -39,6 +38,10 @@ class _VariantReplayScreenState extends ConsumerState<VariantReplayScreen> {
   /// 0 = initial position; `i` = after ply `i-1`.
   int _ply = 0;
 
+  /// Direction of the last seek (`+1`/`-1` adjacent, larger for jumps);
+  /// adjacent legal steps animate through the §15.2 motion layer (§15.3).
+  int _scrubDelta = 0;
+
   /// Review run state (lazy: no Stockfish until the button is pressed).
   VariantReviewReport? _report;
   ReviewEvaluatorHandle? _reviewHandle;
@@ -47,7 +50,8 @@ class _VariantReplayScreenState extends ConsumerState<VariantReplayScreen> {
   int _reviewToken = 0;
 
   /// §10.2 seam — injected for tests; production defaults to [resolveReviewEvaluator].
-  Future<ReviewEvaluatorHandle> Function() _evalFactory = resolveReviewEvaluator;
+  Future<ReviewEvaluatorHandle> Function() _evalFactory =
+      resolveReviewEvaluator;
 
   VariantGameRecord get _record => widget.record;
 
@@ -85,9 +89,8 @@ class _VariantReplayScreenState extends ConsumerState<VariantReplayScreen> {
         return;
       }
       _reviewHandle = handle;
-      final report =
-          await VariantReviewService(evaluator: handle.evaluator)
-              .reviewGame(_record);
+      final report = await VariantReviewService(evaluator: handle.evaluator)
+          .reviewGame(_record);
       if (!mounted || token != _reviewToken) return;
       setState(() {
         _report = report;
@@ -105,7 +108,10 @@ class _VariantReplayScreenState extends ConsumerState<VariantReplayScreen> {
   void _seek(int ply) {
     final clamped = ply.clamp(0, _record.plies.length);
     if (clamped == _ply) return;
-    setState(() => _ply = clamped);
+    setState(() {
+      _scrubDelta = clamped - _ply;
+      _ply = clamped;
+    });
   }
 
   @override
@@ -118,7 +124,8 @@ class _VariantReplayScreenState extends ConsumerState<VariantReplayScreen> {
     );
     final board = _record.boardAt(_ply);
     final current = _ply == 0 ? null : _record.plies[_ply - 1];
-    final reviewed = _ply > 0 && _report != null && _ply <= _report!.moves.length
+    final reviewed =
+        _ply > 0 && _report != null && _ply <= _report!.moves.length
         ? _report!.moves[_ply - 1]
         : null;
     final chainErrors = _record.validateChain();
@@ -141,18 +148,23 @@ class _VariantReplayScreenState extends ConsumerState<VariantReplayScreen> {
                 lastTo: current != null && current.wasLegal
                     ? current.attempt.toSquareName
                     : null,
-                // Forward steps through a legal ply animate via the §15.2
-                // motion layer; the board derives capture/en-passant/castle
-                // from its before→after snapshot diff, so the bare from/to
-                // pair is a complete motion value. Illegal plies and backward
-                // seeks snap (no flight: the origin piece is absent from the
-                // old snapshot).
-                motion: current != null && current.wasLegal
-                    ? BoardMove(
-                        from: Square.fromName(current.attempt.fromSquareName),
-                        to: Square.fromName(current.attempt.toSquareName),
-                      )
-                    : null,
+                // One-ply seek steps animate even backward: a backward step
+                // reverses the from/to pair so the §15.2 motion layer slides
+                // the piece back to its previous square. The reversed pair
+                // for a backward step is the move that left the position we
+                // are now viewing — plies[_ply] — while a forward step uses
+                // the move that entered it — plies[_ply - 1]. Illegal plies
+                // and multi-ply jumps snap (the origin piece is absent from
+                // the old snapshot or the jump must not animate its
+                // intermediate plies, §15.3 large-jump budget rule).
+                motion: () {
+                  if (_scrubDelta.abs() != 1) return null;
+                  final index = _scrubDelta > 0 ? _ply - 1 : _ply;
+                  if (index < 0 || index >= _record.plies.length) return null;
+                  final ply = _record.plies[index];
+                  if (!ply.wasLegal) return null;
+                  return scrubMotionFor(ply.attempt.uci, _scrubDelta);
+                }(),
               ),
             ),
           ),
@@ -192,53 +204,64 @@ class _VariantReplayScreenState extends ConsumerState<VariantReplayScreen> {
       ],
     );
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Chaotic replay'),
-        actions: <Widget>[
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Center(
-              child: Text(
-                'Ply $_ply / ${_record.plies.length}',
-                key: const ValueKey<String>('variant-ply-label'),
+    return ScrubShortcuts(
+      enabled: _record.plies.isNotEmpty,
+      onAction: (action) {
+        switch (action) {
+          case ScrubAction.stepBack:
+            _seek(_ply - 1);
+          case ScrubAction.stepForward:
+            _seek(_ply + 1);
+          case ScrubAction.toStart:
+            _seek(0);
+          case ScrubAction.toEnd:
+            _seek(_record.plies.length);
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Chaotic replay'),
+          actions: <Widget>[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Center(
+                child: Text(
+                  'Ply $_ply / ${_record.plies.length}',
+                  key: const ValueKey<String>('variant-ply-label'),
+                ),
               ),
             ),
-          ),
-        ],
-      ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          if (constraints.maxWidth >= 900) {
-            return Row(
+          ],
+        ),
+        body: LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth >= 900) {
+              return Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: boardPane,
+                    ),
+                  ),
+                  SizedBox(width: 440, child: panel),
+                ],
+              );
+            }
+            return Column(
               children: <Widget>[
-                Expanded(child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: boardPane,
-                )),
-                SizedBox(
-                  width: 440,
-                  child: panel,
+                Expanded(
+                  flex: 3,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: boardPane,
+                  ),
                 ),
+                Expanded(flex: 2, child: panel),
               ],
             );
-          }
-          return Column(
-            children: <Widget>[
-              Expanded(
-                flex: 3,
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: boardPane,
-                ),
-              ),
-              Expanded(
-                flex: 2,
-                child: panel,
-              ),
-            ],
-          );
-        },
+          },
+        ),
       ),
     );
   }
@@ -329,9 +352,7 @@ class _VariantReplayScreenState extends ConsumerState<VariantReplayScreen> {
               max: last.toDouble(),
               divisions: last == 0 ? null : last,
               label: 'Ply $_ply',
-              onChanged: last == 0
-                  ? null
-                  : (value) => _seek(value.round()),
+              onChanged: last == 0 ? null : (value) => _seek(value.round()),
             ),
           ),
           IconButton(
@@ -514,19 +535,23 @@ class _VariantReplayScreenState extends ConsumerState<VariantReplayScreen> {
   String _reviewSubtitle(VariantReviewedPly move) {
     final parts = <String>[
       if (move.lossCp == null) 'no score' else 'loss ${move.lossCp} cp',
-      if (move.assessment.tags.isNotEmpty)
-        move.assessment.tags.join(', '),
+      if (move.assessment.tags.isNotEmpty) move.assessment.tags.join(', '),
     ];
     return parts.join(' · ');
   }
 
   Widget _buildAttemptCard(VariantPlyRecord ply) {
     final theme = Theme.of(context);
-    final raw = _prettyRaw(ply.attempt.rawToolCallJson, ply.attempt.rawToolArgsJson);
+    final raw = _prettyRaw(
+      ply.attempt.rawToolCallJson,
+      ply.attempt.rawToolArgsJson,
+    );
     return Card(
       child: ExpansionTile(
         leading: Icon(
-          ply.fallback ? Icons.warning_amber_outlined : Icons.psychology_outlined,
+          ply.fallback
+              ? Icons.warning_amber_outlined
+              : Icons.psychology_outlined,
         ),
         title: Text('Attempt ${ply.attempt.uci}'),
         subtitle: Text(
@@ -553,9 +578,7 @@ class _VariantReplayScreenState extends ConsumerState<VariantReplayScreen> {
           const SizedBox(height: 4),
           SelectableText(
             raw,
-            style: theme.textTheme.bodySmall?.copyWith(
-              fontFamily: 'monospace',
-            ),
+            style: theme.textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
           ),
         ],
       ),
@@ -579,7 +602,9 @@ class _VariantReplayScreenState extends ConsumerState<VariantReplayScreen> {
             Row(
               children: <Widget>[
                 Icon(
-                  ply.wasLegal ? Icons.check_circle_outline : Icons.auto_fix_high,
+                  ply.wasLegal
+                      ? Icons.check_circle_outline
+                      : Icons.auto_fix_high,
                   size: 18,
                 ),
                 const SizedBox(width: 6),
@@ -636,10 +661,7 @@ class _VariantReplayScreenState extends ConsumerState<VariantReplayScreen> {
                 '(${r.afterScore.source})',
                 style: theme.textTheme.bodySmall,
               ),
-              Text(
-                r.assessment.rationale,
-                style: theme.textTheme.bodySmall,
-              ),
+              Text(r.assessment.rationale, style: theme.textTheme.bodySmall),
               if (r.assessment.tags.isNotEmpty)
                 Text(
                   'Tags: ${r.assessment.tags.join(', ')}',
@@ -727,10 +749,7 @@ class _VariantReplayScreenState extends ConsumerState<VariantReplayScreen> {
               alignment: Alignment.centerLeft,
               child: Padding(
                 padding: const EdgeInsets.only(bottom: 4),
-                child: Text(
-                  '- $event',
-                  style: theme.textTheme.bodySmall,
-                ),
+                child: Text('- $event', style: theme.textTheme.bodySmall),
               ),
             ),
         ],
@@ -738,15 +757,10 @@ class _VariantReplayScreenState extends ConsumerState<VariantReplayScreen> {
     );
   }
 
-  String _prettyRaw(
-    Map<String, Object?>? json,
-    String? raw,
-  ) {
+  String _prettyRaw(Map<String, Object?>? json, String? raw) {
     if (json != null) {
       try {
-        return redactSecrets(
-          const JsonEncoder.withIndent('  ').convert(json),
-        );
+        return redactSecrets(const JsonEncoder.withIndent('  ').convert(json));
       } catch (_) {
         // Fall through to the raw string.
       }

@@ -1,7 +1,7 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-22 (UTC) — §15.2 move animation layer shipped
+Last updated: 2026-10-22 (UTC) — §15.3 fast ply scrubbing shipped
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -13,11 +13,12 @@ investigation history are preserved in `automation-track.md` and git history.
 Verified baseline (2026-10-22):
 
 - `flutter analyze` — 0 issues.
-- `flutter test` — 581/581 pass.
+- `flutter test` — 601/601 pass.
 - `flutter build linux --release` — succeeds; release binary starts under Xvfb.
 - Roadmap §12 — 18/18 deliverables present; §10.1–10.8 refactors complete.
 - Interaction matrix §6 — all 12 screen/widget suites present.
-- §15.1 drag-and-drop and §15.2 move-animation layer shipped.
+- §15.1 drag-and-drop, §15.2 move-animation layer, and §15.3 fast ply
+  scrubbing shipped.
 
 ---
 
@@ -95,31 +96,15 @@ wanted.
 
 ---
 
-## 15. Chessboard interaction and motion (P1 — in progress)
+## 15. Chessboard interaction and motion (P1/P2 — in progress)
 
-The board supports drag-and-drop (§15.1, shipped 2026-10-22) and an explicit
+The board supports drag-and-drop (§15.1, shipped 2026-10-22), an explicit
 from→to move-animation layer (§15.2, shipped 2026-10-22) on top of the
-click-click tap path. It is still not scrub-friendly: ply seeking swaps
-snapshots, and there is no premove queue. Those gaps are the remaining UX
-work versus chess.com.
+click-click tap path, and fast ply scrubbing with keyboard + move-list seek
+(§15.3, shipped 2026-10-22). The remaining UX gap versus chess.com is the
+premove queue.
 
-Target feel: scrub back/forth through the game with pieces sliding across the
-board, and queue premoves while the opponent thinks.
-
-### 15.3 Fast ply scrubbing (P1)
-
-- Play: Left/Right arrows step one ply, Home/End jump to start/live; move-list
-  taps seek; every step uses the motion layer so pieces visibly slide.
-- Review, Variant Replay, and Watch share the same seek behavior for their
-  move-list/slider navigation.
-- Rapid key repeat must coalesce to the latest target and retarget the current
-  animation, not queue dozens of controllers. Holding an arrow should feel
-  continuous, with no timer leaks or exceptions.
-- While reviewing a past ply, the board is read-only and AI input is disabled;
-  “Return to live position” restores input and clears any selection.
-- Define large jumps (for example, move-list jump of 20 plies): animate the
-  final transition only, or cap the animation budget; never animate all
-  intermediate plies synchronously.
+Target feel: queue premoves while the opponent thinks.
 
 ### 15.4 Premove and multipremove (P1 single / P2 multi)
 
@@ -148,29 +133,30 @@ never bypass the orchestrator.
 
 Likely touch points:
 
-- `lib/src/ui/widgets/chessboard.dart` — motion overlay (shipped §15.2),
-  keyboard seeking.
-- `lib/src/ui/screens/play_screen.dart` — premove queue, ply shortcuts,
-  `AppliedMove` retention.
+- `lib/src/ui/widgets/chessboard.dart` — motion overlay (§15.2, shipped),
+  keyboard seeking (§15.3, shipped), premove ghost pieces.
+- `lib/src/ui/screens/play_screen.dart` — premove queue, `AppliedMove`
+  retention.
 - `lib/src/ui/screens/watch_screen.dart`,
   `lib/src/ui/screens/review_screen.dart`,
-  `lib/src/ui/screens/variant_replay_screen.dart` — shared seek/motion.
-- New tests: `test/ui/premove_test.dart`; extend the existing play/review/
-  variant/watch suites. (`test/ui/board_motion_test.dart` shipped with §15.2.)
+  `lib/src/ui/screens/variant_replay_screen.dart` — premove is Play-only, but
+  each screen keeps the summary/chip semantics consistent.
+- New tests: `test/ui/premove_test.dart`; extend the existing play suite.
+  (`test/ui/board_motion_test.dart` shipped with §15.2,
+  `test/ui/scrub_shortcuts_test.dart` with §15.3.)
 
 Acceptance:
 
 - A single premove and a multi-premove chain execute after the AI move; an
   illegal premove is discarded cleanly; cancel/new-game/terminal clears it.
-- Arrow-key scrub forward and backward animates pieces; 20 rapid presses cause
-  no exceptions, pending timers, or duplicate AI turns.
-- Semantics tree keeps 64 unique square nodes with zero reparenting through
-  drag, animation (§15.2 verified), and rapid seeking.
+- (Met by §15.3:) Arrow-key scrub forward and backward animates pieces; 20
+  rapid presses cause no exceptions, pending timers, or duplicate AI turns.
+- (Met by §15.1–15.3:) Semantics tree keeps 64 unique square nodes with zero
+  reparenting through drag, animation, and rapid seeking.
 - `flutter analyze` clean; full `flutter test` green; reduced-motion mode
   passes without animation.
 
-Suggested order: ply scrubbing (15.3) → single premove → multipremove (15.4) →
-polish.
+Suggested order: single premove → multipremove (15.4) → polish.
 
 ---
 

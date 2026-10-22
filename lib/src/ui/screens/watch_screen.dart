@@ -52,6 +52,7 @@ import '../widgets/activity_panel.dart';
 import '../widgets/boards.dart';
 import '../widgets/board_motion.dart';
 import '../widgets/chessboard.dart';
+import '../widgets/scrub_shortcuts.dart';
 
 /// Game id used by the watch room's stats/review attribution.
 const String kWatchGameId = 'watch-game';
@@ -96,6 +97,22 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
 
   /// Most recently applied transition for the board's §15.2 motion layer.
   BoardMove? _lastMotion;
+
+  /// Scrubbed view ply (meaningful only while [_followLive] is false).
+  /// See §15.3.
+  int _viewPly = 0;
+
+  /// Whether the board follows the live game tail. Stays true until the user
+  /// seeks away; new moves then append underneath the pinned view and the
+  /// view returns to live only via End / "Return to live position".
+  bool _followLive = true;
+
+  /// The ply currently on screen: the live tail while following, otherwise
+  /// the pinned [_viewPly].
+  int get _effectiveViewPly => _followLive ? _moves.length : _viewPly;
+
+  /// Motion for the scrubbed view — adjacent seek steps only (§15.3).
+  BoardMove? _viewMotion;
 
   /// Selected agent ids (dropdowns); default to the seeded demos.
   String? _whiteId = 'demo-white';
@@ -161,86 +178,111 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     );
     final agents = ref.watch(agentListProvider);
     final orch = _orch;
-    return Padding(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        children: <Widget>[
-          _buildSelectors(agents.agents),
-          const SizedBox(height: 8),
-          _buildTransport(orch),
-          const SizedBox(height: 8),
-          Expanded(
-            child: BoardPanelLayout(
-              boardLabel: 'Board',
-              panelLabel: 'Activity',
-              board: Chessboard(
-                squares: squaresOf(_engine),
-                orientationWhite: true,
-                lastFrom: _lastFrom,
-                lastTo: _lastTo,
-                inCheck: checkSquare(_engine),
-                terminalSquare: _terminalKingSquare(),
-                boardTheme: boardTheme,
-                pieceTheme: pieceTheme,
-                motion: _lastMotion,
-                interactive: false,
+    final viewingLive = _followLive;
+    return ScrubShortcuts(
+      enabled: _moves.isNotEmpty,
+      onAction: _onScrubAction,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: <Widget>[
+            _buildSelectors(agents.agents),
+            const SizedBox(height: 8),
+            _buildTransport(orch),
+            const SizedBox(height: 8),
+            if (!viewingLive && _moves.isNotEmpty)
+              TextButton(
+                onPressed: () => _seekViewPly(_moves.length),
+                child: const Text('Return to live position'),
               ),
-              panel: ValueListenableBuilder<int>(
-                valueListenable: _activityRevision,
-                builder: (context, _, _) {
-                  // Recomputed inside the panel-only builder so the spinner
-                  // tracks the live turn without repainting the board.
-                  final liveOrch = _orch;
-                  final busy = _pumping ||
-                      (liveOrch != null &&
-                          (liveOrch.state == OrchestratorState.streaming ||
-                              liveOrch.state == OrchestratorState.validating ||
-                              liveOrch.state == OrchestratorState.applying));
-                  return DefaultTabController(
-                    length: 3,
-                    child: Column(
-                      children: <Widget>[
-                        const TabBar(
-                          tabs: <Widget>[
-                            Tab(text: 'Activity'),
-                            Tab(text: 'Moves'),
-                            Tab(text: 'Errors'),
-                          ],
+            const SizedBox(height: 8),
+            Expanded(
+              child: BoardPanelLayout(
+                boardLabel: 'Board',
+                panelLabel: 'Activity',
+                board: Chessboard(
+                  squares: viewingLive
+                      ? squaresOf(_engine)
+                      : squaresOfFen(
+                          _fens[_viewPly.clamp(0, _fens.length - 1)],
                         ),
-                        Expanded(
-                          child: TabBarView(
-                            children: <Widget>[
-                              AgentActivityPanel(
-                                // Snapshot so the panel's didUpdateWidget
-                                // length check (autoscroll) sees the growth;
-                                // only copies when the panel rebuilds.
-                                events:
-                                    List<ActivityEvent>.unmodifiable(_events),
-                                isThinking: busy,
-                              ),
-                              SingleChildScrollView(
-                                padding: const EdgeInsets.all(12),
-                                child: MoveList(
-                                  moves: _moves,
-                                  currentIndex: _moves.length - 1,
-                                  errorPlies: <int>{
-                                    for (var i = 0; i < _fallbacks.length; i++)
-                                      if (_fallbacks[i]) i,
-                                  },
-                                ),
-                              ),
-                              _buildErrors(_errors),
+                  orientationWhite: true,
+                  lastFrom: _lastFrom,
+                  lastTo: _lastTo,
+                  inCheck: viewingLive ? checkSquare(_engine) : null,
+                  terminalSquare: viewingLive ? _terminalKingSquare() : null,
+                  boardTheme: boardTheme,
+                  pieceTheme: pieceTheme,
+                  motion: viewingLive ? _lastMotion : _viewMotion,
+                  interactive: false,
+                ),
+                panel: ValueListenableBuilder<int>(
+                  valueListenable: _activityRevision,
+                  builder: (context, _, _) {
+                    // Recomputed inside the panel-only builder so the spinner
+                    // tracks the live turn without repainting the board.
+                    final liveOrch = _orch;
+                    final busy =
+                        _pumping ||
+                        (liveOrch != null &&
+                            (liveOrch.state == OrchestratorState.streaming ||
+                                liveOrch.state ==
+                                    OrchestratorState.validating ||
+                                liveOrch.state == OrchestratorState.applying));
+                    return DefaultTabController(
+                      length: 3,
+                      child: Column(
+                        children: <Widget>[
+                          const TabBar(
+                            tabs: <Widget>[
+                              Tab(text: 'Activity'),
+                              Tab(text: 'Moves'),
+                              Tab(text: 'Errors'),
                             ],
                           ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
+                          Expanded(
+                            child: TabBarView(
+                              children: <Widget>[
+                                AgentActivityPanel(
+                                  // Snapshot so the panel's didUpdateWidget
+                                  // length check (autoscroll) sees the growth;
+                                  // only copies when the panel rebuilds.
+                                  events: List<ActivityEvent>.unmodifiable(
+                                    _events,
+                                  ),
+                                  isThinking: busy,
+                                ),
+                                SingleChildScrollView(
+                                  padding: const EdgeInsets.all(12),
+                                  child: MoveList(
+                                    moves: _moves,
+                                    currentIndex: _effectiveViewPly == 0
+                                        ? -1
+                                        : _effectiveViewPly - 1,
+                                    errorPlies: <int>{
+                                      for (
+                                        var i = 0;
+                                        i < _fallbacks.length;
+                                        i++
+                                      )
+                                        if (_fallbacks[i]) i,
+                                    },
+                                    onTapMove: (ply) => _seekViewPly(ply + 1),
+                                  ),
+                                ),
+                                _buildErrors(_errors),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -445,9 +487,9 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     final black = ref.read(agentListProvider).byId(_blackId);
     if (white == null || black == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Pick two agents first.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Pick two agents first.')));
       }
       return;
     }
@@ -463,12 +505,16 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     _lastFrom = null;
     _lastTo = null;
     _lastMotion = null;
+    _viewPly = 0;
+    _followLive = true;
+    _viewMotion = null;
     _events.clear();
     _errors.clear();
     _pending.clear();
     _finished = false;
     _lastOrchState = null;
-    _watchSeed = widget.initialSeed ?? (_clock().millisecondsSinceEpoch & 0x7fffffff);
+    _watchSeed =
+        widget.initialSeed ?? (_clock().millisecondsSinceEpoch & 0x7fffffff);
     _whiteAgentId = white.id;
     _blackAgentId = black.id;
     _whiteModel = white.model;
@@ -584,8 +630,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
       _addActivity(
         ActivityEvent(
           kind: ActivityEventKind.error,
-          message:
-              'Mirror sync failed on ${replay.failedUci}: ${replay.error}',
+          message: 'Mirror sync failed on ${replay.failedUci}: ${replay.error}',
         ),
       );
     }
@@ -599,6 +644,52 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
     }
     if (!_finished && chess_eng.ChessRules.resultOf(_engine) != null) {
       _finishGame();
+    }
+  }
+
+  /// Moves the view cursor for scrubbing (§15.3); the live game keeps
+  /// running underneath — only the displayed snapshot changes. Adjacent
+  /// steps set [_viewMotion] so the board slides between plies; multi-ply
+  /// jumps snap.
+  void _seekViewPly(int target) {
+    if (_orch == null) return;
+    final clamped = target.clamp(0, _moves.length);
+    if (clamped == _moves.length && _followLive) return; // already live
+    if (!_followLive && clamped == _viewPly) return; // already there
+    final motion = _scrubMotionFor(clamped);
+    setState(() {
+      _followLive = clamped == _moves.length;
+      _viewPly = clamped;
+      _viewMotion = motion;
+    });
+  }
+
+  /// Motion value for a scrub step into [target] (`null` snaps); see
+  /// [ScrubShortcuts.scrubMotionFor].
+  BoardMove? _scrubMotionFor(int target) {
+    final orch = _orch;
+    if (orch == null) return null;
+    final prev = _effectiveViewPly;
+    final delta = target - prev;
+    if (delta.abs() != 1) return null;
+    final ucis = orch.moveHistory;
+    if (ucis.isEmpty) return null;
+    final index = delta > 0 ? target - 1 : prev - 1;
+    if (index < 0 || index >= ucis.length) return null;
+    return scrubMotionFor(ucis[index], delta);
+  }
+
+  /// Maps scrub key actions onto the view cursor (§15.3).
+  void _onScrubAction(ScrubAction action) {
+    switch (action) {
+      case ScrubAction.stepBack:
+        _seekViewPly(_effectiveViewPly - 1);
+      case ScrubAction.stepForward:
+        _seekViewPly(_effectiveViewPly + 1);
+      case ScrubAction.toStart:
+        _seekViewPly(0);
+      case ScrubAction.toEnd:
+        _seekViewPly(_moves.length);
     }
   }
 
@@ -627,7 +718,8 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
           _addActivity(
             ActivityEvent(
               kind: ActivityEventKind.error,
-              message: 'No agent selected for ${color == 'w' ? 'White' : 'Black'}.',
+              message:
+                  'No agent selected for ${color == 'w' ? 'White' : 'Black'}.',
             ),
           );
           break;
@@ -653,10 +745,7 @@ class _WatchScreenState extends ConsumerState<WatchScreen> {
         );
         AgentTurnResult? result;
         try {
-          result = await orch.requestAiTurn(
-            color,
-            providerOverride: provider,
-          );
+          result = await orch.requestAiTurn(color, providerOverride: provider);
         } catch (e) {
           _addActivity(
             ActivityEvent(

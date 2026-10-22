@@ -33,7 +33,6 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../chess/square.dart';
 import '../../review/engine_adapter.dart' show EngineSources;
 import '../../review/quality.dart' show MoveQuality;
 import '../../review/wintr_review.dart';
@@ -43,6 +42,7 @@ import '../widgets/activity_panel.dart' show redactSecrets;
 import '../widgets/board_motion.dart';
 import '../widgets/boards.dart';
 import '../widgets/chessboard.dart';
+import '../widgets/scrub_shortcuts.dart';
 import '../widgets/tab_visibility.dart';
 import 'variant_replay_screen.dart';
 
@@ -69,6 +69,10 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
   /// Replay cursor: number of applied plies (0 = start position).
   int _ply = 0;
 
+  /// Direction of the last cursor move (`+1`/`-1` adjacent, `0`/larger for
+  /// jumps); lets the after-board animate adjacent scrubs (§15.3).
+  int _scrubDelta = 0;
+
   /// Report for the last completed run.
   ReviewReport? _report;
 
@@ -91,7 +95,8 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
   int _runToken = 0;
 
   /// §10.2 seam — injected for tests; production defaults to [resolveReviewEvaluator].
-  Future<ReviewEvaluatorHandle> Function() _evalFactory = resolveReviewEvaluator;
+  Future<ReviewEvaluatorHandle> Function() _evalFactory =
+      resolveReviewEvaluator;
 
   /// Whether the shell's Review tab is currently visible.
   bool _visible = true;
@@ -142,6 +147,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
           _error = null;
           _reportSource = null;
           _reportFallbackReason = null;
+          _scrubDelta = 0;
         });
       }
       return;
@@ -176,8 +182,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
       _ensureSelected(run: false);
       return;
     }
-    final stillListed =
-        _gameId != null && games.any((g) => g.id == _gameId);
+    final stillListed = _gameId != null && games.any((g) => g.id == _gameId);
     if (!stillListed) {
       // Do not spawn a review for a hidden tab; [didChangeDependencies] will
       // run it when the tab becomes visible again.
@@ -195,12 +200,45 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
       _gameId = game.id;
       _fens = fensFor(game);
       _ply = 0;
+      _scrubDelta = 0;
       _report = null;
       _error = null;
       _reportSource = null;
       _reportFallbackReason = null;
     });
     if (run) _runReview();
+  }
+
+  /// Seeks the replay cursor to [target] (clamped to [total]), remembering
+  /// the step direction so adjacent scrubs animate through the §15.2 motion
+  /// layer (§15.3). Multi-ply jumps record a non-adjacent delta, which the
+  /// board treats as a snap.
+  void _seekPly(int target, int total) {
+    final clamped = target.clamp(0, total);
+    if (clamped == _ply) return;
+    setState(() {
+      _scrubDelta = clamped - _ply;
+      _ply = clamped;
+    });
+  }
+
+  /// Maps scrub key actions onto the replay cursor (§15.3).
+  void _onScrubAction(
+    ScrubAction action,
+    ReviewGame game,
+    ReviewReport report,
+  ) {
+    final total = math.min(game.ucis.length, report.moves.length);
+    switch (action) {
+      case ScrubAction.stepBack:
+        _seekPly(_ply - 1, total);
+      case ScrubAction.stepForward:
+        _seekPly(_ply + 1, total);
+      case ScrubAction.toStart:
+        _seekPly(0, total);
+      case ScrubAction.toEnd:
+        _seekPly(total, total);
+    }
   }
 
   /// Re-checks the log and keeps the selection when it still exists.
@@ -215,6 +253,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
         _error = null;
         _reportSource = null;
         _reportFallbackReason = null;
+        _scrubDelta = 0;
       });
       return;
     }
@@ -285,40 +324,57 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
     if (games.isEmpty) return _buildEmptyState();
     final game = _game ?? games.first;
     final report = _report;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          _buildHeader(games, game),
-          const SizedBox(height: 8),
-          _buildSourceBanner(),
-          const SizedBox(height: 12),
-          if (_loading)
-            _buildLoading(game)
-          else if (_error != null)
-            _buildError()
-          else if (report != null) ...<Widget>[
-            _buildReplaySlider(game, report),
+    return ScrubShortcuts(
+      enabled: report != null && game.ucis.isNotEmpty,
+      onAction: (action) {
+        final r = report;
+        if (r == null) return;
+        _onScrubAction(action, game, r);
+      },
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            _buildHeader(games, game),
             const SizedBox(height: 8),
-            _buildQualityRow(game, report),
+            _buildSourceBanner(),
             const SizedBox(height: 12),
-            _buildEvalGraph(report),
-            const SizedBox(height: 12),
-            _buildBeforeAfter(game),
-            const SizedBox(height: 12),
-            _buildMoveRecord(game, report),
-            const SizedBox(height: 12),
-            _buildSummary(report),
-            const SizedBox(height: 12),
-            _buildMoveList(game, report),
-            const SizedBox(height: 12),
-            _buildKeyMoments(report),
-            const SizedBox(height: 12),
-            _buildVariantReplays(),
-          ] else
-            const Text('Press “Re-run review” to analyze this game.'),
-        ],
+            if (_loading)
+              _buildLoading(game)
+            else if (_error != null)
+              _buildError()
+            else if (report != null) ...<Widget>[
+              _buildReplaySlider(game, report),
+              const SizedBox(height: 8),
+              KeyedSubtree(
+                key: const ValueKey<String>('review-quality-row'),
+                child: _buildQualityRow(game, report),
+              ),
+              const SizedBox(height: 12),
+              _buildEvalGraph(report),
+              const SizedBox(height: 12),
+              KeyedSubtree(
+                key: const ValueKey<String>('review-before-after'),
+                child: _buildBeforeAfter(game),
+              ),
+              const SizedBox(height: 12),
+              KeyedSubtree(
+                key: const ValueKey<String>('review-move-record'),
+                child: _buildMoveRecord(game, report),
+              ),
+              const SizedBox(height: 12),
+              _buildSummary(report),
+              const SizedBox(height: 12),
+              _buildMoveList(game, report),
+              const SizedBox(height: 12),
+              _buildKeyMoments(report),
+              const SizedBox(height: 12),
+              _buildVariantReplays(),
+            ] else
+              const Text('Press “Re-run review” to analyze this game.'),
+          ],
+        ),
       ),
     );
   }
@@ -419,15 +475,14 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                   initialSelection: game.id,
                   onSelected: (id) {
                     if (id == null || id == game.id) return;
-                    _selectGame(
-                      games.firstWhere((g) => g.id == id),
-                    );
+                    _selectGame(games.firstWhere((g) => g.id == id));
                   },
                   dropdownMenuEntries: <DropdownMenuEntry<String>>[
                     for (final g in games)
                       DropdownMenuEntry(
                         value: g.id,
-                        label: '${g.whiteLabel} vs ${g.blackLabel} '
+                        label:
+                            '${g.whiteLabel} vs ${g.blackLabel} '
                             '· ${g.mode}',
                       ),
                   ],
@@ -564,13 +619,10 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                 label: 'Ply $_ply',
                 onChanged: total == 0
                     ? null
-                    : (v) => setState(() => _ply = v.round()),
+                    : (v) => _seekPly(v.round(), total),
               ),
             ),
-            Text(
-              'Ply $_ply / $total',
-              style: theme.textTheme.bodyMedium,
-            ),
+            Text('Ply $_ply / $total', style: theme.textTheme.bodyMedium),
           ],
         ),
       ),
@@ -609,10 +661,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
       spacing: 8,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: <Widget>[
-        Text(
-          _sanAt(game, move.moveIndex),
-          style: theme.textTheme.titleLarge,
-        ),
+        Text(_sanAt(game, move.moveIndex), style: theme.textTheme.titleLarge),
         Chip(
           avatar: Icon(
             qualityIconFor(mark),
@@ -695,9 +744,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                       final hit = response?.lineBarSpots;
                       if (hit == null || hit.isEmpty) return;
                       final total = report.moves.length;
-                      setState(() {
-                        _ply = hit.first.x.round().clamp(0, total);
-                      });
+                      _seekPly(hit.first.x.round().clamp(0, total), total);
                     },
                   ),
                   titlesData: const FlTitlesData(
@@ -763,8 +810,29 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
     final lastIndex = math.max(0, _fens.length - 1);
     final beforeIndex = math.max(0, math.min(_ply - 1, lastIndex));
     final afterIndex = math.max(0, math.min(_ply, lastIndex));
-    final uci = _ply >= 1 && _ply - 1 < game.ucis.length
+    // The move that led into the current cursor position, for the caption and
+    // from/to highlights — null at the start position.
+    final lastUci = _ply >= 1 && _ply - 1 < game.ucis.length
         ? game.ucis[_ply - 1]
+        : null;
+    // Direction-aware motion UCI (§15.3): a forward step animates the move
+    // into the current ply (`_ply - 1`); a backward step animates its reverse,
+    // which is the move the cursor is stepping out of (`_ply`), so a step back
+    // into the start position still slides e.g. e4→e2. Multi-ply jumps keep
+    // `scrubMotionFor`'s `null` snap.
+    final int? motionIndex;
+    if (_scrubDelta > 0) {
+      motionIndex = _ply - 1;
+    } else if (_scrubDelta < 0) {
+      motionIndex = _ply;
+    } else {
+      motionIndex = null;
+    }
+    final motionUci =
+        motionIndex != null &&
+            motionIndex >= 0 &&
+            motionIndex < game.ucis.length
+        ? game.ucis[motionIndex]
         : null;
     final boardTheme = ref.watch(
       themeRegistryProvider.select((r) => r.boardTheme),
@@ -797,22 +865,19 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
       );
     }
 
-    final bright = uci != null && _ply >= 1;
+    final bright = lastUci != null && _ply >= 1;
     final before = board('Before (ply $beforeIndex)', beforeIndex);
     final after = board(
       'After (ply $afterIndex)',
       afterIndex,
-      lastFrom: bright ? uci.substring(0, 2) : null,
-      lastTo: bright ? uci.substring(2, 4) : null,
-      // Animates the final scrubbed transition only; the board derives
+      lastFrom: bright ? lastUci.substring(0, 2) : null,
+      lastTo: bright ? lastUci.substring(2, 4) : null,
+      // Animates one-ply scrubs only: the direction-aware helper slides the
+      // final transition forward or slides it back on a backward step, and
+      // snaps on multi-ply jumps (§15.3.5 large-jump rule). The board derives
       // capture/en-passant/castle from its before→after snapshot diff, so
       // the bare from/to UCI pair is a complete motion value.
-      motion: bright
-          ? BoardMove(
-              from: Square.fromName(uci.substring(0, 2)),
-              to: Square.fromName(uci.substring(2, 4)),
-            )
-          : null,
+      motion: scrubMotionFor(motionUci, _scrubDelta),
     );
     return Card(
       child: Padding(
@@ -848,8 +913,8 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
             if (bright) ...<Widget>[
               const SizedBox(height: 4),
               Text(
-                'Last move: $uci${_fallbackAt(game, _ply - 1) ? ' '
-                    '(seeded fallback, unattributed)' : ''}',
+                'Last move: $lastUci${_fallbackAt(game, _ply - 1) ? ' '
+                          '(seeded fallback, unattributed)' : ''}',
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -929,9 +994,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                 children: <Widget>[
                   const Icon(Icons.format_quote_outlined, size: 18),
                   const SizedBox(width: 6),
-                  Expanded(
-                    child: Text('“${redactSecrets(phrase)}”'),
-                  ),
+                  Expanded(child: Text('“${redactSecrets(phrase)}”')),
                 ],
               ),
             ],
@@ -1028,15 +1091,11 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(
-              'Moves',
-              style: Theme.of(context).textTheme.titleSmall,
-            ),
+            Text('Moves', style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 4),
             MoveList(
               moves: <String>[
-                for (var i = 0; i < game.ucis.length; i++)
-                  _sanAt(game, i),
+                for (var i = 0; i < game.ucis.length; i++) _sanAt(game, i),
               ],
               currentIndex: _ply - 1,
               qualityMarks: <int, String>{
@@ -1047,7 +1106,10 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                 for (var i = 0; i < game.fallbackFlags.length; i++)
                   if (game.fallbackFlags[i]) i,
               },
-              onTapMove: (ply) => setState(() => _ply = ply + 1),
+              onTapMove: (ply) => _seekPly(
+                ply + 1,
+                math.min(game.ucis.length, report.moves.length),
+              ),
               maxHeight: 240,
             ),
             const SizedBox(height: 4),
@@ -1089,7 +1151,8 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                   '${moment.moverIsWhite ? 'White' : 'Black'}',
                 ),
                 subtitle: Text(moment.note),
-                onTap: () => setState(() => _ply = moment.moveIndex + 1),
+                onTap: () =>
+                    _seekPly(moment.moveIndex + 1, report.moves.length),
               ),
             if (report.keyMoments.isEmpty)
               const Text('No supported swings — no key moments.'),

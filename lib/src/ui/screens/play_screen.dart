@@ -60,6 +60,7 @@ import '../widgets/activity_panel.dart';
 import '../widgets/boards.dart';
 import '../widgets/board_motion.dart';
 import '../widgets/chessboard.dart';
+import '../widgets/scrub_shortcuts.dart';
 
 /// Game id used for stats/review attribution of the play room.
 const String kPlayGameId = 'play-game';
@@ -116,6 +117,10 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
   /// Most recently applied transition, fed to the board's §15.2 motion
   /// layer when the snapshot is live (null while seeking).
   BoardMove? _lastMotion;
+
+  /// Motion for the current scrubbed view (§15.3): non-null only for
+  /// adjacent seek steps, so a scrubbed board slides between plies.
+  BoardMove? _viewMotion;
 
   /// Game result (`'1-0'`, `'0-1'`, `'1/2-1/2'`); non-null ends input.
   String? _result;
@@ -182,6 +187,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
     _lastFrom = null;
     _lastTo = null;
     _lastMotion = null;
+    _viewMotion = null;
     _result = null;
     _events.clear();
     _thinking = false;
@@ -207,11 +213,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
       ),
       positionUpdater: fenAdvance,
     );
-    orch.setPosition(
-      startFen,
-      turn: 'w',
-      legalMoves: legalUcis(_engine),
-    );
+    orch.setPosition(startFen, turn: 'w', legalMoves: legalUcis(_engine));
     orch.startGame();
     _orch = orch;
     _sub = orch.events.listen(_onEvent);
@@ -272,8 +274,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
       _addActivity(
         ActivityEvent(
           kind: ActivityEventKind.error,
-          message:
-              'Mirror sync failed on ${replay.failedUci}: ${replay.error}',
+          message: 'Mirror sync failed on ${replay.failedUci}: ${replay.error}',
         ),
       );
     }
@@ -282,6 +283,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
         _viewPly = _sans.length;
         _selected = null;
         _legal = const <String>[];
+        _viewMotion = null;
       });
       // Fresh legal intake for the next turn (required: the orchestrator
       // clears its legal list on every applied move).
@@ -294,8 +296,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
     if (_result != null) return;
     if (chess_eng.ChessRules.resultOf(_engine) != null) {
       _finishGame();
-    } else if (orch.turn == 'b' &&
-        orch.state == OrchestratorState.waitingAi) {
+    } else if (orch.turn == 'b' && orch.state == OrchestratorState.waitingAi) {
       _requestAiTurn();
     }
   }
@@ -318,88 +319,90 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
         ? squaresOf(_engine)
         : squaresOfFen(_fens[_viewPly.clamp(0, _fens.length - 1)]);
     final orch = _orch;
-    final whiteActive =
-        _result == null && (orch?.turn == 'w') && viewingLive;
-    final blackActive =
-        _result == null && (orch?.turn == 'b') && viewingLive;
-    return Padding(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        children: <Widget>[
-          PlayerCard(
-            name: 'AI Opponent',
-            subtitle: aiAgent == null
-                ? _blackModel
-                : '${aiAgent.summary} · t=${aiAgent.temperature.toStringAsFixed(2)}',
-            clockSeconds: orch == null
-                ? null
-                : (orch.clock.remainingB / 1000).ceil(),
-            isActive: blackActive,
-            isWhite: false,
-          ),
-          const SizedBox(height: 8),
-          if (_result != null) _buildResultBanner(),
-          if (_aiError != null && _result == null) _buildAiErrorBanner(),
-          Expanded(
-            child: BoardPanelLayout(
-              boardLabel: 'Board',
-              panelLabel: 'Activity',
-              board: Chessboard(
-                squares: position,
-                orientationWhite: true,
-                selected: viewingLive ? _selected : null,
-                lastFrom: _lastFrom,
-                lastTo: _lastTo,
-                legalTargets: viewingLive ? _legal : const <String>[],
-                inCheck: viewingLive ? checkSquare(_engine) : null,
-                boardTheme: boardTheme,
-                pieceTheme: pieceTheme,
-                onTapSquare: _result == null && viewingLive ? _onTap : null,
-                canDragSquare: _isOwnPiece,
-                onMoveAttempt: (from, to) =>
-                    unawaited(_attemptMove(from, to)),
-                motion: viewingLive ? _lastMotion : null,
-              ),
-              panel: ValueListenableBuilder<int>(
-                valueListenable: _activityRevision,
-                builder: (context, _, _) => DefaultTabController(
-                  length: 2,
-                  child: Column(
-                    children: <Widget>[
-                      const TabBar(
-                        tabs: <Widget>[
-                          Tab(text: 'Activity'),
-                          Tab(text: 'Moves'),
-                        ],
-                      ),
-                      Expanded(
-                        child: TabBarView(
-                          children: <Widget>[
-                            AgentActivityPanel(
-                              events: _events,
-                              isThinking: _thinking,
-                            ),
-                            _buildMovesPanel(),
+    final whiteActive = _result == null && (orch?.turn == 'w') && viewingLive;
+    final blackActive = _result == null && (orch?.turn == 'b') && viewingLive;
+    return ScrubShortcuts(
+      enabled: _orch != null,
+      onAction: _onScrubAction,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: <Widget>[
+            PlayerCard(
+              name: 'AI Opponent',
+              subtitle: aiAgent == null
+                  ? _blackModel
+                  : '${aiAgent.summary} · t=${aiAgent.temperature.toStringAsFixed(2)}',
+              clockSeconds: orch == null
+                  ? null
+                  : (orch.clock.remainingB / 1000).ceil(),
+              isActive: blackActive,
+              isWhite: false,
+            ),
+            const SizedBox(height: 8),
+            if (_result != null) _buildResultBanner(),
+            if (_aiError != null && _result == null) _buildAiErrorBanner(),
+            Expanded(
+              child: BoardPanelLayout(
+                boardLabel: 'Board',
+                panelLabel: 'Activity',
+                board: Chessboard(
+                  squares: position,
+                  orientationWhite: true,
+                  selected: viewingLive ? _selected : null,
+                  lastFrom: _lastFrom,
+                  lastTo: _lastTo,
+                  legalTargets: viewingLive ? _legal : const <String>[],
+                  inCheck: viewingLive ? checkSquare(_engine) : null,
+                  boardTheme: boardTheme,
+                  pieceTheme: pieceTheme,
+                  onTapSquare: _result == null && viewingLive ? _onTap : null,
+                  canDragSquare: (square) => viewingLive && _isOwnPiece(square),
+                  onMoveAttempt: (from, to) =>
+                      unawaited(_attemptMove(from, to)),
+                  motion: viewingLive ? _lastMotion : _viewMotion,
+                ),
+                panel: ValueListenableBuilder<int>(
+                  valueListenable: _activityRevision,
+                  builder: (context, _, _) => DefaultTabController(
+                    length: 2,
+                    child: Column(
+                      children: <Widget>[
+                        const TabBar(
+                          tabs: <Widget>[
+                            Tab(text: 'Activity'),
+                            Tab(text: 'Moves'),
                           ],
                         ),
-                      ),
-                    ],
+                        Expanded(
+                          child: TabBarView(
+                            children: <Widget>[
+                              AgentActivityPanel(
+                                events: _events,
+                                isThinking: _thinking,
+                              ),
+                              _buildMovesPanel(),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: 8),
-          PlayerCard(
-            name: 'You',
-            subtitle: 'Human · White',
-            clockSeconds: orch == null
-                ? null
-                : (orch.clock.remainingW / 1000).ceil(),
-            isActive: whiteActive,
-            isHuman: true,
-          ),
-        ],
+            const SizedBox(height: 8),
+            PlayerCard(
+              name: 'You',
+              subtitle: 'Human · White',
+              clockSeconds: orch == null
+                  ? null
+                  : (orch.clock.remainingW / 1000).ceil(),
+              isActive: whiteActive,
+              isHuman: true,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -443,10 +446,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
       ),
       child: Row(
         children: <Widget>[
-          Icon(
-            Icons.error_outline,
-            color: theme.colorScheme.onErrorContainer,
-          ),
+          Icon(Icons.error_outline, color: theme.colorScheme.onErrorContainer),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -485,11 +485,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
               for (var i = 0; i < _fallbacks.length; i++)
                 if (_fallbacks[i]) i,
             },
-            onTapMove: (ply) => setState(() {
-              _viewPly = ply + 1;
-              _selected = null;
-              _legal = const <String>[];
-            }),
+            onTapMove: (ply) => _seekViewPly(ply + 1),
           ),
           const SizedBox(height: 8),
           Row(
@@ -497,9 +493,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
               Expanded(
                 child: OutlinedButton.icon(
                   key: const ValueKey<String>('play-new-game-button'),
-                  onPressed: _result != null
-                      ? null
-                      : () => setState(_newGame),
+                  onPressed: _result != null ? null : () => setState(_newGame),
                   icon: const Icon(Icons.refresh_outlined),
                   label: const Text('New game'),
                 ),
@@ -517,11 +511,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
           ),
           if (_viewPly != _sans.length)
             TextButton(
-              onPressed: () => setState(() {
-                _viewPly = _sans.length;
-                _selected = null;
-                _legal = const <String>[];
-              }),
+              onPressed: () => _seekViewPly(_sans.length),
               child: const Text('Return to live position'),
             ),
         ],
@@ -545,8 +535,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
     final occupant = tapped == null ? null : _engine.pieceAt(tapped);
     if (occupant != null && occupant.color.isWhite) {
       final targets = <String>[
-        for (final m in _engine.legalMoves(forSquare: tapped!))
-          m.to.name,
+        for (final m in _engine.legalMoves(forSquare: tapped!)) m.to.name,
       ];
       setState(() {
         _selected = square;
@@ -561,20 +550,83 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
     });
   }
 
+  /// Moves the view cursor for scrubbing (§15.3).
+  ///
+  /// The live game keeps running underneath; only the displayed snapshot
+  /// changes. Adjacent steps set [_viewMotion] so the board slides between
+  /// plies; multi-ply jumps snap (see [_scrubMotionFor]).
+  void _seekViewPly(int target) {
+    if (_orch == null) return;
+    final clamped = target.clamp(0, _sans.length);
+    if (clamped == _viewPly) return;
+    final motion = _scrubMotionFor(clamped);
+    setState(() {
+      _viewPly = clamped;
+      _selected = null;
+      _legal = const <String>[];
+      _viewMotion = motion;
+    });
+  }
+
+  /// Motion value for a scrub step into [target] (`null` snaps).
+  ///
+  /// Adjacent steps animate through the §15.2 layer — forward slides the
+  /// move's piece, backward slides it back (reversed from/to pair) — while
+  /// anything larger returns `null`, so a burst of scrubbing never animates
+  /// dozens of intermediate plies (§15.3 large-jump budget rule).
+  BoardMove? _scrubMotionFor(int target) {
+    final orch = _orch;
+    if (orch == null) return null;
+    final delta = target - _viewPly;
+    if (delta.abs() != 1) return null;
+    final ucis = orch.moveHistory;
+    final int index;
+    if (delta > 0) {
+      if (target - 1 < 0 || target - 1 >= ucis.length) return null;
+      index = target - 1;
+    } else {
+      if (_viewPly - 1 < 0 || _viewPly - 1 >= ucis.length) return null;
+      index = _viewPly - 1;
+    }
+    return scrubMotionFor(ucis[index], delta);
+  }
+
+  /// Maps scrub key actions onto the view cursor (§15.3).
+  void _onScrubAction(ScrubAction action) {
+    switch (action) {
+      case ScrubAction.stepBack:
+        _seekViewPly(_viewPly - 1);
+      case ScrubAction.stepForward:
+        _seekViewPly(_viewPly + 1);
+      case ScrubAction.toStart:
+        _seekViewPly(0);
+      case ScrubAction.toEnd:
+        _seekViewPly(_sans.length);
+    }
+  }
+
   /// Attempts a human move from [from] to [to], shared by the click-click tap
   /// path and board drag-and-drop (§15.1).
   ///
   /// Validates against the engine (the board is only a view), asks for a
   /// promotion piece when a pawn reaches the last rank, and applies through
   /// [_applyHumanMove]. A cancelled promotion dialog leaves the position
-  /// untouched, which is what a cancelled drag drop needs.
+  /// untouched, which is what a cancelled drag drop needs. While the view is
+  /// scrubbed back into the past (§15.3) the board is read-only, so moves are
+  /// rejected before validation.
   Future<void> _attemptMove(String from, String to) async {
     final orch = _orch;
-    if (_result != null || orch == null || orch.turn != 'w') return;
+    if (_result != null ||
+        orch == null ||
+        orch.turn != 'w' ||
+        _viewPly != _sans.length) {
+      return;
+    }
     final fromSq = Square.tryParse(from);
     if (fromSq == null) return;
-    final legal =
-        _engine.legalMoves(forSquare: fromSq).any((m) => m.to.name == to);
+    final legal = _engine
+        .legalMoves(forSquare: fromSq)
+        .any((m) => m.to.name == to);
     if (!legal) return;
     final occupant = _engine.pieceAt(fromSq);
     String? promotion;
@@ -630,10 +682,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
   /// [_syncBoard]; the runner result is buffered for end-of-game stats.
   Future<void> _requestAiTurn() async {
     final orch = _orch;
-    if (orch == null ||
-        _aiInFlight ||
-        _result != null ||
-        orch.turn != 'b') {
+    if (orch == null || _aiInFlight || _result != null || orch.turn != 'b') {
       return;
     }
     _aiInFlight = true;
@@ -686,10 +735,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
             final message =
                 'AI turn produced no move (${result.outcome.kind.name}).';
             _addActivity(
-              ActivityEvent(
-                kind: ActivityEventKind.error,
-                message: message,
-              ),
+              ActivityEvent(kind: ActivityEventKind.error, message: message),
             );
             if (mounted) setState(() => _aiError = message);
           }
@@ -829,10 +875,7 @@ Map<String, String> startingPosition() {
 }
 
 /// Promotion picker (Q/R/B/N); `null` when dismissed.
-Future<String?> promotionDialog(
-  BuildContext context, {
-  required bool isWhite,
-}) {
+Future<String?> promotionDialog(BuildContext context, {required bool isWhite}) {
   const options = <String>['Q', 'R', 'B', 'N'];
   return showDialog<String>(
     context: context,
@@ -877,10 +920,7 @@ Widget _promotionGlyph(String letter, {required bool isWhite}) {
             ..color = stroke,
         ),
       ),
-      Text(
-        glyph,
-        style: TextStyle(fontSize: 40, height: 1, color: fill),
-      ),
+      Text(glyph, style: TextStyle(fontSize: 40, height: 1, color: fill)),
     ],
   );
 }
