@@ -37,6 +37,26 @@ jobs:
       - name: Analyze
         run: flutter analyze
 
+      - name: Restore Stockfish engine cache (§11.7)
+        # The only real-engine test (test/e2e_smoke_test.dart) skips whenever
+        # assets/engines/linux-x86-64/stockfish is absent — and CI never
+        # downloaded the engine, so the real Stockfish path was silently
+        # untested on every push (§11.7). The 103 MiB binary is gitignored;
+        # cache it here so only the first runner downloads. Stale caches
+        # self-heal: download_stockfish.dart re-verifies size + SHA-256 +
+        # `file` type + UCI handshake and re-fetches on any mismatch.
+        uses: actions/cache@v4
+        with:
+          path: assets/engines/linux-x86-64
+          key: ${{ runner.os }}-stockfish-linux-x86-64
+
+      - name: Download Stockfish engine (real-engine E2E, §11.7)
+        # Requires tar + chmod + file, all preinstalled on ubuntu-latest.
+        # Strict host-platform verification ends with a UCI handshake; the
+        # tool exits 1 on failure so a broken engine fetch cannot silently
+        # skip the E2E test.
+        run: dart run tool/download_stockfish.dart linux-x86-64
+
       - name: Test
         run: flutter test
 

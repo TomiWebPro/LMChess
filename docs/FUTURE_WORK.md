@@ -1,12 +1,12 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-23 (UTC) — arena `VariantReviewLog` recording path
-closed for review: stale "chaotic games not recorded" wiring note at
-`arena_screen.dart` corrected (games ARE recorded losslessly since 61d58d7)
-and 4 new tests pin the recording/isolation/E2E path; §2.6 still no upstream
-fix (flutter/flutter#175041 open, PR #190903 unmerged) → local 3.47.6 stays
-on mitigation
+Last updated: 2026-10-23 (UTC) — §11.7 real-engine E2E smoke added to CI:
+`ubuntu-gate` now downloads/verifies the gitignored Stockfish binary
+(`dart run tool/download_stockfish.dart linux-x86-64`) so the repo's only
+real-engine test actually runs on every push instead of silently skipping;
+§2.6 still no upstream fix (flutter/flutter#175041 open, PR #190903
+unmerged) → local 3.47.6 stays on mitigation
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -163,6 +163,40 @@ build/linux/x64/release/bundle/llm_chess_arena`, and the exact smoke recipe
 (Xvfb :77 + openbox + release binary) exits 0 with the binary alive after
 15 s; full `flutter test` → 631/631 pass unchanged (no Dart changes). See
 `automation-track.md` for the run log.
+
+### 11.7 Real-engine E2E smoke in CI (P2 — DONE)
+
+`test/e2e_smoke_test.dart` holds the only real-engine test in the repo
+("embedded stockfish evaluates and stays honest"): it connects to the
+actual Stockfish binary, evaluates a real position with
+`source == 'stockfish-uci'`, and asserts `supported`/`scoreCp`/`bestMoveUci`
+plus the variant-JSON "unsupported" honesty check. The test self-gates on
+`assets/engines/linux-x86-64/stockfish` — and the binary is gitignored with
+no download step anywhere in CI, so the engine path ran **zero times** on
+every push/PR while `flutter test` still printed green.
+
+The `ubuntu-gate` job now makes the real-engine test an actual gate:
+
+- **Restore Stockfish engine cache** — `actions/cache@v4` on
+  `assets/engines/linux-x86-64` (the 103 MiB linux-x86-64 binary; only the
+  first runner downloads). Stale caches self-heal:
+  `download_stockfish.dart` re-verifies size + SHA-256 + `file` type + UCI
+  handshake and re-fetches on any mismatch, so the fixed key can never
+  smuggle a corrupt binary past the gate.
+- **Download Stockfish engine** — `dart run
+  tool/download_stockfish.dart linux-x86-64` (official GitHub URL first,
+  `gh.llkk.cc` proxy fallback; strict host verification ends with a `uciok`
+  handshake; exit 1 on any failure so a broken fetch cannot silently skip
+  the E2E test).
+
+Evidence: the exact commands run green on the dev host —
+`dart run tool/download_stockfish.dart linux-x86-64` → `OK present`
+(size/sha256/file/handshake all verified) and
+`flutter test test/e2e_smoke_test.dart` → 5/5 pass WITH the engine test
+executing (`-- stockfish: 30 cp, best c7c5`), not skipping; full
+`flutter test` → 635/635 pass unchanged; `flutter analyze` → `No issues
+found!`. The engine test itself was not touched — it still skips gracefully
+on machines without the binary. See `automation-track.md` for the run log.
 
 ---
 

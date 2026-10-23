@@ -1,7 +1,7 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-23 (UTC) — arena chaotic→`VariantReviewLog` wiring doc fixed (was stale "not recorded" comment at `arena_screen.dart:28-30`) + 4 new tests pinning the recording/isolation/E2E path; §9/§11.3/§14 remain Windows-native BLOCKED; §2.6 still no upstream fix (flutter/flutter#175041 open); local 3.47.6 stays on mitigation; §11.6 ubuntu-gate builds + smokes the Linux release binary; §11.5 dead deps removed
+Last updated: 2026-10-23 (UTC) — §11.7 real-engine E2E smoke wired into the ubuntu-gate: CI now downloads/verifies the gitignored Stockfish binary so the repo's only real-engine test runs on every push (previously skipped everywhere — `flutter test` was green without ever executing the engine path); §9/§11.3/§14 remain Windows-native BLOCKED; §2.6 still no upstream fix (flutter/flutter#175041 open); local 3.47.6 stays on mitigation; §11.6 ubuntu-gate builds + smokes the Linux release binary; §11.5 dead deps removed
 Related: `docs/FUTURE_WORK.md` (binding roadmap), `ARCHITECTURE.md`, `README.md`
 
 This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every run**.
@@ -806,3 +806,62 @@ suites referenced above now exist. Native Windows execution is tracked in
   exist; (b) trigger the §11.3 Windows nightly / run §9.1–9.2 on a
   Windows desktop/UIA session (closes §14.1–14.2); or (c) decide the
   §13 Windows-runner / safe-mode questions.
+- 2026-10-23Z — CI/PROCESS P2 §11.7 (real-engine E2E smoke in CI).
+  A fresh subagent audit found two genuine Linux-implementable
+  candidates: (A) repo-wide `dart format` reformat + format gate —
+  REJECTED as the deliverable: 102/127 files would churn (unfocused
+  diff) and the gate would be fragile while `flutter-version: "3.x"`
+  is unpinned (formatter output changes across SDKs, exactly the drift
+  that caused the current 102-file delta); (B) the repo's ONLY
+  real-engine test silently skipping in CI — no download step anywhere
+  provisions the gitignored Stockfish binary, so
+  `test/e2e_smoke_test.dart`'s "embedded stockfish evaluates and stays
+  honest" ran zero times on every push while `flutter test` stayed
+  green. Promoted as §11.7 into `docs/FUTURE_WORK.md` per the
+  §11.4/§11.5/§11.6 precedent.
+  Files changed:
+  `.github/workflows/ci.yaml` — `ubuntu-gate` gained two steps after
+  `Analyze` and before `Test` (windows-nightly untouched):
+  (1) "Restore Stockfish engine cache (§11.7)" — `actions/cache@v4` on
+  `assets/engines/linux-x86-64` (the 103 MiB binary; only the first
+  runner downloads). Stale caches self-heal: `download_stockfish.dart`
+  re-verifies size + SHA-256 + `file` type + UCI handshake and
+  re-fetches on any mismatch, so a fixed cache key can never smuggle a
+  corrupt binary past the gate. (2) "Download Stockfish engine
+  (real-engine E2E, §11.7)" — `dart run
+  tool/download_stockfish.dart linux-x86-64` (official GitHub URL
+  first, `gh.llkk.cc` proxy fallback; strict host verifies end with a
+  `uciok` handshake; exit 1 on failure so a broken fetch cannot
+  silently skip the E2E test).
+  `docs/FUTURE_WORK.md` — §11.7 added + closed as DONE in the same run
+  (open list unchanged: §11.7 not an open item), header bumped.
+  `automation-track.md` — header line + this Run Log entry.
+  The engine test itself was not touched — it still self-gates on
+  `assets/engines/linux-x86-64/stockfish` and skips gracefully on
+  machines without the binary.
+  Evidence: `flutter analyze` → `No issues found! (ran in 2.3s)`;
+  the exact CI download command `dart run
+  tool/download_stockfish.dart linux-x86-64` → exit 0 with
+  `linux-x86-64 OK present` (size 103153472 ok, sha256 ok, file ok,
+  UCI handshake `uciok`); `flutter test test/e2e_smoke_test.dart` →
+  5/5 pass with the engine test EXECUTING (`-- stockfish: 30 cp, best
+  c7c5`) rather than skipping; full regression `flutter test` →
+  635/635 pass (01:52, All tests passed! — no Dart changes);
+  workflow re-parses clean via PyYAML (ubuntu-gate now 13 steps
+  including checkout, windows-nightly still 10 steps, unchanged); `git
+  status --short` confirms the engine binary stays untracked
+  (gitignored, `.gitignore:62`).
+  Commit: `94d6519`.
+  Push **BLOCKED** (same as all prior runs): no GitHub credentials on
+  this host — `git push origin main` → `fatal: could not read
+  Username for 'https://github.com'` (no credential helper, `gh`, SSH
+  key, `~/.git-credentials`, `~/.netrc`, nor token in env);
+  `git ls-remote origin main` still shows `e1749b3`, so `5faf11b..HEAD`
+  remains local-only (un-pushed queue now 20 commits through this
+  run). Re-run the push after credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials
+  exist; (b) trigger the §11.3 Windows nightly / run §9.1–9.2 on a
+  Windows desktop/UIA session (closes §14.1–14.2); or (c) decide the
+  §13 Windows-runner / safe-mode questions. The `dart format` gate
+  (candidate A) remains a documented option if the repo ever adopts a
+  pinned Flutter version.
