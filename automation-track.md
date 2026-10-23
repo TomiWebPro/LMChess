@@ -1,13 +1,17 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-23 (UTC) — §11.10 removes the dead "semantics dump on
-failure" fallback in `test/support/semantics_invariants.dart`: the second
-`takeException()` could never fire because the first was drained by `expect`
-(which throws synchronously on a non-null value), so
-`expectNoExceptionWithSemanticsDump` never printed the tree dump it promised
-and `_dumpTree` was dead code; now it drains the exception once, dumps, then
-fails with the context + exception (2 new support tests, 637/637 regression);
+Last updated: 2026-10-23 (UTC) — §11.11 executes the §9.1 integration suite
+on the ubuntu-gate for the first time ever: bare `flutter test` does not
+discover `integration_test/` and the windows-nightly job has never run, so
+the 12 widget-level §9.1 tests were dead-on-arrival — the first Linux run
+failed 8/12 (stale destination label `Statistics` vs the shell's `Stats`,
+ambiguous `find.text('Settings')` matching the Home card AND the More sheet,
+`find.bySemanticsLabel` returning zero because the live integration binding
+never enables semantics, and screen anchors that do not exist); fixed all 12
+(12/12 headless on Linux) and added a hard ubuntu-gate step running
+`flutter test integration_test/accessibility_windows_test.dart -d linux`
+under Xvfb; §11.10 fixes the dead semantics-dump fallback in `test/support/semantics_invariants.dart`;
 §11.9 removes the last real-network call from the test suite (3 tests in `test/connection_tester_seam_test.dart` invoked the default `connectionTesterProvider`, a live LLM endpoint ping, violating the repo's no-socket rule; now shape-only + deterministic overrides); §9/§11.3/§14 remain Windows-native BLOCKED; §2.6 still no upstream fix (flutter/flutter#175041 open, PR #190903 unmerged); local 3.47.6 stays on mitigation; §11.8 pins CI Flutter SDK to known-good 3.47.6 on both jobs; §11.7 real-engine E2E smoke wired into ubuntu-gate; §11.6 ubuntu-gate builds + smokes the Linux release binary; §11.5 dead deps removed
 Related: `docs/FUTURE_WORK.md` (binding roadmap), `ARCHITECTURE.md`, `README.md`
 
@@ -57,6 +61,7 @@ This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every ru
 | P2 | `test/ui/home_screen_test.dart` | DONE 2026-10-21: 6 widget tests covering all §6.2 spec items: feature-card tap callbacks (each of 7 cards calls onOpen with exact route string from ArenaRoutes), capability chips render ("Standard 8×8", "Chaotic variants", "Full telemetry"), narrow layout (<700px → 500×800 viewport) renders without overflow, wide layout (≥1100px → 1400×1000 viewport) renders without overflow, standalone HomeScreen (no onOpen → Navigator.pushNamed fallback) renders full card grid with hero title + all 7 titles verified, hero strip title "LLM Chess Arena" present. Uses MaterialApp+Material wrapper for ink/chips; desktop surface via tester.view.physicalSize; view reset in tearDown. Never hits real engine/network/wall-clock. Evidence: `flutter analyze` clean (0 issues); `flutter test test/ui/home_screen_test.dart` 6/6 pass; full regression `flutter test` 524/524 pass (518 old + 6 new). Next: §10.5 Arena Elo injection or §10.6 Deterministic deep states.
 | P1 | §11.9 Test-suite network hygiene (no real LLM pings in tests) | DONE 2026-10-23: three tests in `test/connection_tester_seam_test.dart` invoked the DEFAULT `connectionTesterProvider` (lines 34–38, 179–181, 199–200), which wraps `testAgentConnection` → `createProvider(...).testConnection()` — a real HTTP ping to a live LLM endpoint — violating the file's own no-socket rule and the repo's deterministic-fakes convention; one asserted real wall-clock `< 30s` (Stopwatch), the flakiest line in the suite. All three now assert only the provider's pure shape (resolving is socket-free) and pin invocation behaviour via deterministic overrides; the fixed-success/fixed-failure/inline-secret/throw/independence tests are untouched; test count unchanged (8). The live network path remains the production seam (AgentSetupScreen's "Test Connection" button), exercised interactively, not by `flutter test`. Evidence: `flutter analyze` → `No issues found!`; `flutter test test/connection_tester_seam_test.dart` → 8/8 pass (instant — no socket opened); related `test/ui/agent_setup_test.dart` → 29/29 pass; full regression `flutter test` → 635/635 pass (count unchanged). |
 | P2 | §11.10 Semantics-dump failure fallback actually dumps (dead-code removal + fix) | DONE 2026-10-23: `expectNoExceptionWithSemanticsDump` never printed the semantics dump it documented — `expect(tester.takeException(), isNull, ...)` drains the pending exception and throws synchronously on a non-null value, so the second `takeException()` (hence the `_dumpTree` block and `_dumpTree` itself) was unreachable dead code. Now the helper drains the exception once into a local, and on a non-null value prints the tree dump BEFORE failing with `fail('exception during <context>: <exception>')`; `_dumpTree` is live again and the doc comment now describes the true dump-then-fail order. 2 new tests in `test/support/integration_test.dart` (now 20): clean-pass via `returnsNormally` + `takeException()` null, and forced-failure — a `GestureDetector` onTap throwing `StateError('forced kboom')` recorded deterministically by the framework — asserted to (1) fail the test with the context string AND the exception text, (2) drain the pending exception, (3) print the tree dump (observed `[4] label="tap-me"` in the output). Deterministic only — no network/engine/wall-clock. Evidence: `flutter analyze` → `No issues found! (ran in 2.4s)`; `flutter test test/support/integration_test.dart` → 20/20 pass (18 old + 2 new); caller suites `test/ui/semantics_stability_test.dart test/ui/monkey_tap_test.dart` → 37/37 pass (32 + 5, unchanged behaviour); full regression `flutter test` → 637/637 pass (635 old + 2 new). |
+| P1 | §11.11 Never-executed §9.1 integration suite fixed + gated on Linux CI | DONE 2026-10-23: `integration_test/accessibility_windows_test.dart` (12 widget-level tests, §9.1) had NEVER executed anywhere — bare `flutter test` does not discover `integration_test/` and the windows-nightly job has never run. First-ever headless run (`flutter test integration_test/accessibility_windows_test.dart -d linux` under Xvfb) failed 8/12 with four genuine defects: (1) destination label index 4 was `Statistics` while the shell's rail/sheet label is `Stats` (tests 2/6 silently no-oped on Stats via `isNotEmpty` guards); (2) `find.text('Settings')`/`find.text('Agents')`/`find.text('Review')` were ambiguous — the Home tab behind the modal bottom sheet has same-text cards, so the More-sheet test and the Settings-navigate test threw "2 widgets" or tapped the wrong item (sheet item lookups now scoped via `find.descendant(of: find.byType(BottomSheet), ...)`); (3) `find.bySemanticsLabel(...)` returned zero everywhere because the live integration binding never enables semantics — fixed via `tester.ensureSemantics()` returned from `_pumpApp`, disposed in `try/finally` (NOT `addTearDown`, which runs after flutter_test's `_verifySemanticsHandlesWereDisposed`); (4) anchor texts for Play/Agents/Stats/Review were wrong ("AI" vs the real "AI Opponent" label, "Statistics" vs "No stats yet", missing "No standard games recorded yet"/"Appearance"). Also added a `_tapDestination` helper that prefers tapping the real semantics node (Windows+UIA) and falls back to `find.text(label).first` (repo widget-suite convention) when the live binding has no per-render-object `debugSemantics` — deterministic on both. Evidence: `flutter analyze` → `No issues found!`; `flutter test integration_test/accessibility_windows_test.dart -d linux` → 12/12 pass (was 4/12); full regression `flutter test` → 637/637 pass unchanged (no lib/ or test/ changes); workflow re-parses clean via PyYAML (ubuntu-gate 14 steps — new hard-gating "Integration test on Linux (§11.11)" step after the Xvfb smoke; windows-nightly untouched); new run block passes `bash -n`. The Windows-native §9.1 run (`flutter test integration_test/... -d windows`) remains BLOCKED on a Windows desktop/UIA session. |
 
 Note (2026-10-21): all `test/ui/`, `test/support/`, and `integration_test/`
 suites referenced above now exist. Native Windows execution is tracked in
@@ -1037,3 +1042,74 @@ suites referenced above now exist. Native Windows execution is tracked in
   explicit owner decision (102/127-file churn on the pinned 3.47.6); the P2
   `test/ui` coverage-artifact comparison (cp.) remains a process follow-up
   that needs ≥2 CI runs to compare.
+
+- 2026-10-23Z — CI/PROCESS P1 §11.11 (never-executed §9.1 integration suite
+  fixed + gated on Linux CI). Two independent subagent audits (FUTURE_WORK.md
+  open-item audit + CI/process gap audit) both concluded the only remaining
+  Linux-implementable gap was the 36-commit un-pushed queue (credential-
+  blocked) and the deferred `dart format` gate (owner decision), and both
+  missed a genuine dead-on-arrival suite: `integration_test/accessibility_windows_test.dart`
+  (12 widget-level tests per §9.1) had NEVER executed anywhere. Bare
+  `flutter test` does not discover `integration_test/`, and the windows-
+  nightly job has not run — so the 12 tests compiled but ran zero times on
+  every push/PR. The first-ever headless run (`flutter test
+  integration_test/accessibility_windows_test.dart -d linux` under Xvfb :77)
+  failed 8/12. Root causes, all platform-independent test bugs:
+  (1) `_destinationLabel(4)` was `'Statistics'` but the shell's rail/More-
+  sheet label is `'Stats'` — tests 2 and 6 silently no-oped on Stats via the
+  `if (destFinder.evaluate().isNotEmpty)` guard, so "all 8 destinations"
+  never actually visited Stats; (2) `find.text('Settings')` (and
+  'Agents'/'Review') was ambiguous — the Home tab behind the modal bottom
+  sheet renders same-text cards, so the More-sheet test threw "Found 2
+  widgets" and the Settings-navigate test tapped the wrong node; sheet items
+  are now found via `find.descendant(of: find.byType(BottomSheet).first, ...)`;
+  (3) `find.bySemanticsLabel(...)` returned 0 widgets everywhere — the live
+  integration binding does not build the semantics tree unless a client (or
+  `tester.ensureSemantics()`) requests it; `_pumpApp` now enables semantics
+  and returns the `SemanticsHandle`, disposed in `try/finally` per test
+  (`addTearDown` runs AFTER flutter_test's `_verifySemanticsHandlesWereDisposed`
+  and therefore leaks — the first fix attempt failed all 12 that way);
+  (4) anchor texts were wrong ("AI" vs the real "AI Opponent" PlayerCard
+  label, "Statistics" (doesn't exist) vs "No stats yet", missing
+  "No standard games recorded yet" / "Appearance" for Review/Settings). New
+  `_tapDestination` helper prefers tapping the real semantics node (Windows
+  + attached UIA) and falls back to `find.text(label).first` — the repo's
+  widget-suite convention — because the live binding attaches no per-render-
+  object `debugSemantics` (labels live on merged ancestors); deterministic
+  on both platforms. Files changed:
+  `integration_test/accessibility_windows_test.dart` — all 12 tests fixed as
+  above (no lib/ or test/ changes).
+  `.github/workflows/ci.yaml` — new hard-gating ubuntu-gate step "Integration
+  test on Linux (§11.11)" after the Xvfb smoke: starts its own Xvfb :79,
+  runs `flutter test integration_test/accessibility_windows_test.dart -d
+  linux`, always kills the Xvfb, fails the job on any non-zero exit.
+  `docs/FUTURE_WORK.md` — §11.11 added + closed as DONE in the same run
+  (open list unchanged: §11.11 not an open item), header bumped.
+  `automation-track.md` — header line + §11.11 Roadmap status row + this Run
+  Log entry.
+  Evidence: `flutter analyze` → `No issues found! (ran in 2.3s)`; `flutter
+  test integration_test/accessibility_windows_test.dart -d linux` → 12/12
+  pass (00:34, All tests passed! — first-ever green run; was 4/12 at the
+  first probe, 0/12 after the addTearDown fix attempt); full regression
+  `flutter test` → 637/637 pass (01:48, All tests passed! — no lib/ or test/
+  changes, integration_test/ is not discovered by bare `flutter test`);
+  workflow re-parses clean via PyYAML (ubuntu-gate now 14 steps including
+  checkout; windows-nightly still 10, untouched); new run block passes
+  `bash -n`.
+  Commit: TBD after push attempt.
+  Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
+  host — audited again this run (`git config --get credential.helper` empty,
+  no `gh`, no SSH key, no `~/.git-credentials`, no `~/.netrc`, no token in
+  env; `git push --dry-run origin main` → `could not read Username for
+  'https://github.com'`); `git ls-remote origin main` still shows `e1749b3`,
+  so `e1749b3..HEAD` (now 36 local commits incl. this run) remains local-only.
+  Re-run the push after credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials exist;
+  (b) trigger the §11.3 Windows nightly / run §9.1–9.2 on a Windows
+  desktop/UIA session (closes §14.1–14.2; the §9.1 suite now also runs
+  headless on Linux every push, so the Windows run is the only remaining
+  native gap); or (c) decide the §13 Windows-runner / safe-mode questions.
+  The `dart format` gate still needs an explicit owner decision
+  (102/127-file churn on the pinned 3.47.6); the P2 `test/ui`
+  coverage-artifact comparison (cp.) remains a process follow-up that needs
+  ≥2 CI runs to compare.

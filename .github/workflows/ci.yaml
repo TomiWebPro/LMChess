@@ -111,6 +111,25 @@ jobs:
           kill -9 "$APP_PID" "$XVFB_PID" "$WM_PID" 2>/dev/null || true
           echo "smoke ok: release binary alive after 15s under Xvfb + openbox"
 
+      - name: Integration test on Linux (§11.11)
+        # The §9.1 integration suite (integration_test/accessibility_windows_test.dart)
+        # is widget-level and platform-agnostic, but it was NEVER executed
+        # anywhere: bare `flutter test` does not discover integration_test/,
+        # and the windows-nightly job has not run. On the first Linux
+        # execution 8/12 tests failed (stale destination label, ambiguous
+        # sheet/hidden-tab finders, unenabled semantics in the live binding);
+        # fixed + validated headless. Gate it here so every push executes it —
+        # the Windows-native run (`-d windows` on a Windows host) remains §9.1.
+        run: |
+          set -euo pipefail
+          LIBGL_ALWAYS_SOFTWARE=1 Xvfb :79 -screen 0 1280x1024x24 &
+          XVFB_PID=$!
+          export DISPLAY=:79
+          flutter test integration_test/accessibility_windows_test.dart -d linux
+          EXIT=$?
+          kill -9 "$XVFB_PID" 2>/dev/null || true
+          exit $EXIT
+
       - name: Test coverage (§11.4)
         # Coverage is explicitly NOT the success metric (§11.4): the goal is
         # that every interaction-matrix control is exercised and every

@@ -7,6 +7,11 @@
 /// native UIA smoke tool/windows_accessibility_smoke.ps1 runs.
 ///
 /// Spec: docs/FUTURE_WORK.md section 9.1
+///
+/// The suite is widget-level and platform-agnostic: it runs natively on
+/// Windows (`flutter test integration_test/accessibility_windows_test.dart
+/// -d windows`, §9.1) and is gated headless on the ubuntu-gate Linux CI job
+/// (§11.11). Deterministic fakes only — no real engine/network/wall-clock.
 // ignore_for_file: dangling_library_doc_comments, camel_case_types
 
 import 'package:flutter/material.dart';
@@ -21,14 +26,15 @@ import 'package:llm_chess_arena/src/llm/mock_provider.dart';
 import 'package:llm_chess_arena/src/llm/tool_schema.dart' show MoveToolCall;
 import 'package:llm_chess_arena/src/llm/validation.dart' show FailureKind;
 
-// Destination label lookup by index.
+/// Shell destination semantics label for each index (matches the rail /
+/// bottom bar / More-sheet labels in `lib/src/app.dart`).
 String _destinationLabel(int index) {
   switch (index) {
     case 0: return 'Home';
     case 1: return 'Play';
     case 2: return 'Watch';
     case 3: return 'Arena';
-    case 4: return 'Statistics';
+    case 4: return 'Stats'; // shell label; the screen body says "Statistics".
     case 5: return 'Review';
     case 6: return 'Agents';
     case 7: return 'Settings';
@@ -36,17 +42,19 @@ String _destinationLabel(int index) {
   }
 }
 
-// Destination anchor text expected after navigation.
+/// Screen-specific anchor text that exists after navigating to each
+/// destination (not a duplicate of the rail/sheet label, so the check proves
+/// the selected screen's body rendered, not just the nav chrome).
 String _anchorText(int index) {
   switch (index) {
-    case 0: return 'LLM Chess Arena'; // Home heading
-    case 1: return 'AI'; // Play player cards mention AI
-    case 2: return 'White'; // Watch agent selector mentions White
+    case 0: return 'LLM Chess Arena'; // Home hero heading
+    case 1: return 'AI Opponent'; // Play player card label
+    case 2: return 'White agent'; // Watch agent selector label
     case 3: return 'Autumn Invitational'; // Arena default name
-    case 4: return 'Statistics'; // Stats title
-    case 5: return 'Review'; // Review title
-    case 6: return 'Agents'; // Agents list title
-    case 7: return 'Settings'; // Settings title
+    case 4: return 'No stats yet'; // Stats empty state
+    case 5: return 'No standard games recorded yet'; // Review empty state
+    case 6: return 'agents'; // Agents catalog count ("2 agents")
+    case 7: return 'Appearance'; // Settings screen heading
     default: return '';
   }
 }
@@ -80,7 +88,12 @@ List<Override> _fakeOverrides() => <Override>[
       clockProvider.overrideWithValue(() => DateTime.utc(2026, 1, 1)),
     ];
 
-Future<void> _pumpApp(
+/// Pump the app with deterministic overrides and return the semantics handle.
+///
+/// The caller MUST dispose the returned handle in a `finally` block (the
+/// repo's `captureSemanticsSafe` pattern) — `addTearDown` runs after
+/// flutter_test's `_verifySemanticsHandlesWereDisposed`, so it would leak.
+Future<SemanticsHandle> _pumpApp(
   WidgetTester tester, {
   Size size = const Size(1400, 1000),
 }) async {
@@ -95,7 +108,38 @@ Future<void> _pumpApp(
   );
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 100));
+
+  // The live integration binding does not build the semantics tree unless a
+  // client (or the test harness) requests it. Without this, every
+  // `find.bySemanticsLabel` below returns zero and the destination taps
+  // silently no-op — exactly how this suite rotted unexecuted (§11.11).
+  final semanticsHandle = tester.ensureSemantics();
+  await tester.pump();
+  return semanticsHandle;
 }
+
+/// Tap a shell destination by its rail/bar/More-sheet label.
+///
+/// Prefers tapping the real semantics node (matches the Windows UIA surface,
+/// where an accessibility client enables per-node semantics). On headless
+/// Linux the live integration binding does not attach per-render-object
+/// `debugSemantics` (labels live on merged ancestors), so
+/// `find.bySemanticsLabel` yields nothing — fall back to the text label of
+/// the same widget (the repo's widget suites tap this way; `.first` picks the
+/// rail/bar item ahead of any same-text Home card in tree order).
+Future<void> _tapDestination(WidgetTester tester, String label) async {
+  final semantics = find.bySemanticsLabel(label, skipOffstage: false);
+  if (semantics.evaluate().isNotEmpty) {
+    await tester.tap(semantics.first, warnIfMissed: false);
+  } else {
+    await tester.tap(find.text(label).first, warnIfMissed: false);
+  }
+  await tester.pump(const Duration(milliseconds: 100));
+}
+
+/// The "More" modal bottom sheet (scoped by type — hidden IndexedStack tabs
+/// can contain other ListViews, so a ListView finder cannot be trusted).
+final Finder _sheetItems = find.byType(BottomSheet);
 
 // ---------------------------------------------------------------------------
 // Main
@@ -107,266 +151,300 @@ void main() {
   group('accessibility_windows', () {
     // -- Step 1: launch app --
     testWidgets('app launches without exception', (tester) async {
-      await _pumpApp(tester);
-      expect(find.textContaining('LLM Chess Arena'), findsOneWidget);
-      expect(tester.takeException(), isNull, reason: 'app launch');
+      final semantics = await _pumpApp(tester);
+      try {
+        expect(find.textContaining('LLM Chess Arena'), findsOneWidget);
+        expect(tester.takeException(), isNull, reason: 'app launch');
+      } finally {
+        semantics.dispose();
+      }
     });
 
     // -- Step 2: visit all 8 destinations --
     testWidgets(
         'all 8 destinations render without exception', (tester) async {
-      await _pumpApp(tester);
-
-      // Tap each rail destination in wide layout
-      for (var i = 0; i <= 7; i++) {
-        final labelText = _destinationLabel(i);
-        // Find via semantics label on the navigation destination
-        final destFinder = find.bySemanticsLabel(labelText, skipOffstage: false);
-        if (destFinder.evaluate().isNotEmpty) {
-          await tester.tap(destFinder.first);
-          await tester.pumpAndSettle();
-        } else {
-          // May not exist yet at this width/density — pump longer
-          await tester.pump(const Duration(seconds: 1));
+      final semantics = await _pumpApp(tester);
+      try {
+        // Tap each rail destination in wide layout
+        for (var i = 0; i <= 7; i++) {
+          await _tapDestination(tester, _destinationLabel(i));
+          expect(tester.takeException(), isNull,
+              reason: 'navigated to ${_destinationLabel(i)}');
         }
-        expect(tester.takeException(), isNull,
-            reason: 'navigated to ${_destinationLabel(i)}');
+      } finally {
+        semantics.dispose();
       }
     });
 
     // -- Step 3: open/close More sheet --
     testWidgets('More sheet can be opened and dismissed', (tester) async {
-      await _pumpApp(tester, size: const Size(500, 800));
+      final semantics = await _pumpApp(tester, size: const Size(500, 800));
+      try {
+        // Open More sheet
+        expect(find.text('More'), findsOneWidget);
+        await tester.tap(find.text('More'));
+        await tester.pump(const Duration(milliseconds: 300));
 
-      // Open More sheet
-      expect(find.text('More'), findsOneWidget);
-      await tester.tap(find.text('More'));
-      await tester.pump(const Duration(milliseconds: 300));
+        // Verify sheet items are present (scoped to the sheet — the Home tab
+        // behind the modal still has same-text cards for Stats/Review/Agents/
+        // Settings).
+        for (final label in <String>[
+          'Stats',
+          'Review',
+          'Agents',
+          'Settings',
+        ]) {
+          expect(
+            find.descendant(of: _sheetItems.first, matching: find.text(label)),
+            findsOneWidget,
+            reason: 'More sheet lists "$label"',
+          );
+        }
 
-      // Verify sheet items are present
-      expect(find.text('Settings'), findsOneWidget);
-      expect(find.text('Agents'), findsOneWidget);
-      expect(find.text('Review'), findsOneWidget);
-      expect(find.text('Statistics'), findsOneWidget);
-
-      // Dismiss by tapping outside (barrier) or going to Home
-      await tester.tapAt(const Offset(10, 10));
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull,
-          reason: 'More sheet dismiss');
+        // Dismiss by tapping outside (barrier) or going to Home
+        await tester.tapAt(const Offset(10, 10));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull,
+            reason: 'More sheet dismiss');
+      } finally {
+        semantics.dispose();
+      }
     });
 
     // -- Step 4: Settings navigate + back --
     testWidgets('Settings screen navigable and back-stable', (tester) async {
-      await _pumpApp(tester, size: const Size(500, 800));
+      final semantics = await _pumpApp(tester, size: const Size(500, 800));
+      try {
+        await tester.tap(find.text('More'));
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.tap(
+          find
+              .descendant(
+                  of: _sheetItems.first, matching: find.text('Settings'))
+              .first,
+        );
+        await tester.pumpAndSettle();
 
-      await tester.tap(find.text('More'));
-      await tester.pump(const Duration(milliseconds: 300));
-      await tester.tap(find.text('Settings'));
-      await tester.pumpAndSettle();
+        // Settings body rendered (not just the rail/AppBar label).
+        expect(find.text('Appearance'), findsOneWidget);
 
-      expect(find.text('Settings'), findsOneWidget);
+        // Navigate away and back — the shell tab must survive the round-trip.
+        await _tapDestination(tester, 'Home');
+        await tester.pumpAndSettle();
+        expect(find.textContaining('LLM Chess Arena'), findsOneWidget);
 
-      // Back-gesture via drag
-      await tester.dragFrom(
-        const Offset(50, 400),
-        const Offset(300, 0),
-      );
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull,
-          reason: 'Settings back navigation');
+        await tester.tap(find.text('More'));
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.tap(
+          find
+              .descendant(
+                  of: _sheetItems.first, matching: find.text('Settings'))
+              .first,
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Appearance'), findsOneWidget);
+
+        expect(tester.takeException(), isNull,
+            reason: 'Settings navigation');
+      } finally {
+        semantics.dispose();
+      }
     });
 
     // -- Step 5: 20 rapid Play/Watch switches --
     testWidgets('20 rapid Play/Watch switches zero exceptions',
         (tester) async {
-      await _pumpApp(tester);
-
-      for (var i = 0; i < 20; i++) {
-        final target = i % 2 == 0 ? 'Play' : 'Watch';
-        final destFinder = find.bySemanticsLabel(target, skipOffstage: false);
-        if (destFinder.evaluate().isNotEmpty) {
-          await tester.tap(destFinder.first);
-          await tester.pump(const Duration(milliseconds: 100));
+      final semantics = await _pumpApp(tester);
+      try {
+        for (var i = 0; i < 20; i++) {
+          await _tapDestination(tester, i % 2 == 0 ? 'Play' : 'Watch');
+          expect(
+            tester.takeException(),
+            isNull,
+            reason: 'rapid switch #$i ${i % 2 == 0 ? 'Play' : 'Watch'}',
+          );
         }
-        expect(
-          tester.takeException(),
-          isNull,
-          reason: 'rapid switch #$i $target',
-        );
+      } finally {
+        semantics.dispose();
       }
     });
 
     // -- Step 6: every destination shows its anchor label --
     testWidgets('every destination shows its anchor label', (tester) async {
-      await _pumpApp(tester);
+      final semantics = await _pumpApp(tester);
+      try {
+        for (var i = 0; i <= 7; i++) {
+          // Reset to home first
+          await _tapDestination(tester, 'Home');
+          await tester.pumpAndSettle();
 
-      for (var i = 0; i <= 7; i++) {
-        // Reset to home first
-        await tester.tap(
-          find.bySemanticsLabel('Home', skipOffstage: false),
-          warnIfMissed: false,
-        );
-        await tester.pumpAndSettle();
-
-        // Navigate to destination using rail
-        if (i > 0) {
-          final dest = find.bySemanticsLabel(
-              _destinationLabel(i), skipOffstage: false);
-          if (dest.evaluate().isNotEmpty) {
-            await tester.tap(dest.first);
+          // Navigate to destination using the rail
+          if (i > 0) {
+            await _tapDestination(tester, _destinationLabel(i));
             await tester.pumpAndSettle();
           }
-        }
 
-        await tester.pump(const Duration(milliseconds: 100));
-        // The anchor text must appear somewhere on screen
-        expect(
-          find.textContaining(_anchorText(i)),
-          findsOne,
-          reason: '$i: should find "$_anchorText(i)"',
-        );
-        expect(
-          tester.takeException(),
-          isNull,
-          reason: 'anchor check for ${_anchorText(i)}',
-        );
+          await tester.pump(const Duration(milliseconds: 100));
+          // The anchor text must appear somewhere on screen
+          expect(
+            find.textContaining(_anchorText(i)),
+            findsOneWidget,
+            reason: '$i: should find "${_anchorText(i)}"',
+          );
+          expect(
+            tester.takeException(),
+            isNull,
+            reason: 'anchor check for ${_anchorText(i)}',
+          );
+        }
+      } finally {
+        semantics.dispose();
       }
     });
 
     // -- Step 7: theme toggle stability --
     testWidgets('theme changes stable light dark system', (tester) async {
-      await _pumpApp(tester);
+      final semantics = await _pumpApp(tester);
+      try {
+        expect(find.textContaining('LLM Chess Arena'), findsOneWidget);
 
-      expect(find.textContaining('LLM Chess Arena'), findsOneWidget);
+        // Go to Settings
+        await _tapDestination(tester, 'Settings');
+        await tester.pumpAndSettle();
 
-      // Go to Settings
-      await tester.tap(
-        find.bySemanticsLabel('Settings', skipOffstage: false),
-      );
-      await tester.pumpAndSettle();
+        // Toggle to dark mode
+        expect(find.text('Dark'), findsOneWidget);
+        await tester.tap(find.text('Dark'));
+        await tester.pumpAndSettle();
 
-      // Toggle to dark mode
-      expect(find.text('Dark'), findsOneWidget);
-      await tester.tap(find.text('Dark'));
-      await tester.pumpAndSettle();
+        // Toggle to system mode
+        expect(find.text('System'), findsOneWidget);
+        await tester.tap(find.text('System'));
+        await tester.pumpAndSettle();
 
-      // Toggle to system mode
-      expect(find.text('System'), findsOneWidget);
-      await tester.tap(find.text('System'));
-      await tester.pumpAndSettle();
-
-      expect(
-        tester.takeException(),
-        isNull,
-        reason: 'theme toggle chain',
-      );
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: 'theme toggle chain',
+        );
+      } finally {
+        semantics.dispose();
+      }
     });
 
     // -- Step 8: resize across breakpoints --
     testWidgets('resize 699 to 700 to 1100 to 699 zero exceptions',
         (tester) async {
-      await _pumpApp(tester, size: const Size(699, 800));
+      final semantics = await _pumpApp(tester, size: const Size(699, 800));
+      try {
+        tester.view.physicalSize = const Size(700, 800);
+        await tester.pumpAndSettle();
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: 'resize 699 to 700',
+        );
 
-      tester.view.physicalSize = const Size(700, 800);
-      await tester.pumpAndSettle();
-      expect(
-        tester.takeException(),
-        isNull,
-        reason: 'resize 699 to 700',
-      );
+        tester.view.physicalSize = const Size(1100, 800);
+        await tester.pumpAndSettle();
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: 'resize 700 to 1100',
+        );
 
-      tester.view.physicalSize = const Size(1100, 800);
-      await tester.pumpAndSettle();
-      expect(
-        tester.takeException(),
-        isNull,
-        reason: 'resize 700 to 1100',
-      );
-
-      tester.view.physicalSize = const Size(699, 800);
-      await tester.pumpAndSettle();
-      expect(
-        tester.takeException(),
-        isNull,
-        reason: 'resize 1100 to 699',
-      );
+        tester.view.physicalSize = const Size(699, 800);
+        await tester.pumpAndSettle();
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: 'resize 1100 to 699',
+        );
+      } finally {
+        semantics.dispose();
+      }
     });
 
     // -- Step 9: round-trip Home → Play → Watch → Home --
     testWidgets('round-trip Home Play Watch Home stack clean', (tester) async {
-      await _pumpApp(tester);
+      final semantics = await _pumpApp(tester);
+      try {
+        await _tapDestination(tester, 'Play');
+        await tester.pumpAndSettle();
+        expect(find.textContaining('AI Opponent'), findsWidgets);
 
-      await tester.tap(
-        find.bySemanticsLabel('Play', skipOffstage: false),
-      );
-      await tester.pumpAndSettle();
-      expect(find.textContaining('AI'), findsWidgets);
+        await _tapDestination(tester, 'Watch');
+        await tester.pumpAndSettle();
 
-      await tester.tap(
-        find.bySemanticsLabel('Watch', skipOffstage: false),
-      );
-      await tester.pumpAndSettle();
-
-      await tester.tap(
-        find.bySemanticsLabel('Home', skipOffstage: false),
-      );
-      await tester.pumpAndSettle();
-      expect(
-        find.textContaining('LLM Chess Arena'),
-        findsOneWidget,
-      );
-      expect(
-        tester.takeException(),
-        isNull,
-        reason: 'round-trip Home-Play-Watch-Home',
-      );
+        await _tapDestination(tester, 'Home');
+        await tester.pumpAndSettle();
+        expect(
+          find.textContaining('LLM Chess Arena'),
+          findsOneWidget,
+        );
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: 'round-trip Home-Play-Watch-Home',
+        );
+      } finally {
+        semantics.dispose();
+      }
     });
 
     // -- Step 10: agents form push/pop --
     testWidgets('Agents form renders without exception', (tester) async {
-      await _pumpApp(tester);
-
-      await tester.tap(
-        find.bySemanticsLabel('Agents', skipOffstage: false),
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('Agents'), findsOneWidget);
-      expect(
-        tester.takeException(),
-        isNull,
-        reason: 'agents list',
-      );
+      final semantics = await _pumpApp(tester);
+      try {
+        await _tapDestination(tester, 'Agents');
+        await tester.pumpAndSettle();
+        // Catalog count ("2 agents" with the seeded demo store).
+        expect(find.textContaining('agents'), findsWidgets);
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: 'agents list',
+        );
+      } finally {
+        semantics.dispose();
+      }
     });
 
     // -- Step 11: stats screen rendering --
     testWidgets('Stats screen renders empty state', (tester) async {
-      await _pumpApp(tester);
-
-      await tester.tap(
-        find.bySemanticsLabel('Statistics', skipOffstage: false),
-      );
-      await tester.pumpAndSettle();
-      expect(
-        tester.takeException(),
-        isNull,
-        reason: 'stats screen',
-      );
+      final semantics = await _pumpApp(tester);
+      try {
+        await _tapDestination(tester, 'Stats');
+        await tester.pumpAndSettle();
+        expect(find.text('No stats yet'), findsOneWidget);
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: 'stats screen',
+        );
+      } finally {
+        semantics.dispose();
+      }
     });
 
     // -- Step 12: review screen rendering --
     testWidgets('Review screen renders empty state', (tester) async {
-      await _pumpApp(tester);
-
-      await tester.tap(
-        find.bySemanticsLabel('Review', skipOffstage: false),
-      );
-      await tester.pumpAndSettle();
-      expect(
-        tester.takeException(),
-        isNull,
-        reason: 'review screen',
-      );
+      final semantics = await _pumpApp(tester);
+      try {
+        await _tapDestination(tester, 'Review');
+        await tester.pumpAndSettle();
+        expect(
+          find.text('No standard games recorded yet'),
+          findsOneWidget,
+        );
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: 'review screen',
+        );
+      } finally {
+        semantics.dispose();
+      }
     });
   });
 }

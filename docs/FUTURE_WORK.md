@@ -1,8 +1,17 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-23 (UTC) — §11.10 fixes the dead semantics-dump failure
-fallback in `test/support/semantics_invariants.dart`
+Last updated: 2026-10-23 (UTC) — §11.11 executes the §9.1 integration suite
+on the Linux gate: `integration_test/accessibility_windows_test.dart` had
+never run anywhere (bare `flutter test` does not discover `integration_test/`
+and the windows job had not run), and the first headless run failed 8/12 —
+stale destination label `Statistics` vs the shell's `Stats`, ambiguous
+`find.text('Settings')` (Home card + More sheet), `find.bySemanticsLabel`
+returning zero because the live integration binding never enables semantics,
+and screen anchors that do not exist; all 12 fixed and the suite is now a
+hard ubuntu-gate step (`flutter test integration_test/... -d linux` under
+Xvfb). §11.10 fixes the dead semantics-dump failure fallback in
+`test/support/semantics_invariants.dart`
 (`expectNoExceptionWithSemanticsDump` promised to print the tree dump before
 failing, but the second `takeException()` could never fire — the first `expect`
 drains it and throws synchronously — so the dump never printed and `_dumpTree`
@@ -50,6 +59,13 @@ desktop run:
 ```powershell
 flutter test integration_test/accessibility_windows_test.dart -d windows
 ```
+
+The suite is widget-level and deterministic, so it now also executes headless
+on the ubuntu-gate every push (§11.11) — it was written 2026-10-21 and had
+never run anywhere until §11.11 discovered 8/12 tests failing (stale
+`Statistics` label, ambiguous Home-card/More-sheet text, unenabled semantics
+in the live binding, wrong anchors) — so the Windows run is now the only
+native gap for that file.
 
 ### 9.2 UIA process smoke
 
@@ -278,6 +294,42 @@ Evidence: `flutter analyze` → `No issues found!`; `flutter test
 test/support/integration_test.dart` → 20/20 pass (18 old + 2 new); caller
 suites `test/ui/semantics_stability_test.dart test/ui/monkey_tap_test.dart` →
 37/37 pass; full `flutter test` → 637/637 pass (635 baseline + 2 new). See
+`automation-track.md` for the run log.
+
+### 11.11 Never-executed §9.1 integration suite fixed + gated on Linux CI (P1 — DONE)
+
+`integration_test/accessibility_windows_test.dart` (12 widget-level tests per
+§9.1) had **never executed anywhere**: bare `flutter test` does not discover
+`integration_test/`, and the windows-nightly job has not run — so the 12 tests
+compiled but ran zero times on every push/PR. The first-ever headless run
+(`flutter test integration_test/accessibility_windows_test.dart -d linux`
+under Xvfb) failed 8/12 with four platform-independent test bugs:
+
+1. `_destinationLabel(4)` was `'Statistics'` but the shell's rail/sheet label
+   is `'Stats'` — the affected tests silently no-oped via `isNotEmpty` guards.
+2. `find.text('Settings')` / `'Agents'` / `'Review'` were ambiguous — the Home
+   tab behind the modal bottom sheet renders same-text cards; sheet-item
+   lookups now scope via `find.byType(BottomSheet)`.
+3. `find.bySemanticsLabel(...)` returned 0 everywhere because the live
+   integration binding never enables semantics — `_pumpApp` now returns a
+   `SemanticsHandle` from `tester.ensureSemantics()`, disposed in `try/finally`
+   (`addTearDown` runs after the flutter_test handle-verification and leaks).
+4. Several anchor texts did not exist on the target screens ("AI" vs the real
+   "AI Opponent" label, "Statistics" vs "No stats yet", etc.).
+
+The new `_tapDestination` helper prefers tapping the real semantics node and
+falls back to `find.text(label).first` (the repo widget-suite convention) on
+bindings without per-render-object `debugSemantics` — deterministic on both
+Windows+UIA and headless Linux. The suite is now a hard ubuntu-gate step
+(`flutter test integration_test/accessibility_windows_test.dart -d linux`
+under its own Xvfb :79) so it runs on every push; the native Windows run
+(§9.1) remains the only native gap for that file.
+
+Evidence: `flutter analyze` → `No issues found!`; `flutter test
+integration_test/accessibility_windows_test.dart -d linux` → 12/12 pass
+(was 4/12 at the first probe); full `flutter test` → 637/637 pass unchanged
+(no lib/ or test/ changes); workflow re-parses clean via PyYAML (ubuntu-gate
+14 steps; windows-nightly untouched); new run block passes `bash -n`. See
 `automation-track.md` for the run log.
 
 ---
