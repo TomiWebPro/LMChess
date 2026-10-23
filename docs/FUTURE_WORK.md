@@ -1,7 +1,7 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-23 (UTC) — §13 telemetry isolation decided: `StatsLog`/`QualityLog`/`ReviewLog`/`VariantReviewLog` are now per-`ProviderScope` injectable stores (`resetTelemetry` removed)
+Last updated: 2026-10-23 (UTC) — §11.5 dependency hygiene: dead deps (`import_lint`, `cupertino_icons`, `intl`, `collection`, `hive_ce`) removed from pubspec; `intl`/`collection`/`hive_ce` demoted to transitive
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -106,6 +106,26 @@ reported. Coverage is explicitly not the success metric — the goal is that
 every interaction-matrix control is exercised and every transition asserts
 the semantics invariants, not a line-coverage number. See
 `automation-track.md` for the run evidence.
+
+### 11.5 Dependency hygiene (P2 — DONE)
+
+`pubspec.yaml` declared five dependencies with zero references anywhere in
+`lib/`, `test/`, `tool/`, or `integration_test/`, polluting the dependency
+graph and the pub cache restore in CI. Removed:
+
+- `import_lint` (dev) — no `import_lint.yaml`, no `dart run import_lint`
+  invocation, no CI integration anywhere; completely dead.
+- `cupertino_icons` — Flutter template leftover; no `CupertinoIcons` usage.
+- `intl` — no direct imports; demoted to transitive (still required by
+  `cupertino_ui` / `flutter_localizations` via the SDK chain).
+- `collection` — no direct imports; demoted to transitive (still required by
+  `flutter_riverpod` / the Flutter SDK).
+- `hive_ce` — only `hive_ce_flutter` is imported; `hive_ce` demoted to
+  transitive (still required by `hive_ce_flutter`).
+
+Evidence: `flutter analyze` → `No issues found!`; full `flutter test` →
+631/631 pass unchanged after the pubspec edit. See `automation-track.md`
+for the run log.
 
 ---
 

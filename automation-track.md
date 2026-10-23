@@ -1,7 +1,7 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-23 (UTC) — §13 telemetry isolation: injectable per-`ProviderScope` stores replace process-static singletons + `resetTelemetry`
+Last updated: 2026-10-23 (UTC) — §11.5 dependency hygiene: dead deps removed from pubspec (`import_lint`, `cupertino_icons`, `intl`, `collection`, `hive_ce`); graph unchanged downstream
 Related: `docs/FUTURE_WORK.md` (binding roadmap), `ARCHITECTURE.md`, `README.md`
 
 This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every run**.
@@ -599,3 +599,51 @@ suites referenced above now exist. Native Windows execution is tracked in
   desktop/UIA session); the remaining open items (§9.1/§9.2 native runs,
   §11.3 first Windows run, §2.6 upstream fix) all need a Windows desktop/UIA
   session or an upstream Flutter release.
+- 2026-10-23Z — CI/PROCESS P2 §11.5 (dependency hygiene: remove dead deps):
+  picked the one remaining Linux-implementable CI/process item discovered
+  during this run's audits. `docs/FUTURE_WORK.md` itself contains no open
+  Linux-implementable item (everything open is Windows-native §9.1/§9.2/§11.3/
+  §14, external §2.6, or an un-scheduled decision §13 — logged BLOCKED), so
+  the deliverable was promoted into FUTURE_WORK.md as §11.5 per repo
+  precedent (§11.4 was promoted/closed the same way). Two independent
+  subagent scans (lib/test markers + docs open-item audit) confirmed no other
+  Linux-verifiable work was missed. A candidate "CI gap" from one scan was
+  empirically DISPROVED before acting: `test/support/integration_test.dart`
+  ends in `_test.dart` (base name `integration_test`), so bare `flutter test`
+  already auto-discovers it — `flutter test test/support` runs it 18/18 and
+  both CI jobs (ubuntu-gate + windows-nightly) run bare `flutter test`, so
+  the 18 harness tests are already gated inside the 631/631 suite.
+  Files changed:
+  `pubspec.yaml` — removed five dead dependencies with zero references across
+  lib/test/tool/integration_test: dev dep `import_lint` (no `import_lint.yaml`
+  config, no `dart run import_lint` invocation, no CI integration anywhere),
+  `cupertino_icons` (Flutter template leftover, no `CupertinoIcons` usage),
+  `intl` (no direct imports; demoted to transitive — still required by
+  `cupertino_ui`/`flutter_localizations` via the SDK chain), `collection` (no
+  direct imports; demoted to transitive — still required by
+  `flutter_riverpod`/Flutter SDK), `hive_ce` (only `hive_ce_flutter` is
+  imported; `hive_ce` is a transitive requirement of `hive_ce_flutter` and
+  stays in the lock). Verified by `dart pub deps` + `pubspec.lock` inspection:
+  `collection`/`hive_ce`/`intl` now listed as `dependency: transitive`;
+  `import_lint` and `cupertino_icons` fully dropped from the lock graph.
+  `pubspec.lock` — re-resolved (15 packages changed: 5 direct entries removed/
+  demoted, no version bumps observed for remaining direct deps).
+  `docs/FUTURE_WORK.md` — §11.5 added + closed as DONE in the same run (open
+  list unchanged: §11.5 not an open item), header bumped.
+  `automation-track.md` — header line + this Run Log entry.
+  Evidence: `flutter pub get` → "Changed 15 dependencies!"; `flutter analyze`
+  → `No issues found! (ran in 4.1s)`; full regression `flutter test` →
+  631/631 pass (01:40, All tests passed!) — identical to baseline, confirming
+  the dependency removal is behavior-neutral; `flutter test test/support` →
+  18/18 pass (harness gating re-confirmed). No code or test files changed —
+  dependency-graph hygiene only.
+  Push **BLOCKED** (same as prior runs): no GitHub credentials on this host —
+  `git push --dry-run origin main` → `could not read Username for
+  'https://github.com'`; `git ls-remote` confirms remote `main` still at
+  e1749b3, so origin/main..HEAD remains local commits un-pushed
+  (be3ab86..8fd1bd1 + this run). Re-run the push after credentials are
+  provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials exist;
+  (b) run §9.1/§9.2/§11.3 on a Windows desktop/UIA session; or (c) repeat the
+  §11.5 dependency audit each time new deps are added (the one-line check:
+  `grep -rE "package:(dep)/" lib test tool integration_test`).
