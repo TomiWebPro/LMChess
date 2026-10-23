@@ -1335,7 +1335,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   1) and "Xvfb :92 did not become ready within 5s" (alive PID, display never
   answers, exit 1 + kill -9 cleanup). The pre-existing leaked :77/:79/:99
   servers were left untouched per the §11.12 note.
-  Commit: TBD-after-commit.
+  Commit: a94d18c.
   Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
   host — `git config --get credential.helper` empty, no `gh`, no SSH key, no
   `~/.git-credentials`, no `~/.netrc`, no token in env; `git push origin
