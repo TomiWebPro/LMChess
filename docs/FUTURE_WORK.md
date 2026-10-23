@@ -1,28 +1,25 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-23 (UTC) — §11.11 executes the §9.1 integration suite
-on the Linux gate: `integration_test/accessibility_windows_test.dart` had
-never run anywhere (bare `flutter test` does not discover `integration_test/`
-and the windows job had not run), and the first headless run failed 8/12 —
-stale destination label `Statistics` vs the shell's `Stats`, ambiguous
-`find.text('Settings')` (Home card + More sheet), `find.bySemanticsLabel`
-returning zero because the live integration binding never enables semantics,
-and screen anchors that do not exist; all 12 fixed and the suite is now a
-hard ubuntu-gate step (`flutter test integration_test/... -d linux` under
-Xvfb). §11.10 fixes the dead semantics-dump failure fallback in
-`test/support/semantics_invariants.dart`
-(`expectNoExceptionWithSemanticsDump` promised to print the tree dump before
-failing, but the second `takeException()` could never fire — the first `expect`
-drains it and throws synchronously — so the dump never printed and `_dumpTree`
-was dead code; it now drains once, dumps, then fails). §11.9 removes the last
-real-network call from the test suite: `connection_tester_seam_test.dart` no
-longer invokes the default `connectionTesterProvider` (which pings a live LLM
-endpoint, violating the repo's "no HTTP socket in widget tests" rule); the
-default's invocation behaviour stays verified only via deterministic overrides;
-§2.6 still no upstream fix (flutter/flutter#175041 open, PR #190903 unmerged) →
-local 3.47.6 stays on mitigation; §11.8 pins both CI jobs to known-good Flutter
-3.47.6
+Last updated: 2026-10-23 (UTC) — §11.12 fixes the §11.11 Xvfb teardown that
+was dead-on-failure: the integration-test step ran under `set -euo pipefail`
+and captured `EXIT=$?` AFTER the failing `flutter test ...` line, so on a red
+run the shell aborted at the test line and the `kill -9 "$XVFB_PID"` cleanup
+never executed — the :79 display server leaked on the runner. The exit code
+is now captured without aborting (`flutter test ... || EXIT=$?` +
+`exit ${EXIT:-0}`); the pre-fix leak and the post-fix clean teardown were both
+replicated empirically on Linux (real 12/12 headless run leaves no :79
+process). Also removed two dead `exit_code` GITHUB_OUTPUT writes in
+windows-nightly (no step consumes `steps.*.outputs.exit_code` — gating is the
+explicit `Exit $LASTEXITCODE`) and their now-unused step `id:`s, and added the
+missing `set -euo pipefail` to the apt-get step for consistency with every
+other run block. §11.11 executes the §9.1 integration suite
+(`integration_test/accessibility_windows_test.dart`, 12 tests) headless on the
+gate every push; §11.10 fixed the dead semantics-dump failure fallback;
+§11.9 removed all real-network calls from the test suite; §2.6 still no
+upstream fix (flutter/flutter#175041 open, PR #190903 unmerged; 3.47.7 does
+not contain it) → local 3.47.6 stays on mitigation; §11.8 pins both CI jobs to
+known-good Flutter 3.47.6
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -331,6 +328,57 @@ integration_test/accessibility_windows_test.dart -d linux` → 12/12 pass
 (no lib/ or test/ changes); workflow re-parses clean via PyYAML (ubuntu-gate
 14 steps; windows-nightly untouched); new run block passes `bash -n`. See
 `automation-track.md` for the run log.
+
+### 11.12 Xvfb teardown dead-on-failure in the §11.11 step + dead GITHUB_OUTPUT writes (P1 — DONE)
+
+The §11.11 integration-test step started an Xvfb :79 and ran under
+`set -euo pipefail`:
+
+```bash
+flutter test integration_test/accessibility_windows_test.dart -d linux
+EXIT=$?
+kill -9 "$XVFB_PID" 2>/dev/null || true
+exit $EXIT
+```
+
+On a **red** run, `set -e` aborts the shell at the failing `flutter test`
+line, so `EXIT=$?`, the `kill -9 "$XVFB_PID"` teardown, and `exit` were all
+unreachable dead code — the :79 display server leaked on the runner (and the
+"cleanup" lines were misleading on the one path they mattered most). The step
+now captures the exit code without aborting:
+
+```bash
+flutter test integration_test/accessibility_windows_test.dart -d linux || EXIT=$?
+kill -9 "$XVFB_PID" 2>/dev/null || true
+exit ${EXIT:-0}
+```
+
+The job still fails on any non-zero exit (the hard gate is unchanged); the
+only change is that the teardown now runs on BOTH paths. Also in the same
+pass:
+
+- Removed two dead `echo "exit_code=$($LASTEXITCODE)" >> $env:GITHUB_OUTPUT`
+  writes in `windows-nightly` (lines 196/246) — grep confirms nothing
+  consumes `steps.integration-test.outputs.exit_code` /
+  `steps.uia-smoke.outputs.exit_code`; the gating is the explicit
+  `Exit $LASTEXITCODE` in each step. The now-unused step `id: integration-test`
+  and `id: uia-smoke` were removed with them.
+- Added the missing `set -euo pipefail` to the "Install Linux desktop build
+  deps" step so every ubuntu-gate `run:` block is consistent (GitHub's
+  default shell is already `bash -e -o pipefail`, so this is belt-and-braces
+  plus `-u`).
+
+Evidence: workflow re-parses clean via PyYAML (ubuntu-gate 14 steps,
+windows-nightly 10 steps); all 9 ubuntu-gate bash run-blocks pass `bash -n`
+(the two `bash -n` "failures" are the PowerShell blocks, Windows-only by
+design); the fix is proven empirically on this host — a replication of the
+PRE-fix block with a failing command leaves the :79 Xvfb alive (PID observed
+surviving), while the POST-fix block on the failure path propagates the exact
+exit code (3) and kills :79, on the success path exits 0 and kills :79, and
+the REAL `flutter test integration_test/... -d linux` run (12/12 pass, 00:34)
+leaves no :79 process behind; `flutter analyze` → `No issues found!`; full
+`flutter test` → 637/637 pass (no Dart changes). See `automation-track.md`
+for the run log.
 
 ---
 

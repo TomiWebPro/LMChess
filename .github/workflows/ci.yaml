@@ -72,6 +72,7 @@ jobs:
         # headers (docs/RUNBOOK.md "Linux desktop"); xvfb + openbox are the
         # headless start recipe from the same page.
         run: |
+          set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             ninja-build pkg-config libgtk-3-dev libsecret-1-dev libjsoncpp-dev \
@@ -125,10 +126,14 @@ jobs:
           LIBGL_ALWAYS_SOFTWARE=1 Xvfb :79 -screen 0 1280x1024x24 &
           XVFB_PID=$!
           export DISPLAY=:79
-          flutter test integration_test/accessibility_windows_test.dart -d linux
-          EXIT=$?
+          # §11.12: capture the test exit code WITHOUT letting `set -e`
+          # abort the shell mid-cleanup. A failing `flutter test` must still
+          # kill its Xvfb — previously the `EXIT=$?` / `kill -9` / `exit`
+          # tail was dead code on the failure path (the shell died at the
+          # test line) and the :79 display server leaked on the runner.
+          flutter test integration_test/accessibility_windows_test.dart -d linux || EXIT=$?
           kill -9 "$XVFB_PID" 2>/dev/null || true
-          exit $EXIT
+          exit ${EXIT:-0}
 
       - name: Test coverage (§11.4)
         # Coverage is explicitly NOT the success metric (§11.4): the goal is
@@ -187,13 +192,11 @@ jobs:
         run: flutter test
 
       - name: Integration test (§9.1)
-        id: integration-test
         run: |
           $ErrorActionPreference = "Continue"
           $result = flutter test integration_test/accessibility_windows_test.dart -d windows 2>&1
           echo "--- INTEGRATION TEST OUTPUT ---"
           Write-Host $result
-          echo "exit_code=$($LASTEXITCODE)" >> $env:GITHUB_OUTPUT
           # Fail the job on ANY non-zero exit — a red §9.1 integration test
           # must gate the release, not just the smoke crash path (§11.3).
           if ($LASTEXITCODE -ne 0) {
@@ -204,7 +207,6 @@ jobs:
           FLUTTER_TEST_DEVICE_TIMEOUT: 180000
 
       - name: Run UIA smoke (§9.2)
-        id: uia-smoke
         run: |
           $exePath = "build\windows\x64\runner\Release\llm_chess_arena.exe"
           $outputFile = "uia_smoke_output.txt"
@@ -241,9 +243,6 @@ jobs:
               Format-List |
               Out-File -FilePath $eventViewerFile -Force
           }
-
-          # Record exit code
-          echo "exit_code=$($LASTEXITCODE)" >> $env:GITHUB_OUTPUT
 
           # Fail the job on ANY non-zero exit — 0=pass, 1=exe/app failure,
           # 2=crash detected in Event Viewer (§9.2). A silent smoke step

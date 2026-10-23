@@ -1,18 +1,31 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-23 (UTC) — §11.11 executes the §9.1 integration suite
-on the ubuntu-gate for the first time ever: bare `flutter test` does not
-discover `integration_test/` and the windows-nightly job has never run, so
-the 12 widget-level §9.1 tests were dead-on-arrival — the first Linux run
-failed 8/12 (stale destination label `Statistics` vs the shell's `Stats`,
-ambiguous `find.text('Settings')` matching the Home card AND the More sheet,
-`find.bySemanticsLabel` returning zero because the live integration binding
-never enables semantics, and screen anchors that do not exist); fixed all 12
-(12/12 headless on Linux) and added a hard ubuntu-gate step running
-`flutter test integration_test/accessibility_windows_test.dart -d linux`
-under Xvfb; §11.10 fixes the dead semantics-dump fallback in `test/support/semantics_invariants.dart`;
-§11.9 removes the last real-network call from the test suite (3 tests in `test/connection_tester_seam_test.dart` invoked the default `connectionTesterProvider`, a live LLM endpoint ping, violating the repo's no-socket rule; now shape-only + deterministic overrides); §9/§11.3/§14 remain Windows-native BLOCKED; §2.6 still no upstream fix (flutter/flutter#175041 open, PR #190903 unmerged); local 3.47.6 stays on mitigation; §11.8 pins CI Flutter SDK to known-good 3.47.6 on both jobs; §11.7 real-engine E2E smoke wired into ubuntu-gate; §11.6 ubuntu-gate builds + smokes the Linux release binary; §11.5 dead deps removed
+Last updated: 2026-10-23 (UTC) — §11.12 makes the §11.11 integration-test
+step's Xvfb teardown actually run on the failure path: the step used
+`set -euo pipefail` with `EXIT=$?` captured AFTER the failing `flutter test`
+line, so a red run aborted the shell at the test line and
+`kill -9 "$XVFB_PID"` never executed — the :79 display server leaked on the
+runner. The exit code is now captured without aborting
+(`flutter test ... || EXIT=$?` / `exit ${EXIT:-0}`; the job still fails on
+any non-zero exit). Both the pre-fix leak and post-fix clean teardown were
+replicated empirically on Linux (synthetic failure exit-3 path + success
+path + the real 12/12 headless run leaves no :79 process); removed two dead
+`exit_code` GITHUB_OUTPUT writes (and unused step ids) from windows-nightly
+— nothing consumed `steps.*.outputs.exit_code`, gating is the explicit
+`Exit $LASTEXITCODE`; added the missing `set -euo pipefail` to the apt step.
+§11.11 executes the §9.1 integration suite headless on the ubuntu-gate every
+push (12 tests fixed and gated for the first time ever — bare `flutter test`
+does not discover `integration_test/` and the windows job had not run);
+§11.10 fixes the dead semantics-dump fallback in `test/support/semantics_invariants.dart`;
+§11.9 removes the last real-network call from the test suite
+(3 tests invoked the default `connectionTesterProvider`, a live LLM endpoint
+ping; now shape-only + deterministic overrides); §9/§11.3/§14 remain
+Windows-native BLOCKED; §2.6 still no upstream fix (flutter/flutter#175041
+open, PR #190903 unmerged; 3.47.7 does not contain it) → local 3.47.6 stays
+on mitigation; §11.8 pins CI Flutter SDK to known-good 3.47.6 on both jobs;
+§11.7 real-engine E2E smoke wired into ubuntu-gate; §11.6 ubuntu-gate builds
++ smokes the Linux release binary; §11.5 dead deps removed
 Related: `docs/FUTURE_WORK.md` (binding roadmap), `ARCHITECTURE.md`, `README.md`
 
 This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every run**.
@@ -50,6 +63,7 @@ This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every ru
 | P1 | §11.6 Linux release build + Xvfb smoke on ubuntu-gate | DONE 2026-10-23: `ubuntu-gate` gained three steps — Install Linux desktop build deps (`ninja-build pkg-config libgtk-3-dev libsecret-1-dev libjsoncpp-dev xvfb openbox`), Build Linux release (`flutter build linux --release`), Smoke start Linux release (Xvfb: start `Xvfb :77` + `openbox` with `LIBGL_ALWAYS_SOFTWARE=1`, launch `build/linux/x64/release/bundle/llm_chess_arena`, require `kill -0` after a 15 s window, bounded SIGTERM→SIGKILL teardown). Closes the gap where analyze+test could pass while a runner/plugin/CMake regression broke the binary (previously only the Windows nightly built it). Engine assets are gitignored and extraction is lazy, so the smoke needs no download. Evidence: `flutter analyze` → `No issues found!`; `flutter build linux --release` → `✓ Built build/linux/x64/release/bundle/llm_chess_arena`; exact smoke recipe exits 0 locally (binary alive after 15 s under Xvfb :77 + openbox); full regression `flutter test` → 631/631 pass (no Dart changes); workflow re-parses clean via PyYAML (ubuntu-gate 11 steps, windows-nightly untouched); all new run blocks pass `bash -n`. |
 | P1 | §13-adjacent: chaotic→`VariantReviewLog` wiring doc fix + 4 tests (`test/ui/arena_variant_review_test.dart`) | DONE 2026-10-23: fixed the stale "**Wiring point**: chaotic games are *not* recorded in [ReviewLog]" doc comment at `arena_screen.dart:28-30` — the code has recorded chaotic games losslessly into `VariantReviewLog` since commit 61d58d7 (`_concludeGame` write site at `arena_screen.dart:1552-1566`), but the class doc still described the original plan and **no test covered the path**. New suite pins the whole recording contract: (1) chaotic tournament (2 demo agents, 1 pairing × 2 games/pairing × 1 round, color alternation, concurrency 2, `initialSeed: 42`) records exactly 2 `VariantGameRecord`s with mode 'chaotic', two demo labels/agent-ids per game (white≠black), non-empty id/tournamentId/seed/initialBoard, outcome in {1-0,0-1,1/2-1/2,*}, non-empty reason, monotonic startedAt→finishedAt, sequential ply indices, ≥4-char attempt UCIs, and `validateChain()` empty (board + hash chain integrity); the FEN `ReviewLog` stays empty (isolation). (2) cancelled chaotic run still records both games with outcome '*' / reason 'cancelled' + valid chain (partial-trail visibility). (3) standard tournament records 2 `ReviewGame`s with mode 'standard' into `ReviewLog` and leaves `VariantReviewLog` empty (isolation both ways). (4) E2E: same-log `ReviewScreen` lists the arena chaotic game under "Chaotic replays" and tapping opens `VariantReplayScreen` with the labels. Deterministic fakes only (MockProvider plays first legal attempt, fixed UTC clock, telemetry stores per-scope), no network/engine/wall-clock. Evidence: `flutter analyze` → `No issues found!`; `flutter test test/ui/arena_variant_review_test.dart` 4/4 pass; related suites (arena 27 + review 17 + variant_replay 22 + scrub 20) 86/86 pass; full regression `flutter test` 635/635 pass (631 old + 4 new). |
 | P0 | §11.3 Nightly Windows CI gate (`.github/workflows/ci.yaml`) | DONE 2026-10-21: Created `.github/workflows/ci.yaml` with two jobs: (1) `ubuntu-gate` — `flutter analyze` + `flutter test` on every push/PR; (2) `windows-nightly` — scheduled nightly (`cron: "0 6 * * *"`) and `workflow_dispatch`: Flutter stable setup, pub get, analyze, `flutter build windows --release`, unit/widget tests, `flutter test integration_test/accessibility_windows_test.dart -d windows` (§9.1), PowerShell UIA smoke via `tool/windows_accessibility_smoke.ps1` (§9.2) with `-Exe`, `-RandomClicks 500`, `-Timeout 120`, `-PauseMs 200`; Event Viewer excerpt capture on exit code 2 → artifact upload via `actions/upload-artifact@v4`, cleanup in finally block. Per §9.2 spec: exit 0=pass, 1=exe missing, 2=crash detected. No Dart files changed. 2026-10-22 process fixes: integration-test + smoke steps now fail the job on ANY non-zero exit (previously only smoke exit 2 gated; Event Viewer excerpt exported on any smoke failure, not just the crash path); job-level pre-launch of the exe removed — the smoke script owns the app lifecycle (launch + finally-kill), so UIA attachment/clicks hit a single instance. Windows run itself still pending (§9.1/§9.2 need a Windows desktop/UIA session). |
+| P1 | §11.12 Xvfb teardown dead-on-failure + dead `exit_code` GITHUB_OUTPUT writes | DONE 2026-10-23: the §11.11 integration-test step ran under `set -euo pipefail` and captured `EXIT=$?` AFTER the failing `flutter test` line, so a red run aborted the shell at the test line — `kill -9 "$XVFB_PID"` never executed and the :79 display server leaked on the runner. Fixed to `flutter test ... || EXIT=$?` + `exit ${EXIT:-0}` (job still fails on any non-zero exit; the teardown now runs on BOTH paths). Same pass: removed two dead `echo "exit_code=..." >> $env:GITHUB_OUTPUT` writes in windows-nightly (grep proves nothing consumes `steps.integration-test.outputs.exit_code` / `steps.uia-smoke.outputs.exit_code`; gating is the explicit `Exit $LASTEXITCODE`) and their now-unused step `id:`s; added the missing `set -euo pipefail` to the apt-get step for consistency. Evidence: workflow re-parses clean via PyYAML (ubuntu-gate 14 steps, windows-nightly 10); all 9 ubuntu-gate bash run-blocks pass `bash -n`; fix proven empirically — a PRE-fix replication with a failing command leaves Xvfb :79 alive (PID observed), the POST-fix block propagates the exact exit code (3) and kills :79 on failure, exits 0 and kills :79 on success, and the REAL `flutter test integration_test/accessibility_windows_test.dart -d linux` run (12/12, 00:34) leaves no :79 process behind; `flutter analyze` → `No issues found!`; full regression `flutter test` → 637/637 pass (no Dart changes). |
 | P1 | `test/ui/watch_screen_test.dart` | DONE 2026-10-20: 21 widget tests covering §6.5 — transport flow (Start advances moves, Pause stops scheduling/Resume continues, Stop ends run, Stop during in-flight turn safe, Start→Pause→Start resets cleanly), agent selectors (empty catalog stability check, dropdowns render agent names, selectors disabled while running, idle selection change), tab switching (Activity/Moves/Errors idle and running), error panel state, move-list population and seek matching board, dispose drains timers, narrow/wide layouts, status chip lifecycle phases, semantics tree stable across Start+Pause+Stop transitions including reparenting guard. Uses deterministic fakes (MockProvider stepDelay=0, fixed clock UTC), defensive control visibility checks (Stop/Pause only when present), no real network/engine/wall-clock. Evidence: `flutter analyze` clean; `flutter test test/ui/watch_screen_test.dart` 21/21 pass; full regression `flutter test` 328/328 pass (307 old + 21 new). Next: `test/ui/arena_screen_test.dart` (§6.6, P1). |
 | P1 | `test/ui/arena_screen_test.dart` | DONE 2026-10-20: 27 widget tests covering §6.6 — config form (Name field default text, Rounds/Games-pairing dropdowns labels, Chaos variants FilterChip, Concurrency slider, Start button enabled), disabled controls during run, start transitions UI (message gone → Cards appear), Stop shows Cancelling… then completes, Start twice rejected (onPressed=null), no-agents guard prevents start, standings header + agent name rows after finish, Seed Chip renders, empty grid before start, mini-board cards appear after start, tap on card stable or opens dialog, resize while running safe (500→1400→500px), scheduler cancellation doesn't leave orchestrators running, dispose drains timers, narrow/wide layout renders, chaos toggle flips selected state, config changes during idle safe, status notice after finish, rapid taps safe, semantics tree invariant across Start+Stop including reparenting detection via parentMap. Uses deterministic fakes (MockProvider stepDelay=0, fixed clock UTC, AgentListStore seedDemos), never hits real network/engine. Evidence: `flutter analyze` clean; `flutter test test/ui/arena_screen_test.dart` 27/27 pass; full regression `flutter test` 355/355 pass (307 old + 27 new). Next: `test/ui/agent_setup_test.dart` (§6.10, P1) or `test/ui/review_screen_test.dart` (§6.8, P1). |
 | P1 | `test/ui/agent_setup_test.dart` | DONE 2026-10-20: 29 widget tests covering §6.10 — list/entry point (empty state, create vs edit title 'New agent'/'Edit agent', blank default form), form fields (display name accepts text, provider dropdown lists all kAgentProviders values, model placeholder 'gpt-4o'), provider switch (dropdown tap stable), temperature slider (drag up/down responsive), max tokens numeric input, system/user prompt TextFormFields present, API key TextField exists with obscureText, lock-status indicator Row renders below API key field, Test Connection button exists/enabled, tapping Test Connection shows success result via fast tester, spinner during testing (500ms delayed tester → CircularProgressIndicator appears then completes cleanly without pending timer), failure result with failing tester override, Save labelled in edit / Create in new mode, empty required fields validation snackbar shown, valid form submission succeeds, double-save guard (_saving==true), empty name blocks save, empty provider/model blocks save, navigating away cleans up form fields, AppBar back button pops route safely, narrow (<700px) layout scrolls without overflow, wide layout renders single column, 10 rapid taps on Create no crash, semantics tree invariant stable after rendering. Uses deterministic fakes (harness.fakeOverrides + connectionTesterProvider override), never hits real network/engine. Evidence: `flutter analyze` clean; `flutter test test/ui/agent_setup_test.dart` 29/29 pass; full regression `flutter test` 401/401 pass (372 old + 29 new). Next: `test/ui/variant_replay_test.dart` (§6.9, P1). |
@@ -1113,3 +1127,66 @@ suites referenced above now exist. Native Windows execution is tracked in
   (102/127-file churn on the pinned 3.47.6); the P2 `test/ui`
   coverage-artifact comparison (cp.) remains a process follow-up that needs
   ≥2 CI runs to compare.
+- 2026-10-23Z — CI/PROCESS P1 §11.12 (Xvfb teardown dead-on-failure in the
+  §11.11 step + dead GITHUB_OUTPUT writes). Three parallel subagent audits
+  (code markers, CI workflow + docs, dependency hygiene) + an upstream check
+  found no open FUTURE_WORK.md item that is Linux-implementable (§9.1/§9.2/
+  §11.3/§14 Windows-native BLOCKED, §2.6 external — re-verified this run:
+  #175041 still open, #190903 still unmerged, and even the newer stable
+  3.47.7 does NOT contain the fix —, §13 un-scheduled), but surfaced one
+  genuine Linux-modifiable CI defect not previously logged: the §11.11
+  integration-test step ran under `set -euo pipefail` and captured
+  `EXIT=$?` AFTER the failing `flutter test` line, so on a red run the shell
+  aborted at the test line and the `kill -9 "$XVFB_PID"` teardown (plus the
+  `exit`) was unreachable dead code — the :79 display server leaked on the
+  runner exactly on the failure path where cleanup matters most. Promoted as
+  §11.12 into `docs/FUTURE_WORK.md` per the §11.4–§11.11 precedent and closed
+  in the same run.
+  Files changed:
+  `.github/workflows/ci.yaml` — (1) §11.11 step teardown fixed:
+  `flutter test integration_test/accessibility_windows_test.dart -d linux || EXIT=$?`
+  followed by `kill -9 "$XVFB_PID" 2>/dev/null || true` and
+  `exit ${EXIT:-0}` — the job still fails on any non-zero test exit (hard
+  gate unchanged), the teardown now runs on BOTH paths; (2) removed two dead
+  `echo "exit_code=$($LASTEXITCODE)" >> $env:GITHUB_OUTPUT` writes in
+  windows-nightly (grep proves no step consumes
+  `steps.integration-test.outputs.exit_code` /
+  `steps.uia-smoke.outputs.exit_code` — the gating is the explicit
+  `Exit $LASTEXITCODE` in each step) and the now-unused step `id:
+  integration-test` / `id: uia-smoke`; (3) added the missing
+  `set -euo pipefail` to the "Install Linux desktop build deps" step so
+  every ubuntu-gate run block is consistent (GHA's default shell is already
+  `bash -e -o pipefail`, so this is belt-and-braces + `-u`).
+  `docs/FUTURE_WORK.md` — §11.12 added + closed as DONE in the same run
+  (open list unchanged: §11.12 not an open item), header bumped.
+  `automation-track.md` — header line + §11.12 Roadmap status row + this Run
+  Log entry.
+  No Dart/test files changed.
+  Evidence: `flutter analyze` → `No issues found! (ran in 2.1s)`; full
+  regression `flutter test` → 637/637 pass (01:52, All tests passed! — no
+  Dart changes); workflow re-parses clean via PyYAML (ubuntu-gate 14 steps,
+  windows-nightly 10 steps — step counts unchanged); all 9 ubuntu-gate bash
+  run-blocks pass `bash -n` (the two `bash -n` "failures" are the
+  windows-nightly PowerShell blocks, Windows-only by design); the teardown
+  fix is proven empirically on this host: (a) a replication of the PRE-fix
+  block with a failing command leaves the :79 Xvfb alive — PID 871423
+  observed surviving (`set -e` died at the failing line, cleanup dead);
+  (b) the POST-fix block on the failure path propagates the exact exit code
+  (3) and kills :79; (c) on the success path it exits 0 and kills :79;
+  (d) the REAL `flutter test integration_test/accessibility_windows_test.dart
+  -d linux` under Xvfb :79 → 12/12 pass (00:34, All tests passed!) with the
+  step exiting 0 and NO :79 process left behind. (Note: two Xvfb servers
+  (:77, :99) from earlier hourly smoke runs were found still alive on this
+  host — the same leak class this fix removes from CI; they predate this run
+  and were left untouched.)
+  Commit: <pending commit hash filled after commit>.
+  Push: attempted below.
+  Next: (a) re-push the queued local commits (origin/main..HEAD, still 36
+  commits at e1749b3) once GitHub credentials exist; (b) trigger the §11.3
+  Windows nightly / run §9.1–9.2 on a Windows desktop/UIA session (closes
+  §14.1–14.2); or (c) decide the §13 Windows-runner / safe-mode questions.
+  Re-audited and confirmed No other Linux-implementable candidate: code has
+  zero TODO/FIXME/NotImplemented markers, no test-discovery gaps, dependency
+  hygiene clean (0 unused deps), all 9 bash blocks pass `bash -n`; the
+  `dart format` gate still needs an explicit owner decision (102/127-file
+  churn) and the coverage-artifact comparison needs ≥2 CI runs.
