@@ -1,7 +1,19 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-23 (UTC) — §11.15 closes the last false-pass hole in
+Last updated: 2026-10-23 (UTC) — §11.16 bounds every ubuntu-gate and
+windows-nightly job and step with `timeout-minutes`: the workflow previously
+relied on GitHub's default 360-minute job timeout, so a hung step (pub get,
+engine download, apt, build, smoke, integration test) could stall the gate for
+up to 6 hours and overlap the next scheduled run. Both jobs now carry a job
+level backstop (ubuntu-gate 90 min — ~4x the observed ~15-20 min green wall
+time — windows-nightly 180 min) and every one of the 24 steps carries its own
+tighter bound (checkout 5, Setup Flutter 15, pub-cache restore 5, pub get 5,
+analyze 10, engine cache 5, engine download 15, flutter test 30, apt install
+15, build linux 30, smoke 15, linux integration 20, coverage 30, upload 5,
+build windows 60, windows integration 30, UIA smoke 20). The §11.14 §11.15
+bounded loops inside the smoke step stay unchanged (the step timeout is a
+belt-and-braces backstop). §11.15 closes the last false-pass hole in
 the §11.6 Linux-release smoke: it previously proved **process aliveness**
 only (`kill -0` after the 15 s window), but `linux/runner/my_application.cc`
 shows the window only once the FIRST Flutter frame renders
@@ -526,6 +538,40 @@ guard fires `::error::release binary is alive but no mapped window titled
 analyze` → `No issues found! (ran in 2.3s)`; full regression `flutter test`
 → 637/637 pass (no Dart changes). See `automation-track.md` for the run
 log.
+
+### 11.16 Bound every gate job and step with `timeout-minutes` (P1 — DONE)
+
+The workflow relied entirely on GitHub's default **360-minute** job timeout:
+a hung step — a stalled `flutter pub get`, a slow/hung 103 MiB engine
+download, an apt mirror hang, a deadlocked `flutter test`, a smoke app that
+never exits — could stall the gate for up to 6 hours and overlap the next
+scheduled `windows-nightly` run. No `timeout-minutes` existed anywhere
+(`grep` returned zero before this run). Every job and step is now bounded:
+
+- **Job-level backstops** — `ubuntu-gate`: `timeout-minutes: 90`
+  (~4x the observed ~15-20 min green wall time including the first-run
+  Stockfish download); `windows-nightly`: `timeout-minutes: 180`
+  (the §9.1 integration test + §9.2 UIA smoke are interactive and wider).
+- **Step-level bounds (all 24 steps across both jobs)** — checkout 5,
+  Setup Flutter 15, pub-cache restore 5, pub get 5, analyze 10, engine
+  cache restore 5, engine download 15, `flutter test` 30, apt install 15,
+  `flutter build linux --release` 30, Linux smoke 15 (the §11.14/§11.15
+  internal loops are already bounded — this is a belt-and-braces backstop),
+  Linux integration 20, coverage 30, coverage upload 5, `flutter build
+  windows --release` 60, Windows unit/widget tests 30, §9.1 integration 30,
+  §9.2 UIA smoke 20, smoke artifacts upload 5.
+- The coverage step keeps `continue-on-error: true` — a timed-out coverage
+  step still cannot redden the gate.
+
+Evidence: workflow re-parses clean via PyYAML **with a strict
+duplicate-key loader** (ubuntu-gate 14 steps, windows-nightly 10 — step
+counts unchanged, only `timeout-minutes:` keys added); all 26
+`timeout-minutes` keys present (24 steps + 2 jobs) and exactly one per
+step/job; every bash run-block passes `bash -n` (the sole "failure" is the
+Windows-only §9.1 PowerShell block — Windows-only by design, per §11.12);
+`flutter analyze` → `No issues found! (ran in 2.4s)`; full regression
+`flutter test` → 637/637 pass (01:48, All tests passed! — no Dart changes).
+See `automation-track.md` for the run log.
 
 ---
 

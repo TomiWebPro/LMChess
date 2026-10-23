@@ -1,7 +1,17 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-23 (UTC) — §11.15 closes the last false-pass hole in
+Last updated: 2026-10-23 (UTC) — §11.16 bounds every ubuntu-gate and
+windows-nightly job and step with `timeout-minutes` (the workflow previously
+relied on GitHub's default 360-minute job timeout, so a hung step could stall
+the gate for up to 6 hours and overlap the next scheduled run): job-level
+backstops (ubuntu-gate 90, windows-nightly 180) plus per-step bounds on all
+24 steps (checkout 5, Setup Flutter 15, cache restores 5, pub get 5, analyze
+10, engine download 15, flutter test 30, apt 15, build linux 30, smoke 15,
+linux integration 20, coverage 30, uploads 5, build windows 60, windows
+integration 30, UIA smoke 20). The §11.14/§11.15 internal loops are untouched
+(the step timeouts are belt-and-braces backstops) and the coverage step keeps
+`continue-on-error: true`. §11.15 closes the last false-pass hole in
 the §11.6 Linux-release smoke: it previously proved process aliveness only
 (`kill -0` after the 15 s window), while `linux/runner/my_application.cc`
 shows the window only once the FIRST Flutter frame renders (`first_frame_cb`)
@@ -1438,3 +1448,62 @@ suites referenced above now exist. Native Windows execution is tracked in
   run; the `dart format` gate still needs an explicit owner decision
   (102/127-file churn) and the coverage-artifact comparison needs ≥2 CI
   runs.
+- 2026-10-23Z — CI P1 §11.16 (bound every gate job and step with
+  `timeout-minutes`). The §11.15-run audit candidate was confirmed and
+  promoted as §11.16: `grep timeout-minutes .github/workflows/ci.yaml`
+  returned **zero** matches before this run, so both jobs relied on GitHub's
+  default 360-minute job timeout — a hung step (pub get, the 103 MiB engine
+  download, apt, a deadlocked `flutter test`, a never-exiting smoke app)
+  could stall the gate for up to 6 h and overlap the next scheduled
+  `windows-nightly` run. Files changed:
+  `.github/workflows/ci.yaml` — (1) job-level backstops: `ubuntu-gate`
+  `timeout-minutes: 90` (~4x the observed ~15-20 min green wall time incl.
+  the first-run Stockfish download) and `windows-nightly`
+  `timeout-minutes: 180` (the §9.1/§9.2 steps are interactive/wider), each
+  with a §11.16 comment; (2) step-level bounds on ALL 24 steps across both
+  jobs — checkout 5, Setup Flutter 15, pub-cache restore 5, pub get 5,
+  analyze 10 (x2), engine cache restore 5, engine download 15, `flutter
+  test` 30 (ubuntu-gate Test + windows Unit & widget tests), apt install 15,
+  `flutter build linux --release` 30, Linux smoke step 15 (the §11.14
+  readiness + §11.15 window loops are already internally bounded — this is a
+  belt-and-braces backstop), Linux integration 20, coverage 30 (keeps
+  `continue-on-error: true`, so a timeout still cannot redden the gate),
+  coverage upload 5, `flutter build windows --release` 60, §9.1 integration
+  30, §9.2 UIA smoke 20, smoke upload 5. The §9.1 and §9.2 step comments now
+  explicitly note that their internal timeouts (FLUTTER_TEST_DEVICE_TIMEOUT /
+  the script's -Timeout 120s) do NOT bound the whole step — the new step
+  timeout does. Step counts unchanged (ubuntu-gate 14, windows-nightly 10)
+  — only `timeout-minutes:` keys + comments added.
+  Docs: `docs/FUTURE_WORK.md` — §11.16 added + closed as DONE in the same
+  run (open list unchanged: §11.16 not an open item), header bumped;
+  `automation-track.md` — header line + this Run Log entry (no Roadmap row
+  exists for §11.16; per protocol the Run Log is the record).
+  No Dart/test files changed.
+  Evidence: workflow re-parses clean via PyYAML **with a strict
+  duplicate-key loader** (`jobs: ubuntu-gate + windows-nightly`; all 26
+  `timeout-minutes` keys present — 24 steps + 2 jobs — exactly one per
+  step/job, zero duplicate keys anywhere in the file); all 13 bash run-blocks
+  pass `bash -n` (the single "failure" is the windows-nightly §9.1
+  PowerShell block, Windows-only by design — the §11.12 precedent); `flutter
+  analyze` → `No issues found! (ran in 2.4s)`; full regression `flutter
+  test` → 637/637 pass (01:48, All tests passed! — no Dart changes);
+  `git status --short` confirms only the workflow + the two track docs
+  changed.
+  Commit: TBD (appended after commit per the §11.13/§11.14 hash-record
+  pattern).
+  Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
+  host — audited again this run (`git config --get credential.helper` empty,
+  no `gh`, no SSH key, no `~/.git-credentials`, no `~/.netrc`, no token in
+  env; `git push --dry-run origin main` → `could not read Username for
+  'https://github.com'`); `git ls-remote origin main` still shows `e1749b3`,
+  so `e1749b3..HEAD` (local queue incl. this run) remains local-only.
+  Re-run the push after credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials exist;
+  (b) trigger the §11.3 Windows nightly / run §9.1–9.2 on a Windows
+  desktop/UIA session (closes §14.1–14.2); or (c) decide the §13
+  Windows-runner / safe-mode questions. Re-audited this run: FUTURE_WORK.md
+  open items remain all Windows-native (§9.1/§9.2/§11.3/§14), external
+  (§2.6), or un-scheduled decisions (§13) — with §11.16 closed, the
+  `dart format` gate (102/127-file churn, needs an explicit owner decision)
+  and the coverage-artifact comparison (needs ≥2 CI runs) are the only
+  remaining audit candidates, neither is a code/CI defect.

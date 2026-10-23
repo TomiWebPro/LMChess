@@ -14,8 +14,15 @@ jobs:
   ubuntu-gate:
     name: Ubuntu Gate (analyze + test)
     runs-on: ubuntu-latest
+    # §11.16: bound the whole gate — GitHub's default job timeout is 360 min, so
+    # a hung step would otherwise stall the gate for up to 6 h (and overlap with
+    # the next scheduled run). 90 min is ~4x the observed green-run wall time
+    # (~15-20 min incl. the first-run Stockfish download); each step below also
+    # carries its own tighter backstop.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+        timeout-minutes: 5
 
       - name: Setup Flutter
         # §11.8: pinned to the known-good stable Flutter version (matches the
@@ -24,12 +31,14 @@ jobs:
         # A floating "3.x" resolved a different SDK per run, drifting analyze
         # results, test behavior, and default flag semantics.
         uses: subosito/flutter-action@v2
+        timeout-minutes: 15
         with:
           flutter-version: "3.47.6"
           channel: stable
 
       - name: Restore pub cache
         uses: actions/cache@v4
+        timeout-minutes: 5
         with:
           path: ~/.pub-cache
           key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
@@ -37,9 +46,11 @@ jobs:
             ${{ runner.os }}-pub-
 
       - name: Install dependencies
+        timeout-minutes: 5
         run: flutter pub get
 
       - name: Analyze
+        timeout-minutes: 10
         run: flutter analyze
 
       - name: Restore Stockfish engine cache (§11.7)
@@ -51,6 +62,7 @@ jobs:
         # self-heal: download_stockfish.dart re-verifies size + SHA-256 +
         # `file` type + UCI handshake and re-fetches on any mismatch.
         uses: actions/cache@v4
+        timeout-minutes: 5
         with:
           path: assets/engines/linux-x86-64
           key: ${{ runner.os }}-stockfish-linux-x86-64
@@ -60,9 +72,11 @@ jobs:
         # Strict host-platform verification ends with a UCI handshake; the
         # tool exits 1 on failure so a broken engine fetch cannot silently
         # skip the E2E test.
+        timeout-minutes: 15
         run: dart run tool/download_stockfish.dart linux-x86-64
 
       - name: Test
+        timeout-minutes: 30
         run: flutter test
 
       - name: Install Linux desktop build deps
@@ -71,6 +85,7 @@ jobs:
         # clang/cmake/ninja/pkg-config but not the GTK/Secret/jsoncpp dev
         # headers (docs/RUNBOOK.md "Linux desktop"); xvfb + openbox are the
         # headless start recipe from the same page.
+        timeout-minutes: 15
         run: |
           set -euo pipefail
           sudo apt-get update
@@ -84,6 +99,7 @@ jobs:
           # its X window (not just stays alive).
 
       - name: Build Linux release
+        timeout-minutes: 30
         run: flutter build linux --release
 
       - name: Smoke start Linux release (Xvfb)
@@ -92,6 +108,9 @@ jobs:
         # actually maps its window on the display (§11.15), then terminate it.
         # Engine assets are gitignored and first-run Stockfish extraction is
         # lazy (lib/main.dart), so startup must not require an engine download.
+        # The internal §11.15 window loop is already bounded (15s + 75×1s), so
+        # this is a belt-and-braces backstop against an unbounded hang.
+        timeout-minutes: 15
         run: |
           set -euo pipefail
           export DISPLAY=:77
@@ -191,6 +210,7 @@ jobs:
         # sheet/hidden-tab finders, unenabled semantics in the live binding);
         # fixed + validated headless. Gate it here so every push executes it —
         # the Windows-native run (`-d windows` on a Windows host) remains §9.1.
+        timeout-minutes: 20
         run: |
           set -euo pipefail
           export DISPLAY=:79
@@ -236,11 +256,13 @@ jobs:
         # number. This step only generates the lcov.info artifact so coverage
         # trends CAN be reported; it never gates the build.
         continue-on-error: true
+        timeout-minutes: 30
         run: flutter test test/ui --coverage
 
       - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@v4
+        timeout-minutes: 5
         with:
           name: coverage-lcov
           path: coverage/lcov.info
@@ -251,8 +273,13 @@ jobs:
     name: Windows Nightly Gate (§11.3)
     runs-on: windows-latest
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # §11.16: the UIA smoke + Windows integration test are interactive, so the
+    # job gets a wider bound than ubuntu-gate — but still far under GitHub's
+    # 360 min default, so a hung step cannot stall the nightly for 6 h.
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
+        timeout-minutes: 5
 
       - name: Setup Flutter
         # §11.8: pinned to the known-good stable Flutter version (matches the
@@ -261,12 +288,14 @@ jobs:
         # A floating "3.x" resolved a different SDK per run, drifting analyze
         # results, test behavior, and default flag semantics.
         uses: subosito/flutter-action@v2
+        timeout-minutes: 15
         with:
           flutter-version: "3.47.6"
           channel: stable
 
       - name: Restore pub cache
         uses: actions/cache@v4
+        timeout-minutes: 5
         with:
           path: ~/AppData/Local/Pub/Cache
           key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
@@ -274,18 +303,26 @@ jobs:
             ${{ runner.os }}-pub-
 
       - name: Install dependencies
+        timeout-minutes: 5
         run: flutter pub get
 
       - name: Analyze
+        timeout-minutes: 10
         run: flutter analyze
 
       - name: Build Windows release
+        timeout-minutes: 60
         run: flutter build windows --release
 
       - name: Unit & widget tests
+        timeout-minutes: 30
         run: flutter test
 
       - name: Integration test (§9.1)
+        # FLUTTER_TEST_DEVICE_TIMEOUT covers the device startup, not the whole
+        # test — an otherwise-hung `flutter test -d windows` could stall the
+        # nightly; bound it here (§11.16).
+        timeout-minutes: 30
         run: |
           $ErrorActionPreference = "Continue"
           $result = flutter test integration_test/accessibility_windows_test.dart -d windows 2>&1
@@ -301,6 +338,10 @@ jobs:
           FLUTTER_TEST_DEVICE_TIMEOUT: 180000
 
       - name: Run UIA smoke (§9.2)
+        # The smoke script's own -Timeout 120s bounds the random-click phase,
+        # but the launch / UIA attachment / Event Viewer steps could hang;
+        # bound the whole step (§11.16).
+        timeout-minutes: 20
         run: |
           $exePath = "build\windows\x64\runner\Release\llm_chess_arena.exe"
           $outputFile = "uia_smoke_output.txt"
@@ -349,6 +390,7 @@ jobs:
       - name: Upload smoke artifacts
         if: always()
         uses: actions/upload-artifact@v4
+        timeout-minutes: 5
         with:
           name: uia-smoke-artifacts
           path: |
