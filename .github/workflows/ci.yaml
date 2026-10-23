@@ -310,6 +310,34 @@ jobs:
         timeout-minutes: 10
         run: flutter analyze
 
+      - name: Restore Stockfish engine cache (§11.17)
+        # Same pattern as the ubuntu-gate (§11.7): the real-engine E2E
+        # (test/e2e_smoke_test.dart) skips whenever its HOST binary is
+        # absent — but it used to hardcode the Linux path and the Windows
+        # job never downloaded any engine, so the Stockfish section silently
+        # skipped on every windows-nightly run. The 103 MiB binary is
+        # gitignored; cache it so only the first runner downloads. Stale
+        # caches self-heal: download_stockfish.dart re-verifies size +
+        # SHA-256 + `file` type + UCI handshake and re-fetches on any
+        # mismatch, so the fixed key can never smuggle a corrupt binary
+        # past the gate.
+        uses: actions/cache@v4
+        timeout-minutes: 5
+        with:
+          path: assets/engines/windows-x86-64
+          key: ${{ runner.os }}-stockfish-windows-x86-64
+
+      - name: Download Stockfish engine (real-engine E2E, §11.17)
+        # The Windows release asset is a .zip; the download tool extracts it
+        # with `unzip`, which Git for Windows ships and prepends to PATH on
+        # the windows-latest runner image. The strict host UCI handshake
+        # runs on the first download and the tool exits 1 on any failure —
+        # a broken engine fetch cannot silently skip the E2E test (§11.7
+        # pattern; the test now resolves the host binary via
+        # EmbeddedEngine.bundledAssetPath, so it finds this exact path).
+        timeout-minutes: 15
+        run: dart run tool/download_stockfish.dart windows-x86-64
+
       - name: Build Windows release
         timeout-minutes: 60
         run: flutter build windows --release

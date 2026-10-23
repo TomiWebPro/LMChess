@@ -10,8 +10,9 @@
 //      pipeline; determinism is checked for a fixed seed.
 //   3. Stats: persisted events compute per-agent metrics with sane
 //      denominators and idempotent appends.
-//   4. Stockfish: the embedded binary (explicit path here) handshakes and
-//      evaluates a real position with `source == 'stockfish-uci'`.
+//   4. Stockfish: the embedded binary (resolved via the host's
+//      [EmbeddedEngine.bundledAssetPath]) handshakes and evaluates a real
+//      position with `source == 'stockfish-uci'`.
 //   5. WintrReviewService: a short real game produces a report with
 //      per-move quality and key moments.
 //
@@ -40,6 +41,7 @@ import 'package:llm_chess_arena/src/llm/mock_provider.dart';
 import 'package:llm_chess_arena/src/llm/provider.dart';
 import 'package:llm_chess_arena/src/llm/tool_schema.dart';
 import 'package:llm_chess_arena/src/llm/validation.dart';
+import 'package:llm_chess_arena/src/review/embedded_engine.dart';
 import 'package:llm_chess_arena/src/review/engine_adapter.dart';
 import 'package:llm_chess_arena/src/review/stockfish_evaluator.dart';
 import 'package:llm_chess_arena/src/review/wintr_review.dart';
@@ -49,6 +51,25 @@ import 'package:llm_chess_arena/src/variant/chaotic_engine.dart';
 import 'package:llm_chess_arena/src/variant/interpretation.dart';
 import 'package:llm_chess_arena/src/variant/selection.dart';
 import 'package:llm_chess_arena/src/variant/variant_board.dart';
+
+/// Bundled engine asset path for the current host, or null when the host
+/// has no bundled binary (web, iOS, unshipped arch).
+///
+/// Mirrors the runtime resolver ([EmbeddedEngine.bundledAssetPath]) so the
+/// smoke always probes the SAME path the app would extract — previously it
+/// hardcoded `assets/engines/linux-x86-64/stockfish`, silently skipping the
+/// real-engine E2E on every non-Linux host (notably windows-nightly).
+String? _hostBinaryPath() => EmbeddedEngine.bundledAssetPath();
+
+/// Engine asset directory for the current host (for the skip message), or
+/// null via the same resolver the runtime uses (web/iOS/unknown).
+String? _hostPlatformDir() =>
+    EmbeddedEngine.assetDirForOs(os: Platform.operatingSystem);
+
+/// Resolved once at load time: the bundled engine path for the current host,
+/// or null when this host has none. Shared by the [skip:] predicate and the
+/// test body so the two can never disagree on whether the engine exists.
+final String? hostEngineBinary = _hostBinaryPath();
 
 /// Asserts [condition] via the test harness with [what] as the reason.
 void check(bool condition, String what) {
@@ -98,15 +119,22 @@ void main() {
   });
 
   test('embedded stockfish evaluates and stays honest', () async {
-    const binary = 'assets/engines/linux-x86-64/stockfish';
+    final binary = hostEngineBinary;
+    if (binary == null) {
+      // No bundled binary for this host OS/arch (web, iOS, unshipped
+      // combo); the runtime resolver would report the same UnsupportedError.
+      markTestSkipped(
+          'no bundled stockfish for this host (${_hostPlatformDir() ?? 'unknown'})');
+      return;
+    }
     if (!File(binary).existsSync()) {
       // Binary is gitignored; fetch with
-      // `dart run tool/download_stockfish.dart linux-x86-64`.
+      // `dart run tool/download_stockfish.dart <platform>`.
       markTestSkipped('stockfish binary not present at $binary');
       return;
     }
     await _stockfish(binary);
-  }, skip: !File('assets/engines/linux-x86-64/stockfish').existsSync());
+  }, skip: hostEngineBinary == null || !File(hostEngineBinary!).existsSync());
 
   test('wintr review report', () async {
     await _review();
@@ -356,7 +384,7 @@ int whiteFallbackCount(List<GameEventRecord> events) => events
         e.payloadJson['fallback'] == true)
     .length;
 
-/// Embedded Stockfish evaluates a real position (explicit binary path).
+/// Embedded Stockfish evaluates a real position (host binary path).
 Future<void> _stockfish(String binary) async {
   final evaluator = StockfishEvaluator(
     executablePath: binary,

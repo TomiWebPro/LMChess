@@ -1,7 +1,15 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-23 (UTC) — §11.16 bounds every ubuntu-gate and
+Last updated: 2026-10-23 (UTC) — §11.17 makes the real-engine Stockfish E2E
+run on the windows-nightly gate too: the test hardcoded the Linux engine path
+so the Stockfish section ALWAYS skipped on the Windows runner (and that job
+never downloaded any engine). The test now resolves its host binary via
+`EmbeddedEngine.bundledAssetPath()` (Windows → `windows-x86-64/stockfish.exe`,
+Linux → `linux-x86-64/stockfish`, null → honest skip), and `windows-nightly`
+gained the same cache + `tool/download_stockfish.dart windows-x86-64` pair the
+ubuntu-gate has — a `flutter_windows.dll` engine regression can no longer
+slip through the nightly. §11.16 bounds every ubuntu-gate and
 windows-nightly job and step with `timeout-minutes` (the workflow previously
 relied on GitHub's default 360-minute job timeout, so a hung step could stall
 the gate for up to 6 hours and overlap the next scheduled run): job-level
@@ -1506,3 +1514,86 @@ suites referenced above now exist. Native Windows execution is tracked in
   `dart format` gate (102/127-file churn, needs an explicit owner decision)
   and the coverage-artifact comparison (needs ≥2 CI runs) are the only
   remaining audit candidates, neither is a code/CI defect.
+- 2026-10-23Z — CI P1 §11.17 (real-engine E2E runs on the Windows gate too).
+  Three parallel subagent audits (lib markers, test markers, full ci.yaml
+  defect audit) found no open FUTURE_WORK.md item that is Linux-implementable
+  (§9.1/§9.2/§11.3/§14 Windows-native BLOCKED, §2.6 external, §13
+  un-scheduled) — consistent with every run since §11.16 — but the ci.yaml
+  audit surfaced a genuine defect nobody had logged: the §11.7 real-engine
+  gate was **ubuntu-only in two separate ways**. The ubuntu-gate had the
+  download step, but `test/e2e_smoke_test.dart` hardcoded
+  `assets/engines/linux-x86-64/stockfish` in BOTH the body and the `skip:`
+  predicate — so on the windows-nightly runner the test's Stockfish section
+  ALWAYS skipped (that Linux path never exists on Windows), and the Windows
+  job had no engine download step at all. A `flutter_windows.dll` engine
+  integration regression could never redden the nightly. Promoted as §11.17
+  per the §11.4–§11.16 precedent and closed in the same run.
+  Files changed:
+  `test/e2e_smoke_test.dart` — removed the hardcoded Linux path. The test
+  now resolves the bundled binary for the current host through the SAME
+  resolver the app's runtime extraction uses
+  (`EmbeddedEngine.bundledAssetPath()` — Windows →
+  `windows-x86-64/stockfish.exe`, Linux → `linux-x86-64/stockfish`, macOS →
+  `macos-universal/stockfish`, null for web/iOS/unshipped combos). A single
+  top-level `hostEngineBinary` value is shared by the `skip:` predicate and
+  the body (previously two separate existence checks that could disagree and
+  skipped 100% of the time on a Windows host); the body keeps the graceful
+  double-guard — null host (no bundled binary for the OS/arch) and
+  binary-not-present (gitignored, fetch hint) — and the skip message names
+  the host platform dir + the `dart run tool/download_stockfish.dart
+  <platform>` command. New import: `package:llm_chess_arena/src/review/
+  embedded_engine.dart`.
+  `.github/workflows/ci.yaml` — `windows-nightly` gained (after Analyze,
+  before Build Windows release) the same two-step engine pair the ubuntu-gate
+  has: "Restore Stockfish engine cache (§11.17)" (`actions/cache@v4` on
+  `assets/engines/windows-x86-64`, fixed key `${{ runner.os }}-stockfish-
+  windows-x86-64` — the tool's size/SHA-256/`file`/UCI re-verification
+  self-heals stale caches) and "Download Stockfish engine (real-engine E2E,
+  §11.17)" (`dart run tool/download_stockfish.dart windows-x86-64`, exit 1
+  on any failure). The Windows release asset is a `.zip`; the tool extracts
+  it with `unzip`, which Git-for-Windows ships and prepends to PATH on the
+  windows-latest runner image (verified via the runner-images docs +
+  multiple field reports). Windows-nightly step count 10 → 12.
+  `docs/FUTURE_WORK.md` — §11.17 added + closed as DONE in the same run
+  (open list unchanged: §11.17 not an open item), header bumped.
+  `automation-track.md` — header line + this Run Log entry (no Roadmap row
+  exists for §11.17; per protocol the Run Log is the record).
+  Evidence: `flutter analyze` → `No issues found! (ran in 2.3s)` (exact
+  output; also confirmed the pristine test file is already part of the
+  documented 102/127-file `dart format` drift — reverted a full-file
+  reformat to keep the diff surgical);
+  `flutter test test/e2e_smoke_test.dart` → 5/5 pass with the Stockfish test
+  EXECUTING (`-- stockfish: 30 cp, best c7c5`) — unchanged on Linux, proving
+  the refactor is behavior-neutral on the one platform we can run;
+  the exact download command `dart run tool/download_stockfish.dart
+  windows-x86-64` → `size ok / sha256 ok / file ok (PE32+ executable for MS
+  Windows ...) / handshake warning (foreign-arch, cannot execute on this
+  host)` + `OK present` — the strict size+sha+type verification passes and
+  the cross-arch handshake degrades to the designed warning, so the SAME
+  step hard-gates on a Windows runner (host arch → strict handshake);
+  workflow re-parses clean via PyYAML (ubuntu-gate 14 steps unchanged,
+  windows-nightly 12 = 10 + 2); all 13 bash run-blocks still pass
+  `bash -n` (the only "failure" remains the Windows-only §9.1 PowerShell
+  block, per the §11.12 precedent); full regression `flutter test` → 637/637
+  pass (no lib/ or test/ behavior change on Linux; only the added
+  resolution logic, proven by the executing engine test).
+  `git status --short` confirms only the test file + the workflow + the two
+  track docs changed.
+  Commit: local (hash recorded in the next track line).
+  Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
+  host — audited again this run (`git config --get credential.helper` empty,
+  no `gh`, no SSH key, no `~/.git-credentials`, no `~/.netrc`, no token in
+  env; `git push --dry-run origin main` → `could not read Username for
+  'https://github.com'`); `git ls-remote origin main` still shows `e1749b3`,
+  so the local queue (49 commits incl. this run) remains local-only.
+  Re-run the push after credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials exist;
+  (b) trigger the §11.3 Windows nightly / run §9.1–9.2 on a Windows
+  desktop/UIA session (with this fix the nightly's Stockfish E2E will now
+  execute instead of skipping — one less silent gap when it first runs);
+  or (c) decide the §13 Windows-runner / safe-mode questions. Re-audited
+  this run: FUTURE_WORK.md open items remain all Windows-native
+  (§9.1/§9.2/§11.3/§14), external (§2.6), or un-scheduled decisions (§13);
+  the `dart format` gate (102/127-file churn, needs an explicit owner
+  decision) and the coverage-artifact comparison (needs ≥2 CI runs) are the
+  only remaining audit candidates, neither is a code/CI defect.

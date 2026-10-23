@@ -1,7 +1,17 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-23 (UTC) — §11.16 bounds every ubuntu-gate and
+Last updated: 2026-10-23 (UTC) — §11.17 makes the real-engine Stockfish E2E
+actually run on the windows-nightly gate: `test/e2e_smoke_test.dart` hardcoded
+`assets/engines/linux-x86-64/stockfish`, so on the Windows runner the test
+always skipped (and that job had no engine download step at all) — the §11.7
+engine gate existed only for the ubuntu job. The test now resolves the host
+binary via `EmbeddedEngine.bundledAssetPath()` (Windows → `windows-x86-64/
+stockfish.exe`, Linux → `linux-x86-64/stockfish`, null → honest skip), sharing
+one top-level value between the `skip:` predicate and the test body so the two
+can never disagree; `windows-nightly` gained the same
+cache-restore + `dart run tool/download_stockfish.dart windows-x86-64`
+download pair the ubuntu-gate has. §11.16 bounds every ubuntu-gate and
 windows-nightly job and step with `timeout-minutes`: the workflow previously
 relied on GitHub's default 360-minute job timeout, so a hung step (pub get,
 engine download, apt, build, smoke, integration test) could stall the gate for
@@ -571,6 +581,52 @@ step/job; every bash run-block passes `bash -n` (the sole "failure" is the
 Windows-only §9.1 PowerShell block — Windows-only by design, per §11.12);
 `flutter analyze` → `No issues found! (ran in 2.4s)`; full regression
 `flutter test` → 637/637 pass (01:48, All tests passed! — no Dart changes).
+See `automation-track.md` for the run log.
+
+### 11.17 Real-engine E2E runs on the Windows gate too (P1 — DONE)
+
+The §11.7 engine gate was ubuntu-only in two separate ways: the Job had the
+download step, but the test itself hardcoded
+`assets/engines/linux-x86-64/stockfish`. On a Windows runner — the
+`windows-nightly` gate — that path never exists, so
+`test/e2e_smoke_test.dart`'s Stockfish section **always skipped**, and the
+Windows job had no engine download step at all. A `flutter_windows.dll`
+engine integration regression could not redden that job. Both halves are
+fixed:
+
+- **`test/e2e_smoke_test.dart`** no longer hardcodes a platform path. The
+  test resolves the bundled binary for the current host via
+  `EmbeddedEngine.bundledAssetPath()` (Linux → `linux-x86-64/stockfish`,
+  Windows → `windows-x86-64/stockfish.exe`, macOS → `macos-universal/
+  stockfish`, null for web/iOS/unshipped combos) — the *same* resolver the
+  app's runtime extraction uses, so the smoke always probes the path the
+  app would actually extract. A single top-level
+  `hostEngineBinary` value is shared by the `skip:` predicate and the test
+  body (they previously evaluated two separate existence checks and could
+  disagree); the skip message names the host and the
+  `dart run tool/download_stockfish.dart <platform>` fetch command.
+- **`.github/workflows/ci.yaml`** — `windows-nightly` gained the same two
+  steps the ubuntu-gate has: "Restore Stockfish engine cache (§11.17)"
+  (`actions/cache@v4` on `assets/engines/windows-x86-64`, fixed key — the
+  download tool's size/SHA-256/`file`/UCI re-verification self-heals stale
+  caches) and "Download Stockfish engine (real-engine E2E, §11.17)"
+  (`dart run tool/download_stockfish.dart windows-x86-64`, exit 1 on any
+  failure so a broken fetch cannot silently skip the E2E). The Windows
+  release asset is a `.zip`; the tool extracts it with `unzip`, which Git
+  for Windows ships and prepends to `PATH` on the `windows-latest` image.
+  The strict host UCI handshake runs on the first download; only the first
+  runner pays the ~103 MiB transfer, and the failure of the download step
+  fails the job — a red engine path can no longer slip through the nightly.
+
+Evidence: `flutter analyze` → `No issues found!`; `flutter test
+test/e2e_smoke_test.dart` → 5/5 pass locally with the engine test
+EXECUTING (`-- stockfish: 30 cp, best c7c5`) rather than skipping
+(unchanged behavior on Linux); workflow re-parses clean via PyYAML
+(windows-nightly 12 steps, ubuntu-gate 14 — only the two engine steps
+added); the download tool was verified against the pinned
+`windows-x86-64` binary (`size ok`/`sha256 ok`/`file ok (PE32+...)`, the
+foreign-arch handshake degrades to a warning exactly as designed); full
+regression `flutter test` → 637/637 pass (no behavior change on Linux).
 See `automation-track.md` for the run log.
 
 ---
