@@ -740,13 +740,13 @@ suites referenced above now exist. Native Windows execution is tracked in
   full regression `flutter test` → 631/631 pass (01:38, All tests passed! —
   unchanged, no Dart changes); upstream facts verified via GitHub API
   (`api.github.com/repos/flutter/flutter/pulls/190903` → `state:"open"`,
-  `merged:false`) + issue page fetch. Commit: `f7ec38d`.
+  `merged:false`) + issue page fetch. Commit: `983db9f`.
   Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
   host — `git push origin main` → `fatal: could not read Username for
   'https://github.com': No such device or address` (no credential helper,
   `gh`, SSH key, `~/.git-credentials`, `~/.netrc`, nor token in env);
   `git ls-remote origin main` still shows `e1749b3`, so the un-pushed local
-  queue (now 18 commits through this run, incl. `f7ec38d`) remains
+  queue (now 18 commits through this run, incl. `983db9f`) remains
   local-only. Re-run the push after credentials are provisioned.
   Next: (a) re-push the queued local commits once GitHub credentials exist
   (e.g. a PAT with `workflow` scope added to the remote); (b) trigger the
