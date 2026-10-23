@@ -1,7 +1,19 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-23 (UTC) — §11.14 adds an Xvfb startup
+Last updated: 2026-10-23 (UTC) — §11.15 closes the last false-pass hole in
+the §11.6 Linux-release smoke: it previously proved process aliveness only
+(`kill -0` after the 15 s window), while `linux/runner/my_application.cc`
+shows the window only once the FIRST Flutter frame renders (`first_frame_cb`)
+— under software GL (llvmpipe) that frame took ~26-52 s on the dev host, so
+every prior smoke green was also a "no window yet" green. The smoke now
+waits up to 75 s for an anchored-titled (`^llm_chess_arena$`) window with
+`map_state == IsViewable` and sane geometry via `xwininfo` (xdotool's
+`--onlyvisible` deliberately not used — its `_NET_CLIENT_LIST` visibility
+lagged the real mapping by tens of seconds), dumps `smoke.log` + exits 1 on
+timeout, and prints the mapped geometry on success (`smoke ok: ... window
+mapped (title llm_chess_arena, 1278x720) ...`). `xdotool` added to the
+ubuntu-gate apt install. §11.14 adds an Xvfb startup
 readiness gate to both ubuntu-gate Xvfb steps (the §11.6 Linux-release smoke
 on :77 and the §11.11 headless integration suite on :79): each step now
 probes the display with `xdpyinfo` BEFORE launching (`::error::... already in
@@ -1356,3 +1368,74 @@ suites referenced above now exist. Native Windows execution is tracked in
   `timeout-minutes` on ubuntu-gate steps/jobs) — as candidate §11.15/§11.16
   items; the `dart format` gate still needs an explicit owner decision
   (102/127-file churn) and the coverage-artifact comparison needs ≥2 CI runs.
+- 2026-10-23Z — CI P1 §11.15 (Linux-release smoke requires the window to
+  actually map). The §11.14 run's audit candidate #4 — the §11.6 smoke
+  proves only process aliveness (`kill -0` after 15 s), never that the app
+  actually mapped its window — was promoted as §11.15 and closed this run.
+  The failure class is real and was proven empirically here: a probe of the
+  release binary under the smoke recipe showed `linux/runner/my_application.cc`
+  only SHOWS the window once the FIRST Flutter frame renders
+  (`first_frame_cb`), and under the smoke's software GL (llvmpipe) that
+  frame took ~26-52 s on this host — well past the 15 s window. Every prior
+  §11.6 smoke green was therefore also a "no window yet" green; an app that
+  stays alive without ever reaching first frame (display connection failure,
+  GDK_BACKEND fallback, renderer stall) would have passed the old gate.
+  Files changed:
+  `.github/workflows/ci.yaml` — (1) "Install Linux desktop build deps" now
+  also installs `xdotool` (the window-search probe); (2) the §11.6 "Smoke
+  start Linux release (Xvfb)" step gained the §11.15 gate after the 15 s
+  aliveness check: a bounded loop (up to 75×1 s — first frame under
+  llvmpipe is slow) searches for the app's window with an ANCHORED title
+  regex `xdotool search --name "^llm_chess_arena$"` (`xdotool --name` is an
+  unanchored regex, and the pre-first-frame 10x10 helper window is named
+  `com.llmarena.llm_chess_arena` so it never matches), then requires
+  `map_state == IsViewable` with width/height ≥ 100 via `xwininfo`. The
+  window is only "mapped" once Flutter's first frame rendered — exactly the
+  §11.15 signal. `xdotool --onlyvisible` is deliberately NOT used: it
+  resolves visibility through the WM's `_NET_CLIENT_LIST`, which was
+  observed lagging the actual mapping by tens of seconds on this setup,
+  while `xwininfo` reads the server's real map state. On timeout the step
+  dumps `smoke.log` and exits 1 with `::error::release binary is alive but
+  no mapped window titled 'llm_chess_arena' ...`; success prints the mapped
+  geometry: `smoke ok: release binary alive after 15s and window mapped
+  (title llm_chess_arena, 1278x720) under Xvfb + openbox`. Step counts
+  unchanged (ubuntu-gate 14, windows-nightly 10).
+  Docs: `docs/FUTURE_WORK.md` — §11.15 added + closed as DONE in the same
+  run (open list unchanged: §11.15 not an open item), header bumped;
+  `automation-track.md` — header line + this Run Log entry (no Roadmap row
+  exists for §11.15; per protocol the Run Log is the record).
+  No Dart/test files changed.
+  Evidence: `flutter analyze` → `No issues found! (ran in 2.3s)` (exact
+  output); full regression `flutter test` → 637/637 pass (01:48, All tests
+  passed! — no Dart changes); workflow re-parses clean via PyYAML
+  (ubuntu-gate 14 steps, windows-nightly 10 — step counts unchanged, only
+  `with:`/`run:` content changed); both changed run blocks pass `bash -n`.
+  The exact §11.15 block is proven empirically on this host across both
+  paths: (a) POSITIVE on fresh :97 with the freshly rebuilt release binary —
+  `smoke ok: release binary alive after 15s and window mapped (title
+  llm_chess_arena, 1278x720) under Xvfb + openbox`, exit 0 in ~53 s (15 s
+  aliveness + ~37 s window wait; the window's map state transitioned
+  IsUnMapped→IsViewable at ~51 s), with NO :97 Xvfb and no app process left
+  behind; (b) NEGATIVE (`NO_APP`, no window ever appears) — the guard fires
+  `::error::release binary is alive but no mapped window titled
+  'llm_chess_arena' on :98 ...` and exits 1 with no orphan :98 Xvfb left.
+  `git status --short` confirms only the workflow + the two track docs
+  changed (release bundle build/ stays untracked).
+  Commit: TBD (appended after commit per the §11.13/§11.14 hash-record
+  pattern).
+  Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
+  host — `git push --dry-run origin main` → `fatal: could not read Username
+  for 'https://github.com': No such device or address` (`git config --get
+  credential.helper` empty, no `gh`, no SSH key, no `~/.git-credentials`,
+  no `~/.netrc`, no token in env); `git ls-remote origin main` still shows
+  `e1749b3`, so `e1749b3..HEAD` (45 local commits incl. this run) remains
+  local-only. Re-run the push after credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials exist
+  (45 queued at e1749b3); (b) trigger the §11.3 Windows nightly / run
+  §9.1–9.2 on a Windows desktop/UIA session (closes §14.1–14.2); or (c)
+  decide the §13 Windows-runner / safe-mode questions. The remaining
+  audit-candidate §11.16 (no `timeout-minutes` on ubuntu-gate steps/jobs —
+  a hung step could stall the gate indefinitely) is still open for a future
+  run; the `dart format` gate still needs an explicit owner decision
+  (102/127-file churn) and the coverage-artifact comparison needs ≥2 CI
+  runs.

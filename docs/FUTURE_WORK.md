@@ -1,7 +1,19 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-23 (UTC) — §11.14 adds an Xvfb startup readiness gate
+Last updated: 2026-10-23 (UTC) — §11.15 closes the last false-pass hole in
+the §11.6 Linux-release smoke: it previously proved **process aliveness**
+only (`kill -0` after the 15 s window), but `linux/runner/my_application.cc`
+shows the window only once the FIRST Flutter frame renders
+(`first_frame_cb`) — and under software GL (llvmpipe) that frame took
+~26-52 s on the dev host, so every prior smoke green was also a "no window
+yet" green. The smoke now waits up to 75 s for an anchored-titled
+(`^llm_chess_arena$`) window with `map_state == IsViewable` and sane
+geometry via `xwininfo` (xdotool's `--onlyvisible` is deliberately NOT
+used — its `_NET_CLIENT_LIST` visibility lagged the real mapping by tens of
+seconds), dumps `smoke.log` and exits 1 on timeout, and prints the mapped
+geometry on success (`smoke ok: ... window mapped (title llm_chess_arena,
+1278x720) ...`). `xdotool` added to the ubuntu-gate apt install. §11.14 adds an Xvfb startup readiness gate
 to both ubuntu-gate display steps (the §11.6 Linux-release smoke on :77 and
 the §11.11 headless integration suite on :79): each probes the display with
 `xdpyinfo` before launching (clean `::error::` refusal when a stale leaked
@@ -472,6 +484,47 @@ fresh :88 with the REAL `flutter test
 integration_test/accessibility_windows_test.dart -d linux` → 12/12 pass,
 exit 0, no orphan; plus synthetic proofs of the startup-death and 5 s
 timeout guard branches (both exit 1). See `automation-track.md` for the run
+log.
+
+### 11.15 Linux-release smoke requires the window to actually map (P1 — DONE)
+
+The §11.6 smoke proved **process aliveness only** (`kill -0` after the
+15 s window) — a binary that stays alive while its window never maps
+(display connection failure, GDK_BACKEND fallback, first frame never
+rendered) passed the gate. That failure class is real for this app:
+`linux/runner/my_application.cc` shows the window only once the FIRST
+Flutter frame renders (`first_frame_cb`), and under the smoke's software GL
+(llvmpipe) that frame took ~26-52 s on the dev host — well past the 15 s
+window, so every prior smoke green was also a "no window yet" green. The
+smoke step now additionally requires the app's window to be mapped,
+sane-sized, and correctly titled:
+
+- `xdotool` added to the ubuntu-gate apt install list.
+- After the 15 s aliveness check, a bounded loop (up to 75×1 s — the first
+  frame under llvmpipe is slow) searches for the window with an **anchored**
+  title regex (`xdotool search --name "^llm_chess_arena$"`; `xdotool
+  --name` is an unanchored regex, and the pre-first-frame 10x10 helper
+  window is named `com.llmarena.llm_chess_arena` so it never matches), then
+  requires `map_state == IsViewable` with width/height ≥ 100 via
+  `xwininfo`. `xdotool --onlyvisible` is deliberately NOT used: it resolves
+  visibility through the WM's `_NET_CLIENT_LIST`, which was observed
+  lagging the actual mapping by tens of seconds, while `xwininfo` reads the
+  server's real map state. On timeout the step dumps `smoke.log` and exits
+  1 with a `::error::`; success prints the mapped geometry:
+  `smoke ok: release binary alive after 15s and window mapped (title
+  llm_chess_arena, 1278x720) under Xvfb + openbox`.
+
+Evidence: workflow re-parses clean via PyYAML (ubuntu-gate 14 steps,
+windows-nightly 10 — step counts unchanged; only `with:`/`run:` content
+changed); both changed run blocks pass `bash -n`; the exact block is proven
+empirically on this host — POSITIVE path on fresh :97 (rebuild + the exact
+block): `smoke ok: ... (1278x720) ...`, exit 0 in ~53 s (15 s aliveness +
+~37 s window wait; first frame observed at ~51 s), no orphan :97 Xvfb and
+no app process left; NEGATIVE path (`NO_APP`, window never appears): the
+guard fires `::error::release binary is alive but no mapped window titled
+'llm_chess_arena' ...` and exits 1 with no orphan Xvfb left. `flutter
+analyze` → `No issues found! (ran in 2.3s)`; full regression `flutter test`
+→ 637/637 pass (no Dart changes). See `automation-track.md` for the run
 log.
 
 ---
