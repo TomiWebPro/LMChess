@@ -1,12 +1,12 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-23 (UTC) — §11.7 real-engine E2E smoke added to CI:
-`ubuntu-gate` now downloads/verifies the gitignored Stockfish binary
-(`dart run tool/download_stockfish.dart linux-x86-64`) so the repo's only
-real-engine test actually runs on every push instead of silently skipping;
-§2.6 still no upstream fix (flutter/flutter#175041 open, PR #190903
-unmerged) → local 3.47.6 stays on mitigation
+Last updated: 2026-10-23 (UTC) — §11.8 pins the CI Flutter SDK to the
+known-good 3.47.6 on both jobs (ubuntu-gate + windows-nightly), replacing
+the floating "3.x" selector so analyze/test runs no longer drift between
+SDKs and the deferred `dart format` gate is no longer blocked on unpinned
+fragility; §2.6 still no upstream fix (flutter/flutter#175041 open,
+PR #190903 unmerged) → local 3.47.6 stays on mitigation
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -197,6 +197,30 @@ executing (`-- stockfish: 30 cp, best c7c5`), not skipping; full
 `flutter test` → 635/635 pass unchanged; `flutter analyze` → `No issues
 found!`. The engine test itself was not touched — it still skips gracefully
 on machines without the binary. See `automation-track.md` for the run log.
+
+### 11.8 CI Flutter SDK pinning (P1 — DONE)
+
+Both CI jobs used a **floating** `flutter-version: "3.x"` / `channel: stable`
+selector (`subosito/flutter-action@v2`), so every run could resolve a
+different Flutter SDK: analyze results, lint defaults, test behavior, and
+effective flag semantics drifted between pushes and diverged from the local
+dev toolchain. The repo already treats a specific stable as known-good —
+Flutter 3.47.6 (Dart 3.13.5), exercised by every run-log baseline — but CI
+never pinned it. The deferred `dart format` gate (see the §11.7 run log)
+was blocked precisely on this unpinned fragility.
+
+Both jobs (`ubuntu-gate` + `windows-nightly`) now pin:
+
+- `flutter-version: "3.47.6"` / `channel: stable`, with a comment that the
+  RUNBOOK.md "Flutter upgrade gate" step 2 is the only sanctioned way to
+  bump it (re-validate §9.1/§9.2 first).
+
+Evidence: workflow re-parses clean via PyYAML (ubuntu-gate 13 steps,
+windows-nightly 10 steps — counts unchanged; only the `with:` block of each
+Setup Flutter step changed); the pin matches the local known-good — Flutter
+3.47.6 stable, Dart 3.13.5; `flutter analyze` → `No issues found!`; full
+`flutter test` → 635/635 pass (no Dart changes). See
+`automation-track.md` for the run log.
 
 ---
 

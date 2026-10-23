@@ -1,7 +1,7 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-23 (UTC) — §11.7 real-engine E2E smoke wired into the ubuntu-gate: CI now downloads/verifies the gitignored Stockfish binary so the repo's only real-engine test runs on every push (previously skipped everywhere — `flutter test` was green without ever executing the engine path); §9/§11.3/§14 remain Windows-native BLOCKED; §2.6 still no upstream fix (flutter/flutter#175041 open); local 3.47.6 stays on mitigation; §11.6 ubuntu-gate builds + smokes the Linux release binary; §11.5 dead deps removed
+Last updated: 2026-10-23 (UTC) — §11.8 pins the CI Flutter SDK to the known-good 3.47.6 on both jobs (ubuntu-gate + windows-nightly), replacing the floating "3.x" selector so analyze/test no longer drift between SDKs and the deferred dart-format gate is no longer blocked on unpinned fragility; §9/§11.3/§14 remain Windows-native BLOCKED; §2.6 still no upstream fix (flutter/flutter#175041 open, PR #190903 unmerged); local 3.47.6 stays on mitigation; §11.7 real-engine E2E smoke wired into the ubuntu-gate (CI now downloads/verifies the gitignored Stockfish binary so the repo's only real-engine test runs on every push); §11.6 ubuntu-gate builds + smokes the Linux release binary; §11.5 dead deps removed
 Related: `docs/FUTURE_WORK.md` (binding roadmap), `ARCHITECTURE.md`, `README.md`
 
 This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every run**.
@@ -865,3 +865,53 @@ suites referenced above now exist. Native Windows execution is tracked in
   §13 Windows-runner / safe-mode questions. The `dart format` gate
   (candidate A) remains a documented option if the repo ever adopts a
   pinned Flutter version.
+- 2026-10-23Z — CI/PROCESS P1 §11.8 (CI Flutter SDK pinning — the
+  prerequisite the §11.7 run identified). Subagent audit of the workflow
+  confirmed the one Linux-implementable open gap: **both** CI jobs used a
+  **floating** `flutter-version: "3.x"` / `channel: stable` selector
+  (`subosito/flutter-action@v2`), so every run could resolve a different
+  Flutter SDK — analyze results, lint defaults, test behavior, and
+  effective flag semantics drifted between pushes and diverged from the
+  local dev toolchain (known-good 3.47.6 / Dart 3.13.5). The repo was
+  asserting "Flutter 3.47.6 known-good" in every baseline while CI never
+  pinned it, and the deferred `dart format` gate (§11.7 run log) was
+  blocked precisely on this unpinned fragility — running the audit first
+  confirmed no other code/test marker exists (lib/, test/, tool/,
+  integration_test/ are free of TODO/FIXME/skip/@Skip/disabled lints; the
+  only `skip:` is the intentional §11.7 engine self-gate).
+  Files changed:
+  `.github/workflows/ci.yaml` — `ubuntu-gate` Setup Flutter (was l.20-24)
+  and `windows-nightly` Setup Flutter (was l.134-138): `flutter-version:
+  "3.x"` → `"3.47.6"` (channel stays `stable`), each with a comment that
+  RUNBOOK.md "Flutter upgrade gate" step 2 is the only sanctioned way to
+  bump it (re-validate §9.1/§9.2 first) and that the floating selector
+  drifted SDKs per run. Nothing else in the workflow touched.
+  `docs/FUTURE_WORK.md` — §11.8 added + closed as DONE in the same run
+  (open list unchanged: §11.8 not an open item), header bumped.
+  `automation-track.md` — header line + this Run Log entry.
+  No Dart/test files changed.
+  Evidence: `flutter analyze` → `No issues found! (ran in 2.2s)`; full
+  regression `flutter test` → 635/635 pass (01:44, All tests passed! — no
+  Dart changes, unchanged from the §11.7 baseline); workflow re-parses
+  clean via PyYAML — both jobs still 13 / 10 steps (step counts unchanged,
+  only the Setup Flutter `with:` blocks changed) and both resolve
+  `flutter-version: 3.47.6` on `stable`; local `flutter --version` matches
+  the pin exactly (3.47.6 stable, Dart 3.13.5); no residual bare
+  `flutter-version: "3.x"` in the file (remaining "3.x" strings are the
+  new explanatory comments); `git status --short` clean except the two
+  track docs + the workflow.
+  Commit: (see below — hash recorded after commit).
+  Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
+  host — `git push origin main` → `fatal: could not read Username for
+  'https://github.com'` (no credential helper, `gh`, SSH key,
+  `~/.git-credentials`, `~/.netrc`, nor token in env); `git ls-remote
+  origin main` still shows `e1749b3`, so the un-pushed local queue (now 21
+  commits through this run) remains local-only. Re-run the push after
+  credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials
+  exist; (b) trigger the §11.3 Windows nightly / run §9.1–9.2 on a
+  Windows desktop/UIA session (closes §14.1–14.2); or (c) decide the
+  §13 Windows-runner / safe-mode questions. Once a future SDK bump lands,
+  the §11.7-run `dart format` gate candidate becomes non-fragile again —
+  but only if it can be shipped without the 102-file churn it would
+  currently cause (needs an explicit owner decision, not a silent reformat).

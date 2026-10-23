@@ -18,9 +18,14 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup Flutter
+        # §11.8: pinned to the known-good stable Flutter version (matches the
+        # local dev toolchain; RUNBOOK.md "Flutter upgrade gate" step 2 is the
+        # only sanctioned way to bump this — re-validate §9.1/§9.2 first).
+        # A floating "3.x" resolved a different SDK per run, drifting analyze
+        # results, test behavior, and default flag semantics.
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.x"
+          flutter-version: "3.47.6"
           channel: stable
 
       - name: Restore pub cache
@@ -132,9 +137,14 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup Flutter
+        # §11.8: pinned to the known-good stable Flutter version (matches the
+        # local dev toolchain; RUNBOOK.md "Flutter upgrade gate" step 2 is the
+        # only sanctioned way to bump this — re-validate §9.1/§9.2 first).
+        # A floating "3.x" resolved a different SDK per run, drifting analyze
+        # results, test behavior, and default flag semantics.
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.x"
+          flutter-version: "3.47.6"
           channel: stable
 
       - name: Restore pub cache
