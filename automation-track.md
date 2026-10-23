@@ -851,7 +851,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   including checkout, windows-nightly still 10 steps, unchanged); `git
   status --short` confirms the engine binary stays untracked
   (gitignored, `.gitignore:62`).
-  Commit: `94d6519`.
+  Commit: `9b402ec`.
   Push **BLOCKED** (same as all prior runs): no GitHub credentials on
   this host — `git push origin main` → `fatal: could not read
   Username for 'https://github.com'` (no credential helper, `gh`, SSH
