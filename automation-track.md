@@ -1489,8 +1489,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   test` → 637/637 pass (01:48, All tests passed! — no Dart changes);
   `git status --short` confirms only the workflow + the two track docs
   changed.
-  Commit: TBD (appended after commit per the §11.13/§11.14 hash-record
-  pattern).
+  Commit: 5d00acb.
   Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
   host — audited again this run (`git config --get credential.helper` empty,
   no `gh`, no SSH key, no `~/.git-credentials`, no `~/.netrc`, no token in
