@@ -12,7 +12,7 @@
 /// Windows (`flutter test integration_test/accessibility_windows_test.dart
 /// -d windows`, §9.1) and is gated headless on the ubuntu-gate Linux CI job
 /// (§11.11). Deterministic fakes only — no real engine/network/wall-clock.
-// ignore_for_file: dangling_library_doc_comments, camel_case_types
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

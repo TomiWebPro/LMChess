@@ -5,7 +5,7 @@
 /// widget test pumps only the app scaffold (no screen navigation needed) and
 /// verifies the ValueKey strings resolve as valid Finders (controls may be
 /// off-screen depending on visibility — that's expected). No real network.
-// ignore_for_file: dangling_library_doc_comments
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

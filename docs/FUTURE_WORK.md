@@ -1,25 +1,22 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-23 (UTC) — §11.12 fixes the §11.11 Xvfb teardown that
-was dead-on-failure: the integration-test step ran under `set -euo pipefail`
-and captured `EXIT=$?` AFTER the failing `flutter test ...` line, so on a red
-run the shell aborted at the test line and the `kill -9 "$XVFB_PID"` cleanup
-never executed — the :79 display server leaked on the runner. The exit code
-is now captured without aborting (`flutter test ... || EXIT=$?` +
-`exit ${EXIT:-0}`); the pre-fix leak and the post-fix clean teardown were both
-replicated empirically on Linux (real 12/12 headless run leaves no :79
-process). Also removed two dead `exit_code` GITHUB_OUTPUT writes in
-windows-nightly (no step consumes `steps.*.outputs.exit_code` — gating is the
-explicit `Exit $LASTEXITCODE`) and their now-unused step `id:`s, and added the
-missing `set -euo pipefail` to the apt-get step for consistency with every
-other run block. §11.11 executes the §9.1 integration suite
-(`integration_test/accessibility_windows_test.dart`, 12 tests) headless on the
-gate every push; §11.10 fixed the dead semantics-dump failure fallback;
-§11.9 removed all real-network calls from the test suite; §2.6 still no
-upstream fix (flutter/flutter#175041 open, PR #190903 unmerged; 3.47.7 does
-not contain it) → local 3.47.6 stays on mitigation; §11.8 pins both CI jobs to
-known-good Flutter 3.47.6
+Last updated: 2026-10-23 (UTC) — §11.13 removes the last 12
+`// ignore_for_file` suppressions from the repo (11 files suppressed
+`dangling_library_doc_comments`; the integration test also suppressed a dead
+`camel_case_types`; the e2e smoke suppressed `avoid_print`). Every suppression
+is replaced by the repo's canonical proper fix — a `library;` directive after
+the library doc comment (the same fix the §6.5 cleanup applied to
+watch_screen_test.dart) and `debugPrint` for the e2e smoke's five intentional
+status prints. `flutter analyze` now reports `No issues found!` with **zero**
+`// ignore` / `// ignore_for_file` lines anywhere in lib/, test/,
+integration_test/, or tool/. §11.12 makes the §11.11 integration-test step's
+Xvfb teardown actually run on the failure path; §11.11 executes the §9.1
+integration suite headless on the ubuntu-gate every push; §11.10 fixed the dead
+semantics-dump failure fallback; §11.9 removed all real-network calls from the
+test suite; §2.6 still no upstream fix (flutter/flutter#175041 open, PR #190903
+unmerged; 3.47.7 does not contain it) → local 3.47.6 stays on mitigation;
+§11.8 pins both CI jobs to known-good Flutter 3.47.6
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -378,6 +375,52 @@ exit code (3) and kills :79, on the success path exits 0 and kills :79, and
 the REAL `flutter test integration_test/... -d linux` run (12/12 pass, 00:34)
 leaves no :79 process behind; `flutter analyze` → `No issues found!`; full
 `flutter test` → 637/637 pass (no Dart changes). See `automation-track.md`
+for the run log.
+
+### 11.13 Zero `// ignore` suppressions in the repo (P2 — DONE)
+
+The analyzer config (`analysis_options.yaml`) explicitly documents
+`// ignore:` / `// ignore_for_file` as the escape hatch for lint suppressions,
+and the §6.5 lint-cleanup run fixed `dangling_library_doc_comments` in
+watch_screen_test.dart the **proper** way (a `library;` directive after the
+library doc comment) — yet eleven files still hid the same lint behind
+`// ignore_for_file`, and one integration-test line suppressed a lint that no
+longer fires. Every suppression in the repo is now gone:
+
+- **11 files** (`test/support/arena_test_harness.dart:29`,
+  `test/support/semantics_invariants.dart:37`,
+  `test/connection_tester_seam_test.dart:8`, `test/clock_seam_test.dart:8`,
+  `test/ui/arena_screen_test.dart:6`, `test/ui/arena_variant_review_test.dart:14`,
+  `test/ui/deterministic_deep_states_test.dart:7`, `test/ui/elo_injection_test.dart:6`,
+  `test/ui/semantics_stability_test.dart:21`, `test/ui/stable_keys_test.dart:8`,
+  `integration_test/accessibility_windows_test.dart:15`) suppressed
+  `dangling_library_doc_comments` — each now ends its library doc comment with
+  the repo-standard `library;` directive. The `// ignore_for_file:
+  dangling_library_doc_comments, camel_case_types` line in the integration
+  test also suppressed a **dead** lint: removing it fired only the doc lint
+  (probe-verified), because no camel-case type exists in that file.
+- **`test/e2e_smoke_test.dart`** suppressed `avoid_print` for its five
+  intentional per-section status prints; the prints now use `debugPrint`
+  (from `package:flutter/foundation.dart`, the canonical app-logging
+  API) and the suppression is gone.
+
+`grep -rn "ignore_for_file" lib test integration_test tool` now returns
+**nothing** — the analyzer is clean without a single suppression, so a future
+`flutter analyze` run can never be masking a lint it should be reporting
+(the whole point of the protocol's "never hide issues with `// ignore`" rule).
+No lib/, workflow, or test-behavior change: the edits are header directives
+and the `print`→`debugPrint` call-site rewrite only.
+
+Evidence: `flutter analyze` → `No issues found! (ran in 2.6s)`; touched
+suites `flutter test test/support/integration_test.dart test/e2e_smoke_test.dart
+test/connection_tester_seam_test.dart test/clock_seam_test.dart
+test/ui/elo_injection_test.dart test/ui/stable_keys_test.dart
+test/ui/semantics_stability_test.dart test/ui/arena_screen_test.dart
+test/ui/arena_variant_review_test.dart
+test/ui/deterministic_deep_states_test.dart` → 126/126 pass; the headless
+§9.1/§11.11 run `flutter test integration_test/accessibility_windows_test.dart
+-d linux` → 12/12 pass (00:34) under Xvfb :79; full regression
+`flutter test` → 637/637 pass (no lib/ changes). See `automation-track.md`
 for the run log.
 
 ---

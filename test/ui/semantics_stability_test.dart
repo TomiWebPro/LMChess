@@ -18,7 +18,7 @@
 /// - Hidden-tab rule: Home → Play → Stats.
 /// - Arena mini-boards: 64 * visibleBoards count.
 /// - 50 rapid nav/theme/dialog operations — no duplicate ids.
-// ignore_for_file: dangling_library_doc_comments
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart' show SemanticsNode;

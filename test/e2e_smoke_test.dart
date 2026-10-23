@@ -1,7 +1,5 @@
 // End-to-end logic smoke — the platform loop proven without UI.
 //
-// ignore_for_file: avoid_print
-//
 // Proves the platform loop works end-to-end (run: `flutter test`):
 //
 //   1. Standard chess: two scripted mock agents play a game through
@@ -26,6 +24,7 @@
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llm_chess_arena/src/agent/agent_config.dart';
 import 'package:llm_chess_arena/src/chess/engine.dart' as chess_eng;
@@ -203,7 +202,7 @@ Future<void> _standardGame() async {
   check(orch.eventLog.isNotEmpty, 'orchestrator event log persisted');
   final keys = orch.eventLog.map((e) => e.idempotencyKey).toSet();
   check(keys.length == orch.eventLog.length, 'event idempotency keys unique');
-  print('  -- game ended after $plies plies, '
+  debugPrint('  -- game ended after $plies plies, '
       '${orch.fallbackRecords.length} fallback(s)');
 }
 
@@ -268,7 +267,7 @@ void _chaoticPipeline() {
   check(first.selected.resultingBoard.toJson().toString() ==
           second.selected.resultingBoard.toJson().toString(),
       'resulting boards identical across runs');
-  print('  -- selected: ${first.selected.strategyId} '
+  debugPrint('  -- selected: ${first.selected.strategyId} '
       '(${first.candidates.length} candidates)');
 
   // Legal moves short-circuit (no interpretation needed).
@@ -347,7 +346,7 @@ Future<void> _stats() async {
   check(whiteFallbacks == 2, 'white recorded 2 fallback events');
   check(white.fallbackRate > 0, 'white fallback rate ${white.fallbackRate}');
   check(white.legalRate < 1.0, 'legal rate reflects the fallbacks');
-  print('  -- white turns=${white.turns} fallbacks=$whiteFallbacks');
+  debugPrint('  -- white turns=${white.turns} fallbacks=$whiteFallbacks');
 }
 
 /// Counts fallback markers for the print line.
@@ -373,7 +372,7 @@ Future<void> _stockfish(String binary) async {
       'source labeled ${result.source}');
   check(result.scoreCp != null, 'score present (${result.scoreCp} cp)');
   check(result.bestMoveUci != null, 'best move present (${result.bestMoveUci})');
-  print('  -- stockfish: ${result.scoreCp} cp, best ${result.bestMoveUci}');
+  debugPrint('  -- stockfish: ${result.scoreCp} cp, best ${result.bestMoveUci}');
 
   // Variant JSON must NOT be silently evaluated by Stockfish.
   final scene = StockfishEvaluator(
@@ -408,7 +407,7 @@ Future<void> _review() async {
   check(report.moves.every((m) => m.assessment.quality.name.isNotEmpty),
       'every ply classified');
   check(report.toJson()['moves'] != null, 'report serializes to JSON');
-  print('  -- ${report.moves.length} plies, '
+  debugPrint('  -- ${report.moves.length} plies, '
       '${report.keyMoments.length} key moment(s), '
       'white acc ${report.whiteAccuracy?.toStringAsFixed(1) ?? '-'}');
 }

@@ -5,7 +5,7 @@
 /// Screens that resolve this provider (defaulting to [testAgentConnection])
 /// can override it with a deterministic lambda — no network, no platform
 /// channel, no `SecureKeyStore` churn.
-// ignore_for_file: dangling_library_doc_comments
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

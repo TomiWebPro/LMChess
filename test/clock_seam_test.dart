@@ -5,7 +5,7 @@
 /// deterministic identifiers or timestamps resolve this provider (defaulting
 /// to `DateTime.now`) so tests can override it with a fixed UTC timestamp —
 /// no stale timers, no flaky epoch-dependent IDs.
-// ignore_for_file: dangling_library_doc_comments
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

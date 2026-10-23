@@ -11,7 +11,7 @@
 /// Uses deterministic fakes (MockProvider always plays the first legal
 /// attempt, fixed UTC clock, seeded tournament via `initialSeed: 42`) — never
 /// touches real network, engine, or wall-clock.
-// ignore_for_file: dangling_library_doc_comments
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

@@ -1,7 +1,17 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-23 (UTC) — §11.12 makes the §11.11 integration-test
+Last updated: 2026-10-23 (UTC) — §11.13 removes the last 12
+`// ignore_for_file` suppressions from the repo: eleven files suppressed
+`dangling_library_doc_comments` (plus a dead `camel_case_types` in the
+integration test) behind `// ignore_for_file`, while the repo's own §6.5
+cleanup had fixed that exact lint properly in watch_screen_test.dart with a
+`library;` directive; the e2e smoke suppressed `avoid_print` for five
+intentional status prints. Every suppression is now replaced by the proper
+fix — `library;` after the library doc comment + `debugPrint` for the smoke
+prints. `grep -rn "ignore_for_file" lib test integration_test tool` returns
+nothing and `flutter analyze` is `No issues found!` with zero suppressions.
+§11.12 makes the §11.11 integration-test
 step's Xvfb teardown actually run on the failure path: the step used
 `set -euo pipefail` with `EXIT=$?` captured AFTER the failing `flutter test`
 line, so a red run aborted the shell at the test line and
@@ -1196,4 +1206,67 @@ suites referenced above now exist. Native Windows execution is tracked in
   zero TODO/FIXME/NotImplemented markers, no test-discovery gaps, dependency
   hygiene clean (0 unused deps), all 9 bash blocks pass `bash -n`; the
   `dart format` gate still needs an explicit owner decision (102/127-file
+  churn) and the coverage-artifact comparison needs ≥2 CI runs.
+- 2026-10-23Z — LINT HYGIENE P2 §11.13 (zero `// ignore` suppressions in the
+  repo). All prior runs reported `flutter analyze` → `No issues found!` — but
+  a fresh suppression audit (the one thing `flutter analyze` cannot report)
+  found the repo was masking lints: twelve `// ignore_for_file` lines across
+  test/, support/, and integration_test/. The repo's own §6.5 lint-cleanup
+  had fixed `dangling_library_doc_comments` in watch_screen_test.dart the
+  proper way (a `library;` directive after the library doc comment), yet
+  eleven files still suppressed that same lint via `// ignore_for_file` —
+  directly against the protocol's "never hide issues with `// ignore`, fix
+  them properly". The integration test's `// ignore_for_file:
+  dangling_library_doc_comments, camel_case_types` even suppressed a **dead**
+  lint (probe-verified: removing it fires only the doc lint; no camel-case
+  type exists in the file). The e2e smoke suppressed `avoid_print` for five
+  intentional per-section status prints. Files changed (all test/header-only,
+  no lib/ or workflow changes):
+  `test/support/arena_test_harness.dart` (line 29), `test/support/
+  semantics_invariants.dart` (line 37), `test/connection_tester_seam_test.dart`
+  (line 8), `test/clock_seam_test.dart` (line 8), `test/ui/arena_screen_test.dart`
+  (line 6), `test/ui/arena_variant_review_test.dart` (line 14), `test/ui/
+  deterministic_deep_states_test.dart` (line 7), `test/ui/elo_injection_test.dart`
+  (line 6), `test/ui/semantics_stability_test.dart` (line 21), `test/ui/
+  stable_keys_test.dart` (line 8), `integration_test/accessibility_windows_test.dart`
+  (line 15) — the suppression line is replaced by the repo-standard `library;`
+  directive at the end of each library doc comment; `test/e2e_smoke_test.dart`
+  — the five `print(...)` calls (lines 205/270/349/375/410) become
+  `debugPrint(...)` (new `import 'package:flutter/foundation.dart'
+  show debugPrint;`), and the `// ignore_for_file: avoid_print` header line is
+  removed. `grep -rn "ignore_for_file" lib test integration_test tool` now
+  returns **nothing** — the analyzer is clean without a single suppression, so
+  a future run can never silently mask a lint (the protocol's whole point).
+  Docs: `docs/FUTURE_WORK.md` — §11.13 added + closed as DONE in the same run
+  (open list unchanged: §11.13 not an open item), header bumped;
+  `automation-track.md` — header line + this Run Log entry.
+  Evidence: `flutter analyze` → `No issues found! (ran in 2.6s)` with zero
+  suppressions; touched suites `flutter test test/support/integration_test.dart
+  test/e2e_smoke_test.dart test/connection_tester_seam_test.dart
+  test/clock_seam_test.dart test/ui/elo_injection_test.dart test/ui/stable_keys_test.dart
+  test/ui/semantics_stability_test.dart test/ui/arena_screen_test.dart
+  test/ui/arena_variant_review_test.dart test/ui/deterministic_deep_states_test.dart`
+  → 126/126 pass (00:36, All tests passed!); headless §9.1/§11.11 run
+  `flutter test integration_test/accessibility_windows_test.dart -d linux`
+  under Xvfb :79 → 12/12 pass (00:34, All tests passed!); full regression
+  `flutter test` → 637/637 pass (01:58, All tests passed! — count unchanged,
+  no lib/ changes, e2e smoke still prints the same status lines via
+  debugPrint). `git status --short` confirms only the 12 test/support/
+  integration_test files + the two track docs changed.
+  Commit: <to-fill-after-commit>.
+  Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
+  host — re-audited this run via a subagent (`git config --get
+  credential.helper` empty, no `gh`, no SSH key, no `~/.git-credentials`, no
+  `~/.netrc`, no token in env; `git push --dry-run origin main` → `fatal:
+  could not read Username for 'https://github.com': terminal prompts
+  disabled`, exit 128); `git ls-remote origin main` still shows `e1749b3`, so
+  `e1749b3..HEAD` (39 local commits incl. this run) remains local-only.
+  Re-run the push after credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials exist;
+  (b) trigger the §11.3 Windows nightly / run §9.1–9.2 on a Windows
+  desktop/UIA session (closes §14.1–14.2); or (c) decide the §13
+  Windows-runner / safe-mode questions. Re-audited this run: FUTURE_WORK.md
+  open items are all Windows-native (§9.1/§9.2/§11.3/§14), external (§2.6),
+  or un-scheduled decisions (§13) — no other Linux-implementable item exists;
+  the `dart format` gate still needs an explicit owner decision (102/127-file
   churn) and the coverage-artifact comparison needs ≥2 CI runs.

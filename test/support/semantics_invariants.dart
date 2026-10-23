@@ -34,7 +34,7 @@
 ///   visibleBoards` and `requireUniqueSquares: false` for Arena.
 /// * Hidden-tab children wrapped in `ExcludeSemantics(excluding: true)` must
 ///   contribute zero nodes.
-// ignore_for_file: dangling_library_doc_comments
+library;
 
 import 'package:flutter/semantics.dart';
 import 'package:flutter/widgets.dart';

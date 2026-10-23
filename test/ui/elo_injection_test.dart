@@ -3,7 +3,7 @@
 /// Verifies that replacing the static `EloService._elo` singleton with an
 /// injectable constructor parameter eliminates cross-test Elo leakage while
 /// preserving existing default behaviour.
-// ignore_for_file: dangling_library_doc_comments
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

@@ -26,7 +26,7 @@
 ///   });
 /// }
 /// ```
-// ignore_for_file: dangling_library_doc_comments
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

@@ -3,7 +3,7 @@
 /// Covers config form, start/stop flow, standings table, mini-board cards,
 /// drill-down dialog, resize, scheduler cancellation, and semantics stability.
 /// Uses deterministic fakes — never touches real network, engine, or wall-clock.
-// ignore_for_file: dangling_library_doc_comments
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
