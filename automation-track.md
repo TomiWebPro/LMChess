@@ -1421,8 +1421,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   'llm_chess_arena' on :98 ...` and exits 1 with no orphan :98 Xvfb left.
   `git status --short` confirms only the workflow + the two track docs
   changed (release bundle build/ stays untracked).
-  Commit: TBD (appended after commit per the §11.13/§11.14 hash-record
-  pattern).
+  Commit: 715762e.
   Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
   host — `git push --dry-run origin main` → `fatal: could not read Username
   for 'https://github.com': No such device or address` (`git config --get
