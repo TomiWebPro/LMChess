@@ -1096,7 +1096,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   workflow re-parses clean via PyYAML (ubuntu-gate now 14 steps including
   checkout; windows-nightly still 10, untouched); new run block passes
   `bash -n`.
-  Commit: TBD after push attempt.
+  Commit: 4d414e8.
   Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
   host — audited again this run (`git config --get credential.helper` empty,
   no `gh`, no SSH key, no `~/.git-credentials`, no `~/.netrc`, no token in
