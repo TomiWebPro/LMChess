@@ -76,7 +76,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             ninja-build pkg-config libgtk-3-dev libsecret-1-dev libjsoncpp-dev \
-            xvfb openbox
+            xvfb x11-utils openbox
+          # x11-utils provides xdpyinfo, used by the §11.14 Xvfb readiness
+          # gate below to prove the display server actually answers before
+          # the smoke/integration test attaches to it.
 
       - name: Build Linux release
         run: flutter build linux --release
@@ -89,9 +92,37 @@ jobs:
         # engine download.
         run: |
           set -euo pipefail
+          export DISPLAY=:77
+          # §11.14: a backgrounded `Xvfb :77 &` that dies instantly (display
+          # already occupied by a leaked server from an earlier run, lock
+          # conflict, init failure) is invisible to `set -e`; without this
+          # gate the step would fail LATER with a confusing `cannot open
+          # display` — or worse, silently attach the smoke to the STALE
+          # leaked server still answering on :77 (observed on the dev host:
+          # three leaked Xvfb servers :77/:79/:99 survived their runs).
+          # Pre-flight probe BEFORE launching avoids spawning a doomed
+          # Xvfb (and its "Server is already active" noise) on an occupied
+          # display.
+          if DISPLAY=:77 xdpyinfo >/dev/null 2>&1; then
+            echo "::error::display :77 already in use by another X server (stale Xvfb from a prior run?); refusing to attach to it"
+            exit 1
+          fi
           LIBGL_ALWAYS_SOFTWARE=1 Xvfb :77 -screen 0 1280x1024x24 &
           XVFB_PID=$!
-          export DISPLAY=:77
+          ready=
+          for _ in $(seq 1 50); do
+            if ! kill -0 "$XVFB_PID" 2>/dev/null; then
+              echo "::error::Xvfb :77 exited during startup (display conflict or init failure)"
+              exit 1
+            fi
+            if DISPLAY=:77 xdpyinfo >/dev/null 2>&1; then ready=1; break; fi
+            sleep 0.1
+          done
+          if [ -z "$ready" ]; then
+            echo "::error::Xvfb :77 did not become ready within 5s"
+            kill -9 "$XVFB_PID" 2>/dev/null || true
+            exit 1
+          fi
           openbox &
           WM_PID=$!
           ./build/linux/x64/release/bundle/llm_chess_arena > smoke.log 2>&1 &
@@ -123,9 +154,33 @@ jobs:
         # the Windows-native run (`-d windows` on a Windows host) remains §9.1.
         run: |
           set -euo pipefail
+          export DISPLAY=:79
+          # §11.14 (same readiness gate as the §11.6 smoke step): a dead-on-
+          # arrival `Xvfb :79 &` must fail HERE with a clear error instead of
+          # surfacing as a misleading `flutter test` failure — or attaching
+          # the suite to a stale leaked :79 server (three such leaks observed
+          # on the dev host). Probe the display BEFORE launching (no doomed
+          # Xvfb, no "Server is already active" noise) and BEFORE the suite.
+          if DISPLAY=:79 xdpyinfo >/dev/null 2>&1; then
+            echo "::error::display :79 already in use by another X server (stale Xvfb from a prior run?); refusing to attach to it"
+            exit 1
+          fi
           LIBGL_ALWAYS_SOFTWARE=1 Xvfb :79 -screen 0 1280x1024x24 &
           XVFB_PID=$!
-          export DISPLAY=:79
+          ready=
+          for _ in $(seq 1 50); do
+            if ! kill -0 "$XVFB_PID" 2>/dev/null; then
+              echo "::error::Xvfb :79 exited during startup (display conflict or init failure)"
+              exit 1
+            fi
+            if DISPLAY=:79 xdpyinfo >/dev/null 2>&1; then ready=1; break; fi
+            sleep 0.1
+          done
+          if [ -z "$ready" ]; then
+            echo "::error::Xvfb :79 did not become ready within 5s"
+            kill -9 "$XVFB_PID" 2>/dev/null || true
+            exit 1
+          fi
           # §11.12: capture the test exit code WITHOUT letting `set -e`
           # abort the shell mid-cleanup. A failing `flutter test` must still
           # kill its Xvfb — previously the `EXIT=$?` / `kill -9` / `exit`

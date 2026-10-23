@@ -1,7 +1,16 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-23 (UTC) — §11.13 removes the last 12
+Last updated: 2026-10-23 (UTC) — §11.14 adds an Xvfb startup readiness gate
+to both ubuntu-gate display steps (the §11.6 Linux-release smoke on :77 and
+the §11.11 headless integration suite on :79): each probes the display with
+`xdpyinfo` before launching (clean `::error::` refusal when a stale leaked
+server already owns the display), then waits up to 5s for the freshly
+launched server to answer (exit 1 on early death or timeout). Previously a
+backgrounded `Xvfb :N &` that died instantly was invisible to `set -e` — the
+step failed later with a confusing `cannot open display`, or silently
+attached to the stale leaked server still answering on that display (three
+leaks :77/:79/:99 observed on the dev host). §11.13 removes the last 12
 `// ignore_for_file` suppressions from the repo (11 files suppressed
 `dangling_library_doc_comments`; the integration test also suppressed a dead
 `camel_case_types`; the e2e smoke suppressed `avoid_print`). Every suppression
@@ -422,6 +431,48 @@ test/ui/deterministic_deep_states_test.dart` → 126/126 pass; the headless
 -d linux` → 12/12 pass (00:34) under Xvfb :79; full regression
 `flutter test` → 637/637 pass (no lib/ changes). See `automation-track.md`
 for the run log.
+
+### 11.14 Xvfb startup readiness gate on both ubuntu-gate display steps (P1 — DONE)
+
+Both ubuntu-gate steps that start a display server — the §11.6 Linux-release
+smoke (`Xvfb :77`) and the §11.11 headless integration suite (`Xvfb :79`) —
+launched a backgrounded `Xvfb :N ... &` with **no readiness assertion**. A
+dead-on-arrival Xvfb is invisible to `set -e`: the step would fail later
+with a confusing `cannot open display`, or — worse — silently attach the
+smoke/suite to the **stale leaked server still answering on that display**.
+The hazard is real: three leaked Xvfb servers (`:77/:79/:99` from earlier
+smoke/integration runs) were verified alive on the dev host during this run.
+
+Both steps now gate the display environment before anything attaches:
+
+- `x11-utils` (provides `xdpyinfo`) added to the ubuntu-gate "Install Linux
+  desktop build deps" step.
+- Pre-flight probe **before** launching: if the display already answers,
+  fail immediately with `::error::display :N already in use by another X
+  server (stale Xvfb from a prior run?); refusing to attach to it` — no
+  doomed Xvfb is spawned and no "Server is already active" noise is emitted.
+- Post-launch bounded readiness loop (up to 50×100 ms = 5 s): exit 1 with a
+  clear `::error::` if the PID dies during startup or the display never
+  answers (`xdpyinfo`), with `kill -9` cleanup on the timeout path.
+- The smoke's openbox + app launch, and the integration step's §11.12
+  `|| EXIT=$?` / `kill -9 "$XVFB_PID"` / `exit ${EXIT:-0}` teardown tail,
+  now run only behind a guaranteed-live display.
+
+Step counts unchanged (ubuntu-gate 14, windows-nightly 10); only
+`with:`/`run:` content changed. No Dart/test files changed.
+
+Evidence: `flutter analyze` → `No issues found! (ran in 2.3s)`; full
+regression `flutter test` → 637/637 pass (no Dart changes); workflow
+re-parses clean via PyYAML; all bash run-blocks pass `bash -n`. All four
+gate paths proven empirically on this host: (a) smoke on OCCUPIED :77 (real
+stale server) → clean refusal, exit 1, no orphan; (b) integration on
+OCCUPIED :79 → same, exit 1; (c) smoke on fresh :85 → gate passes ~100 ms,
+release binary alive 15 s, exit 0, no Xvfb left behind; (d) integration on
+fresh :88 with the REAL `flutter test
+integration_test/accessibility_windows_test.dart -d linux` → 12/12 pass,
+exit 0, no orphan; plus synthetic proofs of the startup-death and 5 s
+timeout guard branches (both exit 1). See `automation-track.md` for the run
+log.
 
 ---
 

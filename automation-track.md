@@ -1,7 +1,18 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-23 (UTC) — §11.13 removes the last 12
+Last updated: 2026-10-23 (UTC) — §11.14 adds an Xvfb startup
+readiness gate to both ubuntu-gate Xvfb steps (the §11.6 Linux-release smoke
+on :77 and the §11.11 headless integration suite on :79): each step now
+probes the display with `xdpyinfo` BEFORE launching (`::error::... already in
+use ... refusing to attach`) and, after launching, waits up to 5s for the
+server to answer (exit 1 on early death or timeout). Previously a
+backgrounded `Xvfb :N &` that died instantly (display already occupied by a
+leaked server, lock conflict, init failure) was invisible to `set -e` — the
+step failed LATER with a confusing `cannot open display`, or worse silently
+attached the smoke/suite to the stale leaked server still answering on that
+display (three such leaks :77/:79/:99 were observed surviving on the dev
+host). `x11-utils` (xdpyinfo) added to the ubuntu-gate apt install. §11.13 removes the last 12
 `// ignore_for_file` suppressions from the repo: eleven files suppressed
 `dangling_library_doc_comments` (plus a dead `camel_case_types` in the
 integration test) behind `// ignore_for_file`, while the repo's own §6.5
@@ -1270,3 +1281,78 @@ suites referenced above now exist. Native Windows execution is tracked in
   or un-scheduled decisions (§13) — no other Linux-implementable item exists;
   the `dart format` gate still needs an explicit owner decision (102/127-file
   churn) and the coverage-artifact comparison needs ≥2 CI runs.
+- 2026-10-23Z — CI P1 §11.14 (Xvfb startup readiness gate on both ubuntu-gate
+  display steps). A fresh subagent CI-workflow audit surfaced a genuine
+  Linux-implementable gap the previous runs' audits had missed (they checked
+  `bash -n`, PyYAML parse, dead GITHUB_OUTPUT writes, and code markers — but
+  not the Xvfb launch semantics): both ubuntu-gate steps launched a
+  backgrounded `Xvfb :77 &` / `Xvfb :79 &` with NO readiness assertion. A
+  dead-on-arrival Xvfb (display already occupied by a leaked server, lock
+  conflict, init failure) is invisible to `set -e` — the step would fail
+  LATER with a confusing `cannot open display`, or worse silently attach the
+  smoke/suite to the STALE leaked server still answering on that display.
+  The hazard is not hypothetical: three leaked Xvfb servers (:77/:79/:99 from
+  earlier smoke/integration runs) were verified alive on this dev host right
+  now (PIDs 840302/894251/499461, untouched). Files changed:
+  `.github/workflows/ci.yaml` — (1) "Install Linux desktop build deps" now
+  also installs `x11-utils` (provides `xdpyinfo`, the display probe); (2) the
+  §11.6 smoke step and (3) the §11.11 integration-test step each gained the
+  same §11.14 gate: `export DISPLAY=:N` first, then a pre-flight
+  `if DISPLAY=:N xdpyinfo >/dev/null 2>&1; then echo "::error::display :N
+  already in use by another X server (stale Xvfb from a prior run?); refusing
+  to attach to it"; exit 1; fi` BEFORE launching Xvfb (so an occupied display
+  fails cleanly with no doomed Xvfb spawned and no "Server is already active"
+  noise), then launch `LIBGL_ALWAYS_SOFTWARE=1 Xvfb :N ... &`, then a bounded
+  readiness loop (up to 50×100ms = 5s) that exits 1 with a clear
+  `::error::` + message if the PID dies during startup or the display never
+  answers; after the loop a final `xdpyinfo` check (with `kill -9` cleanup)
+  covers the timeout case. The smoke step keeps openbox + app launch AFTER
+  the gate; the integration step keeps the §11.12 `|| EXIT=$?` /
+  `kill -9 "$XVFB_PID"` / `exit ${EXIT:-0}` teardown tail, now running only
+  behind a guaranteed-live display. Step counts unchanged (ubuntu-gate 14,
+  windows-nightly 10). Docs: `docs/FUTURE_WORK.md` — §11.14 added + closed as
+  DONE in the same run (open list unchanged: §11.14 not an open item), header
+  bumped; `automation-track.md` — header line + this Run Log entry (no
+  Roadmap row exists for §11.14; per protocol the Run Log is the record).
+  No Dart/test files changed.
+  Evidence: `flutter analyze` → `No issues found! (ran in 2.3s)`; full
+  regression `flutter test` → 637/637 pass (01:50, All tests passed! — no
+  Dart changes); workflow re-parses clean via PyYAML (ubuntu-gate 14 steps,
+  windows-nightly 10 — step counts unchanged, only `with:`/`run:` content
+  changed); all 13 bash run-blocks pass `bash -n`. The gate is proven
+  empirically on this host across all four paths: (a) NEG smoke on OCCUPIED
+  :77 (real stale leaked server present) → `::error::display :77 already in
+  use ... refusing to attach to it`, exit 1, no new Xvfb orphan created;
+  (b) NEG integration on OCCUPIED :79 → same clean refusal, exit 1, no
+  orphan; (c) POS smoke on fresh :85 → Xvfb starts, gate passes (~100ms
+  ready), release binary alive after 15s, `smoke ok: release binary alive
+  after 15s under Xvfb + openbox`, exit 0, NO :85 Xvfb left behind (only the
+  3 pre-existing leaks remain in `ps`); (d) POS integration on fresh :88 →
+  the REAL `flutter test integration_test/accessibility_windows_test.dart
+  -d linux` through the gated block → 12/12 pass (00:34, All tests passed!),
+  exit 0, no :88 orphan left; plus synthetic proof of the remaining two
+  guard branches — "Xvfb :91 exited during startup" (dead PID in loop, exit
+  1) and "Xvfb :92 did not become ready within 5s" (alive PID, display never
+  answers, exit 1 + kill -9 cleanup). The pre-existing leaked :77/:79/:99
+  servers were left untouched per the §11.12 note.
+  Commit: TBD-after-commit.
+  Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
+  host — `git config --get credential.helper` empty, no `gh`, no SSH key, no
+  `~/.git-credentials`, no `~/.netrc`, no token in env; `git push origin
+  main` → `fatal: could not read Username for 'https://github.com'` (exit
+  128). `git ls-remote origin main` still shows `e1749b3`, so
+  `e1749b3..HEAD` (43 local commits incl. this run) remains local-only.
+  Re-run the push after credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials exist
+  (43 queued at e1749b3); (b) trigger the §11.3 Windows nightly / run
+  §9.1–9.2 on a Windows desktop/UIA session (closes §14.1–14.2); or (c)
+  decide the §13 Windows-runner / safe-mode questions. Re-audited this run
+  (two parallel explore subagents — code-marker scan over lib/test/tool/
+  integration_test/.github + full ci.yaml audit): zero TODO/FIXME/HACK/XXX,
+  zero commented-out code, zero empty catches, zero `// ignore:` anywhere;
+  the ci.yaml audit confirmed the two remaining workflow hardenings — the
+  #4 "smoke verifies only process aliveness, not window mapping" (would need
+  xdotool/wmctrl, deliberately out of scope this run) and #5 (no `Timeout`/
+  `timeout-minutes` on ubuntu-gate steps/jobs) — as candidate §11.15/§11.16
+  items; the `dart format` gate still needs an explicit owner decision
+  (102/127-file churn) and the coverage-artifact comparison needs ≥2 CI runs.
