@@ -27,15 +27,16 @@ final sampleConfig = AgentConfig(
 
 void main() {
   group('connectionTesterProvider (§10.4 seam)', () {
-    test('defaults to a Function (the factory is resolvable)', () {
+    test('defaults to a ConnectionTester (factory resolvable, pure)', () {
       final container = ProviderContainer();
       addTearDown(container.dispose);
 
       final tester = container.read(connectionTesterProvider);
-      expect(tester, isA<Function>());
-      // The default returns a Future<bool> — verify by calling it and
-      // catching the real-world result (network error → false).
-      expect(tester(sampleConfig), completes);
+      expect(tester, isA<ConnectionTester>());
+      // Resolving the provider is pure — it must not open a socket. Calling
+      // the default would ping a real endpoint (testAgentConnection →
+      // createProvider → live LLM), which widget tests forbid (see header);
+      // call behaviour is covered only via the deterministic overrides below.
     });
 
     testWidgets('override returns fixed success (true)', (tester) async {
@@ -176,18 +177,26 @@ void main() {
 
       expect(f1, isA<ConnectionTester>());
       expect(f2, isA<ConnectionTester>());
-      // Both produce Futures<bool>.
-      expect(f1(sampleConfig), completes);
-      expect(f2(sampleConfig), completes);
+      // Resolving both defaults is pure — no socket is opened. (Invoking the
+      // default would ping a live LLM endpoint, which widget tests forbid.)
+      // Invocation behaviour is pinned by the override tests above.
     });
 
-    testWidgets('default tester produces false on real-network unreachable',
-        (tester) async {
-      // The default wraps testAgentConnection which pings the real provider.
-      // Without network, it should resolve to false (not throw past the
-      // catch block). We just confirm it completes without hanging.
+    testWidgets(
+        'default tester resolves without opening a socket '
+        '(network behaviour is the production seam)', (tester) async {
+      // Resolving the default wraps testAgentConnection, which would ping a
+      // real LLM endpoint — widget tests must never open an HTTP socket (see
+      // the file header). We therefore assert only the provider's shape and
+      // that a deterministic override is fully honoured; the default's live
+      // network path is the production seam and is exercised interactively.
       await tester.pumpWidget(
         ProviderScope(
+          overrides: [
+            connectionTesterProvider.overrideWithValue(
+              (_, {inlineSecret}) async => false,
+            ),
+          ],
           child: const SizedBox.shrink(),
         ),
       );
@@ -195,14 +204,10 @@ void main() {
       final container =
           ProviderScope.containerOf(tester.element(find.byType(SizedBox)));
       final fn = container.read(connectionTesterProvider);
+      expect(fn, isA<ConnectionTester>());
 
-      final stopwatch = Stopwatch()..start();
       final result = await fn(sampleConfig);
-      stopwatch.stop();
-
-      expect(result, isA<bool>());
-      expect(stopwatch.elapsed.inSeconds, lessThan(30),
-          reason: 'real connection timeout should be bounded');
+      expect(result, isFalse);
       expect(tester.takeException(), isNull);
     });
   });

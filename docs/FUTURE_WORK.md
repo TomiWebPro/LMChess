@@ -1,12 +1,13 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-23 (UTC) — §11.8 pins the CI Flutter SDK to the
-known-good 3.47.6 on both jobs (ubuntu-gate + windows-nightly), replacing
-the floating "3.x" selector so analyze/test runs no longer drift between
-SDKs and the deferred `dart format` gate is no longer blocked on unpinned
-fragility; §2.6 still no upstream fix (flutter/flutter#175041 open,
-PR #190903 unmerged) → local 3.47.6 stays on mitigation
+Last updated: 2026-10-23 (UTC) — §11.9 removes the last real-network call from
+the test suite: `connection_tester_seam_test.dart` no longer invokes the
+default `connectionTesterProvider` (which pings a live LLM endpoint, violating
+the repo's "no HTTP socket in widget tests" rule); the default's invocation
+behaviour stays verified only via deterministic overrides; §2.6 still no
+upstream fix (flutter/flutter#175041 open, PR #190903 unmerged) → local 3.47.6
+stays on mitigation; §11.8 pins both CI jobs to known-good Flutter 3.47.6
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -221,6 +222,27 @@ Setup Flutter step changed); the pin matches the local known-good — Flutter
 3.47.6 stable, Dart 3.13.5; `flutter analyze` → `No issues found!`; full
 `flutter test` → 635/635 pass (no Dart changes). See
 `automation-track.md` for the run log.
+
+### 11.9 No real network in the test suite (P1 — DONE)
+
+Since the §11.8 SDK pin, bare `flutter test` runs integration-style tests in
+the pinned gate on every push/PR. Three tests in
+`test/connection_tester_seam_test.dart` invoked the **default**
+`connectionTesterProvider` (lines 34–38, 179–181, 199–200), which wraps
+`testAgentConnection` → `agent_backend.createProvider(...).testConnection()` —
+a real HTTP ping against a live LLM endpoint — directly contradicting the
+file's own header rule ("must never open an HTTP socket or ping a real LLM
+endpoint"). One of them also asserted real wall-clock `< 30s` via `Stopwatch`,
+the flakiest line in the suite. This is now fixed; the three tests assert only
+the provider's pure shape and pin invocation behaviour through deterministic
+overrides (the live network path is the production seam, exercised
+interactively).
+
+Evidence: `flutter analyze` → `No issues found!`; `flutter test
+test/connection_tester_seam_test.dart` → 8/8 pass (returns instantly — no
+socket is opened during the run); related `test/ui/agent_setup_test.dart` →
+29/29 pass; full `flutter test` → 635/635 pass. See `automation-track.md` for
+the run log.
 
 ---
 

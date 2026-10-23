@@ -1,7 +1,7 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-23 (UTC) — §11.8 pins the CI Flutter SDK to the known-good 3.47.6 on both jobs (ubuntu-gate + windows-nightly), replacing the floating "3.x" selector so analyze/test no longer drift between SDKs and the deferred dart-format gate is no longer blocked on unpinned fragility; §9/§11.3/§14 remain Windows-native BLOCKED; §2.6 still no upstream fix (flutter/flutter#175041 open, PR #190903 unmerged); local 3.47.6 stays on mitigation; §11.7 real-engine E2E smoke wired into the ubuntu-gate (CI now downloads/verifies the gitignored Stockfish binary so the repo's only real-engine test runs on every push); §11.6 ubuntu-gate builds + smokes the Linux release binary; §11.5 dead deps removed
+Last updated: 2026-10-23 (UTC) — §11.9 removes the last real-network call from the test suite (3 tests in `test/connection_tester_seam_test.dart` invoked the default `connectionTesterProvider`, a live LLM endpoint ping, violating the repo's no-socket rule; now shape-only + deterministic overrides); §9/§11.3/§14 remain Windows-native BLOCKED; §2.6 still no upstream fix (flutter/flutter#175041 open, PR #190903 unmerged); local 3.47.6 stays on mitigation; §11.8 pins CI Flutter SDK to known-good 3.47.6 on both jobs; §11.7 real-engine E2E smoke wired into ubuntu-gate; §11.6 ubuntu-gate builds + smokes the Linux release binary; §11.5 dead deps removed
 Related: `docs/FUTURE_WORK.md` (binding roadmap), `ARCHITECTURE.md`, `README.md`
 
 This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every run**.
@@ -48,6 +48,7 @@ This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every ru
 | P2 | `test/ui/settings_screen_test.dart` | DONE 2026-10-21: `test/ui/settings_screen_test.dart` created (25 tests) covering all §6.11 spec items: colour-scheme segmented-button (Light/System/Dark segments render and toggle without crash), board-theme radio group lists all four built-in themes (Classic/Midnight/Forest/Sepia) with "Built-in" subtitle tiles (7 total across board+piece groups), selecting different board/piece theme updates live preview without exception, pressing every board or piece theme radio produces no exceptions, live preview Chessboard renders in Card wrapper as non-interactive widget with onTapSquare=null, preview description text contains current theme names ("Classic × Meridian"), preview exposes no semantic tap actions affecting state, license & attributions section renders (title, Stockfish credit, WintrChess attribution, GPLv3 mention, Geographic Use Restriction Addendum notice), narrow layout (<700px) scrolls without overflow, wide layout renders all controls, switching between light/dark app themes causes no crash, colour-scheme segment selectable via taps, captured semantics tree has unique ids and no null parents, semantics stable across board/piece theme switches (no reparenting detected via parentMap), rapid radio taps safe, all 4×3=12 board+piece combos exhaustible without error, navigate-away-back replacement mount clean. Uses isolated ProviderContainer per test, never hits real engine/network/wall-clock. Evidence: `flutter analyze` clean; `flutter test test/ui/settings_screen_test.dart` 25/25 pass; full regression `flutter test` 467/467 pass (442 old + 25 new). Next: `test/ui/shared_widgets_test.dart` (§6.12, P2).
 | P2 | `test/ui/shared_widgets_test.dart` | DONE 2026-10-21: 51 tests covering §6.12 spec — MoveList (empty, single move, multi-move rows, error plies ⚠, quality marks !!/? semantics labels, current-ply highlighting via fontWeight w700, tap-to-seek callback, null-onTapMove no-crash), EvalBar (+/-/zero labels, heuristic watermark toggle, fractionFor logistic mapping at extremes ±10 → ~1/0, zero → 0.5, +2 → >0.6), AgentActivityPanel (empty placeholder, thinking-empty waiting message, event tiles render per-kind, thinking footer spinner+text, error tile rendering, auto-scroll FilterChip interactive), PlayerCard (active with formatted clock "30:00", inactive without accent, human/person icon, agent/robot icon, long name ellipsis, subtitle text, clock null hides clock), BoardPanelLayout (wide >1100 → Row side-by-side, medium 700–1100 → TabBar stacked, narrow <700 → Column stacked, tab switch preserves StatefulBuilder state across Board→Activity→Board), StatChip (label:value text, optional icon avatar, no-icon mode, multiple coexist in Wrap), layoutModeFor boundaries (500→narrow, 700→medium, 1000→medium, 1100→medium, 1200→wide), formatClock (0→"0:00", 90→"1:30", 3661→"1:01:01", -300→"0:00"), qualityColorFor light/dark theme values, qualityIconFor all known marks, redactSecrets (sk-keys, api_key, Bearer tokens, safe passthrough). Uses deterministic fakes only — never hits real engine/network. Evidence: `flutter analyze` clean (pre-existing 3 issues unchanged); `flutter test test/ui/shared_widgets_test.dart` 51/51 pass; full regression `flutter test` 518/518 pass (467 old + 51 new). Next: `test/ui/home_screen_test.dart` (§6.2, P2).
 | P2 | `test/ui/home_screen_test.dart` | DONE 2026-10-21: 6 widget tests covering all §6.2 spec items: feature-card tap callbacks (each of 7 cards calls onOpen with exact route string from ArenaRoutes), capability chips render ("Standard 8×8", "Chaotic variants", "Full telemetry"), narrow layout (<700px → 500×800 viewport) renders without overflow, wide layout (≥1100px → 1400×1000 viewport) renders without overflow, standalone HomeScreen (no onOpen → Navigator.pushNamed fallback) renders full card grid with hero title + all 7 titles verified, hero strip title "LLM Chess Arena" present. Uses MaterialApp+Material wrapper for ink/chips; desktop surface via tester.view.physicalSize; view reset in tearDown. Never hits real engine/network/wall-clock. Evidence: `flutter analyze` clean (0 issues); `flutter test test/ui/home_screen_test.dart` 6/6 pass; full regression `flutter test` 524/524 pass (518 old + 6 new). Next: §10.5 Arena Elo injection or §10.6 Deterministic deep states.
+| P1 | §11.9 Test-suite network hygiene (no real LLM pings in tests) | DONE 2026-10-23: three tests in `test/connection_tester_seam_test.dart` invoked the DEFAULT `connectionTesterProvider` (lines 34–38, 179–181, 199–200), which wraps `testAgentConnection` → `createProvider(...).testConnection()` — a real HTTP ping to a live LLM endpoint — violating the file's own no-socket rule and the repo's deterministic-fakes convention; one asserted real wall-clock `< 30s` (Stopwatch), the flakiest line in the suite. All three now assert only the provider's pure shape (resolving is socket-free) and pin invocation behaviour via deterministic overrides; the fixed-success/fixed-failure/inline-secret/throw/independence tests are untouched; test count unchanged (8). The live network path remains the production seam (AgentSetupScreen's "Test Connection" button), exercised interactively, not by `flutter test`. Evidence: `flutter analyze` → `No issues found!`; `flutter test test/connection_tester_seam_test.dart` → 8/8 pass (instant — no socket opened); related `test/ui/agent_setup_test.dart` → 29/29 pass; full regression `flutter test` → 635/635 pass (count unchanged). |
 
 Note (2026-10-21): all `test/ui/`, `test/support/`, and `integration_test/`
 suites referenced above now exist. Native Windows execution is tracked in
@@ -915,3 +916,58 @@ suites referenced above now exist. Native Windows execution is tracked in
   the §11.7-run `dart format` gate candidate becomes non-fragile again —
   but only if it can be shipped without the 102-file churn it would
   currently cause (needs an explicit owner decision, not a silent reformat).
+- 2026-10-23Z — TEST HYGIENE P1 §11.9 (no real network in the test suite):
+  the highest-priority Linux-implementable item found by this run's audit.
+  A scoped subagent audit (test markers) surfaced a genuine rule violation
+  that previous marker audits missed: `test/connection_tester_seam_test.dart`
+  — which declares at line 4 "Widget tests must never open an HTTP socket or
+  ping a real LLM endpoint" — invoked the **default** `connectionTesterProvider`
+  in three places (lines 34–38, 179–181, 199–200). The default wraps
+  `testAgentConnection` (`lib/src/ui/backend_bridge.dart:276-281` →
+  `testAgentConnection` → `createProvider(...).testConnection()`), a real
+  HTTP ping against the agent's live endpoint; the third one additionally
+  asserted real wall-clock `< 30 s` via `Stopwatch` — the flakiest (and only
+  network-dependent) assertion in the suite. Since §11.8 pinned CI to 3.47.6
+  and both jobs run bare `flutter test`, this opened a real socket on every
+  push/PR. Files changed: `test/connection_tester_seam_test.dart` only —
+  test 1 ("defaults to a Function") now asserts the default resolves to a
+  pure `ConnectionTester` shape without invoking it (resolution opens no
+  socket); test 6 ("default remains distinct per container") likewise drops
+  the invocation, keeping the per-container shape assertions; test 8
+  ("default tester produces false on real-network unreachable") is replaced
+  by "default tester resolves without opening a socket (network behaviour is
+  the production seam)" which overrides the provider deterministically and
+  asserts a resolved ConnectionTester + fixed-false result through the
+  widget/pump path — same 8-test count, all deterministic, no network, no
+  wall clock. Screens that consume the seam (`agent_setup_screen.dart`) and
+  all other suites already used overrides only (grep-verified: zero
+  non-override invocations of the default remain in test/). The live default
+  network path stays covered by the AgentSetupScreen "Test Connection"
+  button exercised interactively, not by `flutter test`.
+  Docs: `docs/FUTURE_WORK.md` — §11.9 added + closed as DONE in the same
+  run (open list unchanged), header bumped; `automation-track.md` — header
+  line + §11.9 Roadmap status row + this Run Log entry.
+  Evidence: `flutter analyze` → `No issues found! (ran in 2.2s)`; `flutter
+  test test/connection_tester_seam_test.dart` → 8/8 pass (instant, no socket
+  opened); related `flutter test test/ui/agent_setup_test.dart` → 29/29
+  pass; full regression `flutter test` → 635/635 pass (01:56, All tests
+  passed! — count unchanged, no network hit; test file edit is behavioral
+  only for the three rewritten tests). `git status --short` confirms only
+  this test file + the two track docs changed.
+  Commit: pending (this run).
+  Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
+  host — audited again this run (no credential helper, `gh`, SSH key,
+  `~/.git-credentials`, `~/.netrc`, token in env; `git config
+  --get credential.helper` empty); `git ls-remote origin main` still shows
+  `e1749b3`, so `e1749b3..HEAD` (now 33 local commits incl. this run)
+  remains local-only. Re-run the push after credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials exist;
+  (b) trigger the §11.3 Windows nightly / run §9.1–9.2 on a Windows
+  desktop/UIA session (closes §14.1–14.2); or (c) the documented `dart
+  format` gate needs an explicit owner decision because it would churn 102/127
+  files (re-measured this run on the pinned 3.47.6: lib 51/72, test 50/51,
+  integration_test 1/1 changed) — plus a small follow-up found by this run's
+  support-layer audit: the semantics-dump fallback in
+  `test/support/semantics_invariants.dart:207-215` is dead code (the second
+  `takeException()` can never fire because the `expect` drains it) and P2
+  cp. `test/ui` coverage artifacts, both left for future runs.
