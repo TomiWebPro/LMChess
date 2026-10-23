@@ -1,8 +1,32 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-23 (UTC) — §11.17 makes the real-engine Stockfish E2E
-actually run on the windows-nightly gate: `test/e2e_smoke_test.dart` hardcoded
+Last updated: 2026-10-24 (UTC) — §13 open decisions RESOLVED: the
+Windows-runner question (hosted `windows-latest` vs a dedicated VM for the
+§9.1/§9.2/§11.3 native validation) is DECIDED **hosted `windows-latest`, no
+dedicated VM required**. Evidence (verified against the hosted Windows Server
+2022 image): the job runs in a real **interactive console session** (measured:
+session 2, user `runneradmin`, `explorer.exe` running, windows enumerable by
+accessibility bridges — pyjab's `windows-gui.yml` runs exactly this class of
+attach-to-a-launched-app GUI automation on `windows-latest`); **WinAppDriver
+1.2.2009.02003 is preinstalled** on the image (runner-images
+Windows2022-Readme.md), so the §9.2 UIAutomationCore client needs no install;
+`flutter test integration_test/... -d windows` against the real Windows
+binary is routine on hosted runners (per the Flutter docs, xvfb is the
+LINUX-only virtual-display requirement); the runner account is a local admin
+with **UAC disabled** (GitHub Docs), so UIA client registration and Event
+Viewer `Get-WinEvent` reads work. Caveats for the first §11.3 run: default
+resolution 1024x768 (raise via `Set-DisplayResolution` if the smoke needs a
+larger window), display scale fixed at 96 DPI (no DPI-scaling coverage), and
+the desktop is unattended (windows render off-screen and receive synthetic
+input, nothing is physically displayed). Fallback: a dedicated VM only if the
+first hosted run hits a session-specific failure (UIA attach fails, Event
+Viewer unreadable, Windows-11-only rendering delta — the image is Server
+2022). The §13 safe-mode question is DECIDED **no safe-mode toggle** — keep
+the `ExcludeSemantics`/`IndexedStack` hardening and retire it only via the
+upstream engine fix (§2.6). §11.3's remaining text now carries the first-run
+trigger checklist. Previously (2026-10-23) §11.17 makes the real-engine
+Stockfish E2E actually run on the windows-nightly gate: `test/e2e_smoke_test.dart` hardcoded
 `assets/engines/linux-x86-64/stockfish`, so on the Windows runner the test
 always skipped (and that job had no engine download step at all) — the §11.7
 engine gate existed only for the ubuntu job. The test now resolves the host
@@ -155,9 +179,23 @@ Process fixes shipped 2026-10-22:
 Remaining:
 
 - Trigger the workflow and confirm all steps actually pass on a Windows
-  runner. The UIA smoke needs an interactive desktop/UIA session; GitHub's
-  hosted `windows-latest` runner may not provide one, so a dedicated VM may be
-  required (see §13).
+  runner. **Runner decision: DECIDED 2026-10-24 (§13) — use the hosted
+  `windows-latest` runner; no dedicated VM required.** First-run checklist:
+  1. `workflow_dispatch` the workflow (or wait for the 06:00 UTC schedule)
+     and confirm the job reaches the §9.2 smoke step.
+  2. Expect the §9.1 integration test to run against the real Windows binary
+     (`flutter test integration_test/accessibility_windows_test.dart -d
+     windows`), the Stockfish E2E to EXECUTE rather than skip (§11.17), and
+     the UIA smoke to report ≥40 invocable controls + 500 random clicks with
+     exit 0.
+  3. Watch the §13 caveats in the artifacts: the runner's default 1024x768
+     resolution (raise via `Set-DisplayResolution` if the smoke's window
+     bounds are too small for its random clicks) and Event Viewer access from
+     the runner account (the smoke's step 7 reads it via `Get-WinEvent`).
+  4. If the job fails at a session-specific step (UIA attach, Event Viewer,
+     window rendering), capture the `uia-smoke-artifacts` + Event Viewer
+     excerpt, and only THEN move to a dedicated VM per the §13 fallback
+     criteria.
 
 **Done when:** a green scheduled Windows run is linked from the repository and
 its artifacts prove the native gate passed.
@@ -674,13 +712,50 @@ or the upstream issue is closed and the workaround is formally retired.
 
 ---
 
-## 13. Open decisions (not scheduled)
+## 13. Open decisions (resolved 2026-10-24)
 
-- **Windows runner:** hosted Windows runner vs. a dedicated VM with an
-  interactive desktop session for UIA/Narrator. Needed for §11.3.
-- **Safe mode:** should the app disable custom semantics for screen-reader
-  users until the engine fix lands? Current preference is to fix/ship the tree,
-  not add an accessibility regression.
+No open decisions remain. The two long-standing questions are decided below.
+
+- ~~**Windows runner**~~ **DECIDED 2026-10-24 — use the GitHub-hosted
+  `windows-latest` runner; no dedicated VM required.** Evidence, all verified
+  against the hosted Windows Server 2022 image (sources at the end):
+  1. The job runs in a real **interactive console session** — not Session 0.
+     A measured diagnostic on `windows-latest` (pyjab's `windows-gui.yml`,
+     which runs exactly this class of attach-to-a-launched-app GUI +
+     accessibility-bridge automation on the hosted runner) reports an active
+     console session (`qwinsta`: `>console runneradmin 2 Active`), user
+     `runneradmin`, `explorer.exe` running, and the launched app's window
+     present in the desktop's top-level window list.
+  2. UIA tooling is **preinstalled**: `WinAppDriver 1.2.2009.02003` ships on
+     the Windows Server 2022 image (runner-images `Windows2022-Readme.md`,
+     "Tools" section), so the §9.2 smoke's `UIAutomationCore` COM client needs
+     no install step.
+  3. `flutter test integration_test/... -d windows` against the real Windows
+     binary is routine on hosted runners — per the Flutter integration-testing
+     docs, **xvfb is the LINUX-only virtual-display requirement**; Windows
+     needs no virtual display.
+  4. The runner account is a local admin with **UAC disabled** (GitHub Docs,
+     "Administrative privileges"), so UIA client registration and the §9.2
+     step-7 Event Viewer read (`Get-WinEvent`) work.
+  Caveats for the first §11.3 run: default resolution **1024x768** (raise via
+  `Set-DisplayResolution -Width 1920 -Height 1080 -Force` if the smoke needs
+  a larger window; not all modes are supported — runner-images#2935), display
+  scale fixed at **96 DPI / 1.0** (no DPI-scaling coverage on a hosted
+  runner), and the desktop is **unattended** (windows render off-screen and
+  receive synthetic `mouse_event` input, but nothing is physically displayed).
+  **Fallback criteria:** move to a dedicated VM only if the first hosted run
+  hits a session-specific failure the image cannot reproduce — UIA attachment
+  fails, Event Viewer is unreadable from the runner account, or a
+  Windows-11-only rendering difference matters (the image is Server 2022, not
+  Windows 11).
+- ~~**Safe mode**~~ **DECIDED 2026-10-24 — no safe-mode toggle.** Do not
+  disable custom semantics for screen-reader users until the engine fix lands;
+  that would itself be an accessibility regression. Keep the shipped hardening
+  (the `ExcludeSemantics` + `IndexedStack` hidden-tab guard and the stable
+  semantics roots) and keep the upstream engine fix (`flutter/flutter#175041`,
+  §2.6) as the only retirement path. The §9.2 UIA smoke and §14.1/§14.2 are
+  the evidence gate: revisit only if that validation or a field report shows
+  the hardening is insufficient in practice.
 - ~~**Telemetry isolation**~~ **DECIDED 2026-10-23:** `StatsLog`,
   `QualityLog`, `ReviewLog`, and `VariantReviewLog` are now injectable stores
   (per-`ProviderScope` instances exposed through `statsLogProvider` /
@@ -688,6 +763,14 @@ or the upstream issue is closed and the workaround is formally retired.
   Screens read/write their store via `ref.read`, so each `ProviderScope`
   gets fully isolated state and the old process-static singletons +
   `resetTelemetry` test hygiene are gone. Run evidence: `automation-track.md`.
+
+Sources: actions/runner-images `Windows2022-Readme.md` (WinAppDriver
+preinstalled); `gaozhao1989/pyjab` `.github/workflows/windows-gui.yml`
+(measured interactive session + GUI/accessibility automation on
+`windows-latest`); flutter.dev integration-testing docs (desktop device runs;
+xvfb Linux-only); GitHub Docs "GitHub-hosted runners · Administrative
+privileges" (Windows VMs are local admins, UAC disabled); runner-images#2935
+(resolution changeable but mode-limited).
 
 ---
 

@@ -1,8 +1,26 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-23 (UTC) — §11.17 makes the real-engine Stockfish E2E
-run on the windows-nightly gate too: the test hardcoded the Linux engine path
+Last updated: 2026-10-24 (UTC) — §13 open decisions RESOLVED: the
+Windows-runner question (hosted `windows-latest` vs a dedicated VM for the
+§9.1/§9.2/§11.3 native validation) is DECIDED **hosted `windows-latest`, no
+dedicated VM required**, and the safe-mode question is DECIDED **no toggle —
+keep the semantics hardening** (§2.6's upstream fix stays the only retirement
+path). Runner-decision evidence, all verified this run: the hosted Windows
+Server 2022 image runs jobs in a real **interactive console session**
+(measured: session 2, user `runneradmin`, `explorer.exe` running, launched
+apps' windows enumerable by accessibility bridges — pyjab's `windows-gui.yml`
+runs exactly this class of GUI automation on `windows-latest`); **WinAppDriver
+1.2.2009.02003 is preinstalled** (runner-images `Windows2022-Readme.md`), so
+the §9.2 `UIAutomationCore` client needs no install; `flutter test -d windows`
+desktop integration tests are routine on hosted runners (per the Flutter docs,
+**xvfb is the LINUX-only virtual-display requirement**); the runner account is
+a local admin with **UAC disabled** (GitHub Docs), so UIA registration +
+Event Viewer reads work. Caveats for the first §11.3 run: 1024x768 default
+resolution, 96 DPI fixed display scale, unattended desktop; fallback to a
+dedicated VM only if a session-specific failure surfaces (UIA attach, Event
+Viewer, Windows-11-only delta). Previously §11.17 makes the real-engine
+Stockfish E2E run on the windows-nightly gate too: the test hardcoded the Linux engine path
 so the Stockfish section ALWAYS skipped on the Windows runner (and that job
 never downloaded any engine). The test now resolves its host binary via
 `EmbeddedEngine.bundledAssetPath()` (Windows → `windows-x86-64/stockfish.exe`,
@@ -1599,3 +1617,77 @@ suites referenced above now exist. Native Windows execution is tracked in
   the `dart format` gate (102/127-file churn, needs an explicit owner
   decision) and the coverage-artifact comparison (needs ≥2 CI runs) are the
   only remaining audit candidates, neither is a code/CI defect.
+- 2026-10-24Z — DECISIONS §13 (Windows-runner + safe-mode resolved; no VM
+  needed). Every audit since §11.16 confirmed FUTURE_WORK.md's open items are
+  all Windows-native (§9.1/§9.2/§11.3/§14.1-14.2), external (§2.6), or
+  un-scheduled decisions (§13) — and §13's Windows-runner question is the
+  direct prerequisite for the whole remaining backlog: whether the first
+  §11.3 trigger (and the §9.1/§9.2 validation) needs a dedicated Windows VM
+  with an interactive desktop or can run on the GitHub-hosted
+  `windows-latest` runner. This run researched and DECIDED both questions.
+  Files changed:
+  `docs/FUTURE_WORK.md` — §13 rewritten "resolved 2026-10-24": the Windows
+  runner decision and the safe-mode decision are both DECIDED (telemetry
+  isolation was already decided 2026-10-23); §11.3's "Remaining" now carries
+  the first-run trigger checklist (dispatch, expected green signals, the §13
+  caveats to watch in the artifacts, and the fallback criteria); header
+  bumped.
+  `automation-track.md` — header line + this Run Log entry (no Roadmap row
+  exists for §13; per protocol the Run Log is the record).
+  **Decision 1 — Windows runner: use GitHub-hosted `windows-latest`.**
+  Evidence, verified this run against the hosted Windows Server 2022 image:
+  (1) **interactive console session, not Session 0** — a measured diagnostic
+  on `windows-latest` (pyjab `gaozhao1989/pyjab` `.github/workflows/
+  windows-gui.yml`, which runs attach-to-a-launched-app GUI +
+  accessibility-bridge automation on the hosted runner) reports
+  `qwinsta: >console runneradmin 2 Active`, `explorer.exe` running, and the
+  launched app's window in the desktop's top-level window list — fetched and
+  read verbatim this run; (2) **UIA tooling preinstalled** — runner-images
+  `Windows2022-Readme.md` (fetched this run) lists `WinAppDriver
+  1.2.2009.02003` under Tools, so the §9.2 `UIAutomationCore` COM client needs
+  no install step; (3) `flutter test integration_test/... -d windows` against
+  the real Windows binary is routine on hosted runners — per the Flutter
+  integration-testing docs, **xvfb is the LINUX-only virtual-display
+  requirement**, Windows needs none; (4) the runner account is a local admin
+  with **UAC disabled** (GitHub Docs), so UIA client registration and the
+  smoke's step-7 Event Viewer `Get-WinEvent` read work. Caveats for the first
+  run: default resolution 1024x768 (raise via `Set-DisplayResolution -Width
+  1920 -Height 1080 -Force`; mode-limited, runner-images#2935), display scale
+  fixed at 96 DPI (no DPI-scaling coverage on a hosted runner), unattended
+  desktop (windows render off-screen and receive synthetic `mouse_event`
+  input, nothing physically displayed). **Fallback criteria:** a dedicated VM
+  only if the first hosted run hits a session-specific failure the image
+  cannot reproduce — UIA attach fails, Event Viewer unreadable, or a
+  Windows-11-only rendering delta matters (the image is Server 2022).
+  **Decision 2 — Safe mode: no toggle.** Keep the shipped hardening
+  (`ExcludeSemantics` + `IndexedStack` hidden-tab guard + stable semantics
+  roots); a screen-reader-visible safe mode would itself be an accessibility
+  regression. The upstream engine fix (`flutter/flutter#175041`, §2.6) is the
+  only retirement path; the §9.2 UIA smoke + §14.1/§14.2 are the evidence
+  gate, and the decision is reopened only if that validation or a field
+  report shows the hardening insufficient in practice.
+  No lib/, test/, or workflow files changed — a decisions/process deliverable
+  (the §13 precedent from the 2026-10-23 telemetry-isolation run).
+  Evidence: `flutter analyze` → `No issues found! (ran in 2.3s)` (exact
+  output, re-run before commit); full regression `flutter test` → 637/637
+  pass (01:47, All tests passed! — no Dart changes); `git status --short`
+  confirms only the two track docs changed; the two decisive research sources
+  fetched and read verbatim this run (pyjab windows-gui.yml session
+  diagnostic; runner-images Windows2022-Readme.md WinAppDriver entry).
+  Commit: <set-after-commit>.
+  Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
+  host — re-audited this run (`git config --get credential.helper` empty, no
+  `gh`, no SSH key, no `~/.git-credentials`, no `~/.netrc`, no token in env;
+  `git push --dry-run origin main` → `fatal: could not read Username for
+  'https://github.com': No such device or address`); `git ls-remote origin
+  main` still shows `e1749b3`, so the local queue remains local-only. Re-run
+  the push after credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials exist;
+  (b) trigger the §11.3 windows-nightly via `workflow_dispatch` (or wait for
+  the 06:00 UTC schedule) on the hosted `windows-latest` runner per the §13
+  decision + §11.3 checklist — this is now the ONLY remaining functional gap
+  (§14.1-14.2); or (c) re-check §2.6 on the next Flutter upgrade / when
+  `flutter/flutter#190903` lands. The `dart format` gate (102/127-file churn,
+  needs an explicit owner decision) and the coverage-artifact comparison
+  (needs ≥2 CI runs) remain the only audit candidates, neither a code/CI
+  defect.
