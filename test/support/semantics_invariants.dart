@@ -192,11 +192,13 @@ bool _isSquareLabel(String label) {
   return regex.hasMatch(label);
 }
 
-/// Catch expectations by printing the semantics tree dump before failing.
+/// Assert there is no pending exception, printing the semantics-tree dump
+/// first when there is one.
 ///
 /// Use at the end of tests where a semantics crash would leave no Dart
 /// stack trace: the dump makes it possible to see what the tree looked like
-/// at failure time.
+/// at failure time. On a pending exception this runs the dump and then fails
+/// the test, with [context] in the failure message.
 ///
 /// [context] is a short description of what was happening when the exception
 /// occurred.
@@ -204,13 +206,14 @@ void expectNoExceptionWithSemanticsDump(
   WidgetTester tester,
   String context,
 ) {
-  expect(tester.takeException(), isNull, reason: 'exception during $context');
-  if (tester.takeException() != null) {
-    // Print the semantics tree for diagnostics.
+  final exception = tester.takeException();
+  if (exception != null) {
+    // Print the semantics tree for diagnostics before failing.
     final owner = tester.binding.renderViews.first.owner?.semanticsOwner;
     if (owner != null && owner.rootSemanticsNode != null) {
       debugPrint(_dumpTree(owner.rootSemanticsNode!, ''));
     }
+    fail('exception during $context: $exception');
   }
 }
 

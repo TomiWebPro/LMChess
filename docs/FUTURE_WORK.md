@@ -1,13 +1,19 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-23 (UTC) — §11.9 removes the last real-network call from
-the test suite: `connection_tester_seam_test.dart` no longer invokes the
-default `connectionTesterProvider` (which pings a live LLM endpoint, violating
-the repo's "no HTTP socket in widget tests" rule); the default's invocation
-behaviour stays verified only via deterministic overrides; §2.6 still no
-upstream fix (flutter/flutter#175041 open, PR #190903 unmerged) → local 3.47.6
-stays on mitigation; §11.8 pins both CI jobs to known-good Flutter 3.47.6
+Last updated: 2026-10-23 (UTC) — §11.10 fixes the dead semantics-dump failure
+fallback in `test/support/semantics_invariants.dart`
+(`expectNoExceptionWithSemanticsDump` promised to print the tree dump before
+failing, but the second `takeException()` could never fire — the first `expect`
+drains it and throws synchronously — so the dump never printed and `_dumpTree`
+was dead code; it now drains once, dumps, then fails). §11.9 removes the last
+real-network call from the test suite: `connection_tester_seam_test.dart` no
+longer invokes the default `connectionTesterProvider` (which pings a live LLM
+endpoint, violating the repo's "no HTTP socket in widget tests" rule); the
+default's invocation behaviour stays verified only via deterministic overrides;
+§2.6 still no upstream fix (flutter/flutter#175041 open, PR #190903 unmerged) →
+local 3.47.6 stays on mitigation; §11.8 pins both CI jobs to known-good Flutter
+3.47.6
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -243,6 +249,36 @@ test/connection_tester_seam_test.dart` → 8/8 pass (returns instantly — no
 socket is opened during the run); related `test/ui/agent_setup_test.dart` →
 29/29 pass; full `flutter test` → 635/635 pass. See `automation-track.md` for
 the run log.
+
+### 11.10 Semantics-dump failure fallback actually dumps (P2 — DONE)
+
+`expectNoExceptionWithSemanticsDump` in `test/support/semantics_invariants.dart`
+documents "print the semantics-tree dump before failing", but the fallback was
+unreachable dead code: the first line,
+`expect(tester.takeException(), isNull, reason: '…')`, **drains** the pending
+exception and `expect` **throws synchronously** when the value is non-null, so
+the second `takeException()` inside `if (tester.takeException() != null)`
+could never return non-null. On a real failure the test died at the `expect`
+with no tree dump; on a clean pass the fallback branch — and `_dumpTree`
+itself — never ran. The helper now drains the exception once into a local and,
+when it is non-null, prints the semantics-tree dump **before** failing with
+`fail('exception during $context: $exception')`, restoring the documented
+behaviour and making `_dumpTree` live again. The clean-path behaviour used as
+a "no pending exception" gate by `test/ui/semantics_stability_test.dart` (17
+sites) and `test/ui/monkey_tap_test.dart` (6 sites) is unchanged.
+
+Two new tests in `test/support/integration_test.dart` pin both paths: a
+clean-pass (`returnsNormally` + `takeException()` null) and a forced failure —
+a `GestureDetector` `onTap` throwing `StateError('forced kboom')` (recorded
+deterministically by the test framework) — asserted to fail with both the
+context and the exception text, drain the pending exception, and actually
+print the dump (`[4] label="tap-me"` observed in the run output).
+
+Evidence: `flutter analyze` → `No issues found!`; `flutter test
+test/support/integration_test.dart` → 20/20 pass (18 old + 2 new); caller
+suites `test/ui/semantics_stability_test.dart test/ui/monkey_tap_test.dart` →
+37/37 pass; full `flutter test` → 637/637 pass (635 baseline + 2 new). See
+`automation-track.md` for the run log.
 
 ---
 

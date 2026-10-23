@@ -254,6 +254,62 @@ void main() {
       expect(() => harness.expectNoException(tester), returnsNormally);
     });
 
+    testWidgets('expectNoExceptionWithSemanticsDump passes clean', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(home: Scaffold(body: Center(child: Text('OK')))),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        () => semantics.expectNoExceptionWithSemanticsDump(tester, 'clean'),
+        returnsNormally,
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets(
+        'expectNoExceptionWithSemanticsDump fails with context on a pending '
+        'exception and drains it', (tester) async {
+      // Gesture-callback throw — the canonical deterministic pending
+      // exception in widget tests (recorded by the framework, not rethrown).
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => GestureDetector(
+                onTap: () => throw StateError('forced kboom'),
+                child: const Text('tap-me'),
+              ),
+            ),
+          ),
+        ),
+      );
+      final handle = tester.ensureSemantics();
+      await tester.tap(find.text('tap-me'));
+      await tester.pump();
+      expect(tester.takeException(), isA<StateError>());
+
+      // Re-arm the pending exception: the previous takeException drained it.
+      await tester.tap(find.text('tap-me'));
+      await tester.pump();
+
+      Object? thrown;
+      try {
+        semantics.expectNoExceptionWithSemanticsDump(tester, 'forced context');
+      } catch (e) {
+        thrown = e;
+      }
+      try {
+        expect(thrown, isNotNull,
+            reason: 'helper must fail on a pending exception');
+        expect(thrown.toString(), contains('forced context'));
+        expect(thrown.toString(), contains('forced kboom'));
+        // The helper drained the pending exception.
+        expect(tester.takeException(), isNull);
+      } finally {
+        handle.dispose();
+      }
+    });
+
     testWidgets('disposeApp drains timers without crash', (tester) async {
       await tester.pumpWidget(Container());
       expect(() async => harness.disposeApp(tester), returnsNormally);

@@ -1,7 +1,14 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-23 (UTC) — §11.9 removes the last real-network call from the test suite (3 tests in `test/connection_tester_seam_test.dart` invoked the default `connectionTesterProvider`, a live LLM endpoint ping, violating the repo's no-socket rule; now shape-only + deterministic overrides); §9/§11.3/§14 remain Windows-native BLOCKED; §2.6 still no upstream fix (flutter/flutter#175041 open, PR #190903 unmerged); local 3.47.6 stays on mitigation; §11.8 pins CI Flutter SDK to known-good 3.47.6 on both jobs; §11.7 real-engine E2E smoke wired into ubuntu-gate; §11.6 ubuntu-gate builds + smokes the Linux release binary; §11.5 dead deps removed
+Last updated: 2026-10-23 (UTC) — §11.10 removes the dead "semantics dump on
+failure" fallback in `test/support/semantics_invariants.dart`: the second
+`takeException()` could never fire because the first was drained by `expect`
+(which throws synchronously on a non-null value), so
+`expectNoExceptionWithSemanticsDump` never printed the tree dump it promised
+and `_dumpTree` was dead code; now it drains the exception once, dumps, then
+fails with the context + exception (2 new support tests, 637/637 regression);
+§11.9 removes the last real-network call from the test suite (3 tests in `test/connection_tester_seam_test.dart` invoked the default `connectionTesterProvider`, a live LLM endpoint ping, violating the repo's no-socket rule; now shape-only + deterministic overrides); §9/§11.3/§14 remain Windows-native BLOCKED; §2.6 still no upstream fix (flutter/flutter#175041 open, PR #190903 unmerged); local 3.47.6 stays on mitigation; §11.8 pins CI Flutter SDK to known-good 3.47.6 on both jobs; §11.7 real-engine E2E smoke wired into ubuntu-gate; §11.6 ubuntu-gate builds + smokes the Linux release binary; §11.5 dead deps removed
 Related: `docs/FUTURE_WORK.md` (binding roadmap), `ARCHITECTURE.md`, `README.md`
 
 This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every run**.
@@ -49,6 +56,7 @@ This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every ru
 | P2 | `test/ui/shared_widgets_test.dart` | DONE 2026-10-21: 51 tests covering §6.12 spec — MoveList (empty, single move, multi-move rows, error plies ⚠, quality marks !!/? semantics labels, current-ply highlighting via fontWeight w700, tap-to-seek callback, null-onTapMove no-crash), EvalBar (+/-/zero labels, heuristic watermark toggle, fractionFor logistic mapping at extremes ±10 → ~1/0, zero → 0.5, +2 → >0.6), AgentActivityPanel (empty placeholder, thinking-empty waiting message, event tiles render per-kind, thinking footer spinner+text, error tile rendering, auto-scroll FilterChip interactive), PlayerCard (active with formatted clock "30:00", inactive without accent, human/person icon, agent/robot icon, long name ellipsis, subtitle text, clock null hides clock), BoardPanelLayout (wide >1100 → Row side-by-side, medium 700–1100 → TabBar stacked, narrow <700 → Column stacked, tab switch preserves StatefulBuilder state across Board→Activity→Board), StatChip (label:value text, optional icon avatar, no-icon mode, multiple coexist in Wrap), layoutModeFor boundaries (500→narrow, 700→medium, 1000→medium, 1100→medium, 1200→wide), formatClock (0→"0:00", 90→"1:30", 3661→"1:01:01", -300→"0:00"), qualityColorFor light/dark theme values, qualityIconFor all known marks, redactSecrets (sk-keys, api_key, Bearer tokens, safe passthrough). Uses deterministic fakes only — never hits real engine/network. Evidence: `flutter analyze` clean (pre-existing 3 issues unchanged); `flutter test test/ui/shared_widgets_test.dart` 51/51 pass; full regression `flutter test` 518/518 pass (467 old + 51 new). Next: `test/ui/home_screen_test.dart` (§6.2, P2).
 | P2 | `test/ui/home_screen_test.dart` | DONE 2026-10-21: 6 widget tests covering all §6.2 spec items: feature-card tap callbacks (each of 7 cards calls onOpen with exact route string from ArenaRoutes), capability chips render ("Standard 8×8", "Chaotic variants", "Full telemetry"), narrow layout (<700px → 500×800 viewport) renders without overflow, wide layout (≥1100px → 1400×1000 viewport) renders without overflow, standalone HomeScreen (no onOpen → Navigator.pushNamed fallback) renders full card grid with hero title + all 7 titles verified, hero strip title "LLM Chess Arena" present. Uses MaterialApp+Material wrapper for ink/chips; desktop surface via tester.view.physicalSize; view reset in tearDown. Never hits real engine/network/wall-clock. Evidence: `flutter analyze` clean (0 issues); `flutter test test/ui/home_screen_test.dart` 6/6 pass; full regression `flutter test` 524/524 pass (518 old + 6 new). Next: §10.5 Arena Elo injection or §10.6 Deterministic deep states.
 | P1 | §11.9 Test-suite network hygiene (no real LLM pings in tests) | DONE 2026-10-23: three tests in `test/connection_tester_seam_test.dart` invoked the DEFAULT `connectionTesterProvider` (lines 34–38, 179–181, 199–200), which wraps `testAgentConnection` → `createProvider(...).testConnection()` — a real HTTP ping to a live LLM endpoint — violating the file's own no-socket rule and the repo's deterministic-fakes convention; one asserted real wall-clock `< 30s` (Stopwatch), the flakiest line in the suite. All three now assert only the provider's pure shape (resolving is socket-free) and pin invocation behaviour via deterministic overrides; the fixed-success/fixed-failure/inline-secret/throw/independence tests are untouched; test count unchanged (8). The live network path remains the production seam (AgentSetupScreen's "Test Connection" button), exercised interactively, not by `flutter test`. Evidence: `flutter analyze` → `No issues found!`; `flutter test test/connection_tester_seam_test.dart` → 8/8 pass (instant — no socket opened); related `test/ui/agent_setup_test.dart` → 29/29 pass; full regression `flutter test` → 635/635 pass (count unchanged). |
+| P2 | §11.10 Semantics-dump failure fallback actually dumps (dead-code removal + fix) | DONE 2026-10-23: `expectNoExceptionWithSemanticsDump` never printed the semantics dump it documented — `expect(tester.takeException(), isNull, ...)` drains the pending exception and throws synchronously on a non-null value, so the second `takeException()` (hence the `_dumpTree` block and `_dumpTree` itself) was unreachable dead code. Now the helper drains the exception once into a local, and on a non-null value prints the tree dump BEFORE failing with `fail('exception during <context>: <exception>')`; `_dumpTree` is live again and the doc comment now describes the true dump-then-fail order. 2 new tests in `test/support/integration_test.dart` (now 20): clean-pass via `returnsNormally` + `takeException()` null, and forced-failure — a `GestureDetector` onTap throwing `StateError('forced kboom')` recorded deterministically by the framework — asserted to (1) fail the test with the context string AND the exception text, (2) drain the pending exception, (3) print the tree dump (observed `[4] label="tap-me"` in the output). Deterministic only — no network/engine/wall-clock. Evidence: `flutter analyze` → `No issues found! (ran in 2.4s)`; `flutter test test/support/integration_test.dart` → 20/20 pass (18 old + 2 new); caller suites `test/ui/semantics_stability_test.dart test/ui/monkey_tap_test.dart` → 37/37 pass (32 + 5, unchanged behaviour); full regression `flutter test` → 637/637 pass (635 old + 2 new). |
 
 Note (2026-10-21): all `test/ui/`, `test/support/`, and `integration_test/`
 suites referenced above now exist. Native Windows execution is tracked in
@@ -971,3 +979,61 @@ suites referenced above now exist. Native Windows execution is tracked in
   `test/support/semantics_invariants.dart:207-215` is dead code (the second
   `takeException()` can never fire because the `expect` drains it) and P2
   cp. `test/ui` coverage artifacts, both left for future runs.
+- 2026-10-23Z — TEST HYGIENE P2 §11.10 (dead code in the semantics-dump
+  failure helper): the deliverable this run is the audit-flagged follow-up
+  from §11.9 — `expectNoExceptionWithSemanticsDump` in
+  `test/support/semantics_invariants.dart:203-215` never did what its doc
+  promised. The old body was
+  `expect(tester.takeException(), isNull, reason: '…');` followed by
+  `if (tester.takeException() != null) { dump the tree }` — but the first
+  `expect` **drains** the pending exception and **throws synchronously** when
+  it is non-null, so the second `takeException()` could never return non-null:
+  on a real failure the test died at the `expect` with no tree dump, and on a
+  clean pass the fallback branch (and `_dumpTree`, `semantics_invariants.dart:
+  217-227`) was unreachable dead code. Files changed:
+  `test/support/semantics_invariants.dart` — rewritten to drain the exception
+  once into a local: `final exception = tester.takeException();` then, when
+  non-null, print the semantics-tree dump via `debugPrint(_dumpTree(...))` and
+  fail with `fail('exception during $context: $exception')`; doc comment
+  rewritten to state the true dump-then-fail order. Behaviour on the clean
+  path is byte-identical (drain → null → return), which is why the 22 existing
+  call sites in `test/ui/semantics_stability_test.dart` (17) and
+  `test/ui/monkey_tap_test.dart` (6) needed no changes.
+  `test/support/integration_test.dart` — 2 new tests in the `harness helpers`
+  group (18 → 20): (1) clean-pass via `returnsNormally` + `takeException()`
+  isNull; (2) forced-failure — a `GestureDetector` onTap that throws
+  `StateError('forced kboom')` (deterministically recorded by the test
+  framework, never rethrown), re-armed after an initial drain probe, then
+  asserted: the helper throws back a failure whose text contains both the
+  context (`forced context`) and the exception (`forced kboom`), it drains the
+  pending exception (`takeException()` isNull afterwards), and the semantics
+  dump actually printed (observed `[4] label="tap-me"` in the test output,
+  proving the previously-dead `_dumpTree` path is live). Deterministic fakes
+  only — no network/engine/wall-clock; the `SemanticsHandle` is disposed in
+  `finally`.
+  Docs: `docs/FUTURE_WORK.md` — §11.10 added + closed as DONE in the same run
+  (open list unchanged — §11.10 not an open item), header bumped;
+  `automation-track.md` — header line + §11.10 Roadmap status row + this Run
+  Log entry.
+  Evidence: `flutter analyze` → `No issues found! (ran in 2.4s)`; `flutter
+  test test/support/integration_test.dart` → 20/20 pass (18 old + 2 new);
+  caller suites `flutter test test/ui/semantics_stability_test.dart
+  test/ui/monkey_tap_test.dart` → 37/37 pass (32 + 5, behavior unchanged);
+  full regression `flutter test` → 637/637 pass (01:53, All tests passed! —
+  635 baseline + 2 new). `git status --short` confirms only the two support
+  files + the two track docs changed.
+  Commit: `TBD`.
+  Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
+  host — audited again this run (`git config --get credential.helper` empty,
+  no `gh`, no SSH key, no `~/.git-credentials`, no `~/.netrc`, no token in
+  env; `git push --dry-run origin main` → `could not read Username for
+  'https://github.com'`); `git ls-remote origin main` still shows `e1749b3`,
+  so `e1749b3..HEAD` (now 35 local commits incl. this run) remains local-only.
+  Re-run the push after credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials exist;
+  (b) trigger the §11.3 Windows nightly / run §9.1–9.2 on a Windows
+  desktop/UIA session (closes §14.1–14.2); or (c) decide the §13
+  Windows-runner / safe-mode questions. The `dart` format gate still needs an
+  explicit owner decision (102/127-file churn on the pinned 3.47.6); the P2
+  `test/ui` coverage-artifact comparison (cp.) remains a process follow-up
+  that needs ≥2 CI runs to compare.
