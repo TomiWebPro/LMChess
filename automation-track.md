@@ -1,7 +1,7 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-23 (UTC) — §2.6 upstream status check (flutter/flutter#175041 still open; fix PR #190903 open/unmerged → no stable engine fix; local 3.47.6 stays on mitigation); §9/§11.3/§14 remain Windows-native BLOCKED; §11.6 ubuntu-gate builds + smokes the Linux release binary; §11.5 dependency hygiene: dead deps removed from pubspec (`import_lint`, `cupertino_icons`, `intl`, `collection`, `hive_ce`); graph unchanged downstream
+Last updated: 2026-10-23 (UTC) — arena chaotic→`VariantReviewLog` wiring doc fixed (was stale "not recorded" comment at `arena_screen.dart:28-30`) + 4 new tests pinning the recording/isolation/E2E path; §9/§11.3/§14 remain Windows-native BLOCKED; §2.6 still no upstream fix (flutter/flutter#175041 open); local 3.47.6 stays on mitigation; §11.6 ubuntu-gate builds + smokes the Linux release binary; §11.5 dead deps removed
 Related: `docs/FUTURE_WORK.md` (binding roadmap), `ARCHITECTURE.md`, `README.md`
 
 This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every run**.
@@ -37,6 +37,7 @@ This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every ru
 | P2 | §10.6 Deterministic deep states | DONE 2026-10-21: PlayScreen({this.initialFen}) — parseFen(startFen) replaces Position.initial() in _newGame(), defaulting to standardStartFen; AppShell({this.initialIndex = 0}) — initState sets _index from widget.initialIndex instead of hardcoded 0; WatchScreen({this.initialSeed}) — seed assignment uses widget.initialSeed ?? (clock().msSinceEpoch & 0x7fffffff). New `test/ui/deterministic_deep_states_test.dart` (12 tests): initialFen overrides starting position with e5 pawn, minimal king-only FEN renders two kings without crash, PlayScreen without initialFen uses standard start, AppShell default starts at Home (0), AppShell initialIndex=1 shows Play directly without Home navigation, AppShell initialIndex=7 shows Settings directly, WatchScreen with initialSeed=42 renders stably, two WatchScreens with same initialSeed both render, backward compat const constructors for all three screens. Evidence: `flutter analyze` clean on all 5 touched files; `flutter test test/ui/deterministic_deep_states_test.dart` 12/12 pass; full regression `flutter test` 542/542 pass (530 old + 12 new). Next: §10.8 Dispose audit.
 | P2 | §10.8 Dispose audit | DONE 2026-10-21: New `test/ui/dispose_audit_test.dart` (8 tests) covering all §10.8 spec requirements: ReviewScreen navigate-away mid-review disposes handle exactly once, Re-run review supersedes previous handle with disposal count verified, VariantReplayScreen dispose during async review disposes exactly once, stale completion guard prevents extra disposal without exception, SpyHandle property verification, single navigate-away disposal invariant, VariantReplayScreen dispose without analysis no crash, sequential Analyze calls each dispose prior handle. Uses _SpyHandle extending ReviewEvaluatorHandle injected via reviewEvaluatorFactoryProvider override to count .dispose() calls per instance. Evidence: `flutter analyze` clean; `flutter test test/ui/dispose_audit_test.dart` 8/8 pass; full regression `flutter test` 550/550 pass (542 old + 8 new). Next: complete — all roadmap rows in docs/FUTURE_WORK.md §§5–12 marked DONE. |
 | P1 | §11.6 Linux release build + Xvfb smoke on ubuntu-gate | DONE 2026-10-23: `ubuntu-gate` gained three steps — Install Linux desktop build deps (`ninja-build pkg-config libgtk-3-dev libsecret-1-dev libjsoncpp-dev xvfb openbox`), Build Linux release (`flutter build linux --release`), Smoke start Linux release (Xvfb: start `Xvfb :77` + `openbox` with `LIBGL_ALWAYS_SOFTWARE=1`, launch `build/linux/x64/release/bundle/llm_chess_arena`, require `kill -0` after a 15 s window, bounded SIGTERM→SIGKILL teardown). Closes the gap where analyze+test could pass while a runner/plugin/CMake regression broke the binary (previously only the Windows nightly built it). Engine assets are gitignored and extraction is lazy, so the smoke needs no download. Evidence: `flutter analyze` → `No issues found!`; `flutter build linux --release` → `✓ Built build/linux/x64/release/bundle/llm_chess_arena`; exact smoke recipe exits 0 locally (binary alive after 15 s under Xvfb :77 + openbox); full regression `flutter test` → 631/631 pass (no Dart changes); workflow re-parses clean via PyYAML (ubuntu-gate 11 steps, windows-nightly untouched); all new run blocks pass `bash -n`. |
+| P1 | §13-adjacent: chaotic→`VariantReviewLog` wiring doc fix + 4 tests (`test/ui/arena_variant_review_test.dart`) | DONE 2026-10-23: fixed the stale "**Wiring point**: chaotic games are *not* recorded in [ReviewLog]" doc comment at `arena_screen.dart:28-30` — the code has recorded chaotic games losslessly into `VariantReviewLog` since commit 61d58d7 (`_concludeGame` write site at `arena_screen.dart:1552-1566`), but the class doc still described the original plan and **no test covered the path**. New suite pins the whole recording contract: (1) chaotic tournament (2 demo agents, 1 pairing × 2 games/pairing × 1 round, color alternation, concurrency 2, `initialSeed: 42`) records exactly 2 `VariantGameRecord`s with mode 'chaotic', two demo labels/agent-ids per game (white≠black), non-empty id/tournamentId/seed/initialBoard, outcome in {1-0,0-1,1/2-1/2,*}, non-empty reason, monotonic startedAt→finishedAt, sequential ply indices, ≥4-char attempt UCIs, and `validateChain()` empty (board + hash chain integrity); the FEN `ReviewLog` stays empty (isolation). (2) cancelled chaotic run still records both games with outcome '*' / reason 'cancelled' + valid chain (partial-trail visibility). (3) standard tournament records 2 `ReviewGame`s with mode 'standard' into `ReviewLog` and leaves `VariantReviewLog` empty (isolation both ways). (4) E2E: same-log `ReviewScreen` lists the arena chaotic game under "Chaotic replays" and tapping opens `VariantReplayScreen` with the labels. Deterministic fakes only (MockProvider plays first legal attempt, fixed UTC clock, telemetry stores per-scope), no network/engine/wall-clock. Evidence: `flutter analyze` → `No issues found!`; `flutter test test/ui/arena_variant_review_test.dart` 4/4 pass; related suites (arena 27 + review 17 + variant_replay 22 + scrub 20) 86/86 pass; full regression `flutter test` 635/635 pass (631 old + 4 new). |
 | P0 | §11.3 Nightly Windows CI gate (`.github/workflows/ci.yaml`) | DONE 2026-10-21: Created `.github/workflows/ci.yaml` with two jobs: (1) `ubuntu-gate` — `flutter analyze` + `flutter test` on every push/PR; (2) `windows-nightly` — scheduled nightly (`cron: "0 6 * * *"`) and `workflow_dispatch`: Flutter stable setup, pub get, analyze, `flutter build windows --release`, unit/widget tests, `flutter test integration_test/accessibility_windows_test.dart -d windows` (§9.1), PowerShell UIA smoke via `tool/windows_accessibility_smoke.ps1` (§9.2) with `-Exe`, `-RandomClicks 500`, `-Timeout 120`, `-PauseMs 200`; Event Viewer excerpt capture on exit code 2 → artifact upload via `actions/upload-artifact@v4`, cleanup in finally block. Per §9.2 spec: exit 0=pass, 1=exe missing, 2=crash detected. No Dart files changed. 2026-10-22 process fixes: integration-test + smoke steps now fail the job on ANY non-zero exit (previously only smoke exit 2 gated; Event Viewer excerpt exported on any smoke failure, not just the crash path); job-level pre-launch of the exe removed — the smoke script owns the app lifecycle (launch + finally-kill), so UIA attachment/clicks hit a single instance. Windows run itself still pending (§9.1/§9.2 need a Windows desktop/UIA session). |
 | P1 | `test/ui/watch_screen_test.dart` | DONE 2026-10-20: 21 widget tests covering §6.5 — transport flow (Start advances moves, Pause stops scheduling/Resume continues, Stop ends run, Stop during in-flight turn safe, Start→Pause→Start resets cleanly), agent selectors (empty catalog stability check, dropdowns render agent names, selectors disabled while running, idle selection change), tab switching (Activity/Moves/Errors idle and running), error panel state, move-list population and seek matching board, dispose drains timers, narrow/wide layouts, status chip lifecycle phases, semantics tree stable across Start+Pause+Stop transitions including reparenting guard. Uses deterministic fakes (MockProvider stepDelay=0, fixed clock UTC), defensive control visibility checks (Stop/Pause only when present), no real network/engine/wall-clock. Evidence: `flutter analyze` clean; `flutter test test/ui/watch_screen_test.dart` 21/21 pass; full regression `flutter test` 328/328 pass (307 old + 21 new). Next: `test/ui/arena_screen_test.dart` (§6.6, P1). |
 | P1 | `test/ui/arena_screen_test.dart` | DONE 2026-10-20: 27 widget tests covering §6.6 — config form (Name field default text, Rounds/Games-pairing dropdowns labels, Chaos variants FilterChip, Concurrency slider, Start button enabled), disabled controls during run, start transitions UI (message gone → Cards appear), Stop shows Cancelling… then completes, Start twice rejected (onPressed=null), no-agents guard prevents start, standings header + agent name rows after finish, Seed Chip renders, empty grid before start, mini-board cards appear after start, tap on card stable or opens dialog, resize while running safe (500→1400→500px), scheduler cancellation doesn't leave orchestrators running, dispose drains timers, narrow/wide layout renders, chaos toggle flips selected state, config changes during idle safe, status notice after finish, rapid taps safe, semantics tree invariant across Start+Stop including reparenting detection via parentMap. Uses deterministic fakes (MockProvider stepDelay=0, fixed clock UTC, AgentListStore seedDemos), never hits real network/engine. Evidence: `flutter analyze` clean; `flutter test test/ui/arena_screen_test.dart` 27/27 pass; full regression `flutter test` 355/355 pass (307 old + 27 new). Next: `test/ui/agent_setup_test.dart` (§6.10, P1) or `test/ui/review_screen_test.dart` (§6.8, P1). |
@@ -754,3 +755,54 @@ suites referenced above now exist. Native Windows execution is tracked in
   (closes §14.1–14.2); or (c) decide the §13 Windows-runner / safe-mode
   questions. §2.6 re-check is due on the next Flutter upgrade and whenever
   `flutter/flutter#190903` lands.
+- 2026-10-23Z — UI P1 (arena chaotic→`VariantReviewLog` recording path:
+  stale doc fix + 4 new tests). Three independent subagent audits
+  (lib/test markers, CI+docs open items, chaotic-review feasibility)
+  confirmed the one remaining Linux-implementable code deliverable: the
+  "**Wiring point**: chaotic games are *not* recorded in [ReviewLog]" doc
+  comment at `lib/src/ui/screens/arena_screen.dart:28-30` is **stale** —
+  chaotic games have been recorded losslessly into `VariantReviewLog` since
+  commit 61d58d7 (write site at `arena_screen.dart:1552-1566`,
+  `_concludeGame`), yet the class doc still described the original plan and
+  **no test covered the path**. Files changed:
+  `lib/src/ui/screens/arena_screen.dart` — class doc rewritten: finished
+  chaotic games are recorded as `VariantGameRecord`s (initial board +
+  per-ply attempt/interpretation trail + outcome) into `VariantReviewLog`,
+  replayable from the review screen's "Chaotic replays" card; the
+  FEN-shaped `ReviewLog` is standard-only by design.
+  `test/ui/arena_variant_review_test.dart` (new, 4 widget tests) —
+  (1) chaotic tournament (2 demo agents, 1 pairing × 2 games/pairing ×
+  1 round, color alternation, concurrency 2, `initialSeed: 42`) records
+  exactly 2 `VariantGameRecord`s: mode 'chaotic', the two demo
+  labels/agent-ids per game with white≠black, non-empty
+  id/tournamentId/seed/initialBoard, outcome ∈ {1-0,0-1,1/2-1/2,*},
+  non-empty reason, monotonic startedAt→finishedAt, sequential ply
+  indices, ≥4-char attempt UCIs, `validateChain()` empty; `ReviewLog`
+  stays empty (isolation). (2) cancelled chaotic run still records both
+  games with outcome '*' / reason 'cancelled' + valid chain (partial
+  trails surface too). (3) standard tournament records 2 `ReviewGame`s
+  with mode 'standard' into `ReviewLog` and leaves `VariantReviewLog`
+  empty (isolation both ways). (4) E2E: `ReviewScreen` pumped against the
+  same log instance lists the arena game under "Chaotic replays" and
+  tapping opens `VariantReplayScreen` with the game labels. Deterministic
+  fakes only (MockProvider plays first legal attempt, fixed UTC clock,
+  per-scope telemetry stores), never network/engine/wall-clock;
+  `harness.disposeApp` drains timers.
+  Evidence: `flutter analyze` → `No issues found! (ran in 2.2s)`;
+  `flutter test test/ui/arena_variant_review_test.dart` → 4/4 pass
+  (All tests passed!); related suites `test/ui/arena_screen_test.dart
+  test/ui/review_screen_test.dart test/ui/variant_replay_test.dart
+  test/ui/scrub_shortcuts_test.dart` → 86/86 pass (27+17+22+20); full
+  regression `flutter test` → 635/635 pass (01:57, All tests passed! —
+  631 baseline + 4 new). Commit: <filled after commit>.
+  Push **BLOCKED** (same as all prior runs): no GitHub credentials on
+  this host — `git push origin main` → `fatal: could not read Username
+  for 'https://github.com'` (no credential helper, `gh`, SSH key,
+  `~/.git-credentials`, `~/.netrc`, nor token in env; fully audited
+  again this run); `git ls-remote origin main` still shows `e1749b3`, so
+  `5faf11b..HEAD` remains local-only (un-pushed queue now 19 commits
+  through this run). Re-run the push after credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials
+  exist; (b) trigger the §11.3 Windows nightly / run §9.1–9.2 on a
+  Windows desktop/UIA session (closes §14.1–14.2); or (c) decide the
+  §13 Windows-runner / safe-mode questions.

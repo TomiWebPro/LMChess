@@ -1,11 +1,12 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-23 (UTC) — §2.6 upstream check run: `flutter/flutter#175041`
-still open (P3), fix PR `flutter/flutter#190903` still open/unmerged → no stable
-engine contains the fix; local toolchain Flutter 3.47.6 stable (engine
-b8c8d3d8d5/692136cb65, 2026-09-30) stays on the mitigation, known-issue note
-retained
+Last updated: 2026-10-23 (UTC) — arena `VariantReviewLog` recording path
+closed for review: stale "chaotic games not recorded" wiring note at
+`arena_screen.dart` corrected (games ARE recorded losslessly since 61d58d7)
+and 4 new tests pin the recording/isolation/E2E path; §2.6 still no upstream
+fix (flutter/flutter#175041 open, PR #190903 unmerged) → local 3.47.6 stays
+on mitigation
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 

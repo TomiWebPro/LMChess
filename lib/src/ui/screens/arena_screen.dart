@@ -25,9 +25,11 @@
 ///   [ChaoticRules.interpret] and adjudicates king captures with
 ///   [ChaoticRules.gameOver]. Definitive failures fall back to a seeded
 ///   attempt from the same list (explicitly marked, never attributed).
-///   **Wiring point**: chaotic games are *not* recorded in [ReviewLog] —
-///   the review pipeline replays FEN histories, and variant JSON replay is
-///   not implemented; record the interpretation trail when it is.
+///   Finished chaotic games are recorded losslessly into
+///   [VariantReviewLog] as [VariantGameRecord]s ([_concludeGame]): initial
+///   board, per-ply attempt/interpretation trail and outcome, replayable
+///   from the review screen's "Chaotic replays" card. The FEN-shaped
+///   [ReviewLog] is standard-only by design.
 ///
 /// The grid renders one mini [Chessboard] per scheduled game (3/2/1
 /// columns) with live squares, check/terminal highlights and status from
