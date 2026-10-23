@@ -954,7 +954,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   passed! — count unchanged, no network hit; test file edit is behavioral
   only for the three rewritten tests). `git status --short` confirms only
   this test file + the two track docs changed.
-  Commit: pending (this run).
+  Commit: `403dc2e`.
   Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
   host — audited again this run (no credential helper, `gh`, SSH key,
   `~/.git-credentials`, `~/.netrc`, token in env; `git config
