@@ -1180,7 +1180,14 @@ suites referenced above now exist. Native Windows execution is tracked in
   host — the same leak class this fix removes from CI; they predate this run
   and were left untouched.)
   Commit: 658bdae.
-  Push: attempted below.
+  Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
+  host — `git push origin main` → `fatal: could not read Username for
+  'https://github.com': No such device or address` (exit 128; no credential
+  helper, `gh`, SSH key, `~/.git-credentials`, `~/.netrc`, nor token in
+  env — `git config --get credential.helper` empty); `git ls-remote origin
+  main` still shows `e1749b3`, so `e1749b3..HEAD` (now 38 local commits
+  incl. this run's 658bdae + the hash-record commit f8035ee) remains
+  local-only. Re-run the push after credentials are provisioned.
   Next: (a) re-push the queued local commits (origin/main..HEAD, still 36
   commits at e1749b3) once GitHub credentials exist; (b) trigger the §11.3
   Windows nightly / run §9.1–9.2 on a Windows desktop/UIA session (closes
