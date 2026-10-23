@@ -1179,7 +1179,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   (:77, :99) from earlier hourly smoke runs were found still alive on this
   host — the same leak class this fix removes from CI; they predate this run
   and were left untouched.)
-  Commit: <pending commit hash filled after commit>.
+  Commit: 658bdae.
   Push: attempted below.
   Next: (a) re-push the queued local commits (origin/main..HEAD, still 36
   commits at e1749b3) once GitHub credentials exist; (b) trigger the §11.3
