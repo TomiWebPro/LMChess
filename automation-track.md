@@ -1,7 +1,7 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-23 (UTC) — §11.6 ubuntu-gate builds + smokes the Linux release binary; §11.5 dependency hygiene: dead deps removed from pubspec (`import_lint`, `cupertino_icons`, `intl`, `collection`, `hive_ce`); graph unchanged downstream
+Last updated: 2026-10-23 (UTC) — §2.6 upstream status check (flutter/flutter#175041 still open; fix PR #190903 open/unmerged → no stable engine fix; local 3.47.6 stays on mitigation); §9/§11.3/§14 remain Windows-native BLOCKED; §11.6 ubuntu-gate builds + smokes the Linux release binary; §11.5 dependency hygiene: dead deps removed from pubspec (`import_lint`, `cupertino_icons`, `intl`, `collection`, `hive_ce`); graph unchanged downstream
 Related: `docs/FUTURE_WORK.md` (binding roadmap), `ARCHITECTURE.md`, `README.md`
 
 This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every run**.
@@ -704,3 +704,53 @@ suites referenced above now exist. Native Windows execution is tracked in
   §11.6-augmented `ubuntu-gate` and confirm the Linux build+smoke steps are
   green on a hosted runner; or (c) decide the §13 Windows-runner /
   safe-mode questions.
+- 2026-10-23Z — DOCS/PROCESS §2.6 (upstream dependency status check, RUNBOOK
+  upgrade-gate step 1): picked the highest-priority open item with a
+  Linux-verifiable slice. A subagent audit of `docs/FUTURE_WORK.md` +
+  `automation-track.md` + `lib/` marker scan + CI workflow confirmed no other
+  open item is implementable on this host: §9.1/§9.2 (Windows native runs),
+  §11.3 (first Windows CI run), §14.1–14.2 (Windows acceptance criteria) all
+  need a Windows desktop/UIA session — logged BLOCKED; §13 Windows-runner /
+  safe-mode are un-scheduled decisions. No skipped/disabled/TODO tests exist;
+  `lib/` has zero code markers (the only "not implemented" is the deliberate
+  unscheduled chaotic→ReviewLog wiring doc comment at
+  `lib/src/ui/screens/arena_screen.dart:28-30`). So the one actionable open
+  item was the RUNBOOK step-1 check itself — verify whether the upstream fix
+  has landed, record the verdict, and update the two track docs. Findings:
+  `flutter/flutter#175041` (AccessibilityBridge::CreateRemoveReparentedNodesUpdate
+  crash) remains **open** (P3, `needs repro info`; last activity 2026-10-18).
+  Candidate engine fix **`flutter/flutter#190903`** (`[Windows] Avoid null
+  parent dereference in AccessibilityBridge`, null-parent skip in
+  `accessibility_bridge.cc`) is **open and unmerged** (`merged: false`, last
+  updated 2026-10-21, CI `mergeable_state: unstable`), so **no stable engine
+  contains the fix and the landing revision is unknown**. Field reports still
+  reproduce the crash on 3.44.9/3.47.x stable; one independent beta test
+  (2026-08-12) reported the AXTree root-mismatch did not reproduce on
+  `3.48.0-0.1.pre`, but walls Windows UIA control exposure host-only
+  (`FLUTTERVIEW`) in that lab — so the beta is NOT evidence of a complete fix.
+  Local toolchain: Flutter 3.47.6 stable, Framework 5fc346839b (2026-09-30),
+  Engine b8c8d3d8d5 / 692136cb65 (2026-09-30), Dart 3.13.5. Verdict: stay on
+  the mitigation (known-issue note + `ExcludeSemantics`/`IndexedStack`
+  hidden-tab guard + stable semantics roots) and keep the upgrade gate; check
+  again on each Flutter upgrade, and on #190903 landing validate on Windows
+  (§9.1/§9.2) before removing the note. Files changed:
+  `docs/FUTURE_WORK.md` (§2.6 status check paragraph + header bump) and
+  `automation-track.md` (header + this Run Log entry). No code/test files
+  changed. Evidence: `flutter analyze` → `No issues found! (ran in 2.1s)`;
+  full regression `flutter test` → 631/631 pass (01:38, All tests passed! —
+  unchanged, no Dart changes); upstream facts verified via GitHub API
+  (`api.github.com/repos/flutter/flutter/pulls/190903` → `state:"open"`,
+  `merged:false`) + issue page fetch. Commit: `f7ec38d`.
+  Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
+  host — `git push origin main` → `fatal: could not read Username for
+  'https://github.com': No such device or address` (no credential helper,
+  `gh`, SSH key, `~/.git-credentials`, `~/.netrc`, nor token in env);
+  `git ls-remote origin main` still shows `e1749b3`, so the un-pushed local
+  queue (now 18 commits through this run, incl. `f7ec38d`) remains
+  local-only. Re-run the push after credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials exist
+  (e.g. a PAT with `workflow` scope added to the remote); (b) trigger the
+  §11.3 Windows nightly / run §9.1–9.2 on a Windows desktop/UIA session
+  (closes §14.1–14.2); or (c) decide the §13 Windows-runner / safe-mode
+  questions. §2.6 re-check is due on the next Flutter upgrade and whenever
+  `flutter/flutter#190903` lands.

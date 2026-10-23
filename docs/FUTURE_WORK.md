@@ -1,7 +1,11 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-23 (UTC) — §11.6 ubuntu-gate now builds + smokes the Linux release binary (hard gate on every push); §11.5 dependency hygiene: dead deps (`import_lint`, `cupertino_icons`, `intl`, `collection`, `hive_ce`) removed from pubspec; `intl`/`collection`/`hive_ce` demoted to transitive
+Last updated: 2026-10-23 (UTC) — §2.6 upstream check run: `flutter/flutter#175041`
+still open (P3), fix PR `flutter/flutter#190903` still open/unmerged → no stable
+engine contains the fix; local toolchain Flutter 3.47.6 stable (engine
+b8c8d3d8d5/692136cb65, 2026-09-30) stays on the mitigation, known-issue note
+retained
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -185,6 +189,19 @@ not a fix. The known-issue note is now part of the Flutter upgrade gate in
 - Re-run the §9.1/§9.2 gates before removing the known-issue warning.
 - Keep the `ExcludeSemantics`/`IndexedStack` hidden-tab guard and stable
   semantics roots regardless of the upstream status.
+
+Status check 2026-10-23 (RUNBOOK upgrade-gate step 1; local SDK Flutter 3.47.6
+stable, engine `b8c8d3d8d5` / `692136cb65`, released 2026-09-30): **no fix has
+landed in a stable release.** Upstream `flutter/flutter#175041` remains open
+(P3, `needs repro info`), and candidate engine fix
+`flutter/flutter#190903` (`[Windows] Avoid null parent dereference in
+AccessibilityBridge`) is **open and unmerged** (`merged: false`, last updated
+2026-10-21, CI state `unstable`). The fix revision is therefore unknown and no
+stable engine contains it. Field reports still reproduce the crash on
+3.44.9/3.47.x stable; one independent beta test reported the AXTree
+root-mismatch did not reproduce on `3.48.0-0.1.pre`, but UIA control exposure
+remained host-only, so that beta is **not** evidence of a complete fix. Keep
+the known-issue note, semantics hardening, and upgrade gate.
 
 **Done when:** a Flutter revision containing the fix is validated on Windows,
 or the upstream issue is closed and the workaround is formally retired.
