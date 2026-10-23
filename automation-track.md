@@ -643,6 +643,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   e1749b3, so origin/main..HEAD remains local commits un-pushed
   (be3ab86..8fd1bd1 + this run). Re-run the push after credentials are
   provisioned.
+  Commit: 33e2aec.
   Next: (a) re-push the queued local commits once GitHub credentials exist;
   (b) run §9.1/§9.2/§11.3 on a Windows desktop/UIA session; or (c) repeat the
   §11.5 dependency audit each time new deps are added (the one-line check:
