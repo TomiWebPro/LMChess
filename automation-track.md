@@ -794,7 +794,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   test/ui/review_screen_test.dart test/ui/variant_replay_test.dart
   test/ui/scrub_shortcuts_test.dart` → 86/86 pass (27+17+22+20); full
   regression `flutter test` → 635/635 pass (01:57, All tests passed! —
-  631 baseline + 4 new). Commit: <filled after commit>.
+  631 baseline + 4 new). Commit: `23e5b5f`.
   Push **BLOCKED** (same as all prior runs): no GitHub credentials on
   this host — `git push origin main` → `fatal: could not read Username
   for 'https://github.com'` (no credential helper, `gh`, SSH key,
