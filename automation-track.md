@@ -900,7 +900,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   `flutter-version: "3.x"` in the file (remaining "3.x" strings are the
   new explanatory comments); `git status --short` clean except the two
   track docs + the workflow.
-  Commit: (see below — hash recorded after commit).
+  Commit: `9b00992` (§11.8 pin).
   Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
   host — `git push origin main` → `fatal: could not read Username for
   'https://github.com'` (no credential helper, `gh`, SSH key,
