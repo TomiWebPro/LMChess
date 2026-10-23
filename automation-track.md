@@ -1,7 +1,7 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-23 (UTC) — §11.5 dependency hygiene: dead deps removed from pubspec (`import_lint`, `cupertino_icons`, `intl`, `collection`, `hive_ce`); graph unchanged downstream
+Last updated: 2026-10-23 (UTC) — §11.6 ubuntu-gate builds + smokes the Linux release binary; §11.5 dependency hygiene: dead deps removed from pubspec (`import_lint`, `cupertino_icons`, `intl`, `collection`, `hive_ce`); graph unchanged downstream
 Related: `docs/FUTURE_WORK.md` (binding roadmap), `ARCHITECTURE.md`, `README.md`
 
 This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every run**.
@@ -36,6 +36,7 @@ This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every ru
 | P2 | §10.5 Arena Elo injection (replace `static final _elo`) | DONE 2026-10-21: `ArenaScreen({this.elo})` + instance `EloService`, pinned by `test/ui/elo_injection_test.dart` (6 tests). |
 | P2 | §10.6 Deterministic deep states | DONE 2026-10-21: PlayScreen({this.initialFen}) — parseFen(startFen) replaces Position.initial() in _newGame(), defaulting to standardStartFen; AppShell({this.initialIndex = 0}) — initState sets _index from widget.initialIndex instead of hardcoded 0; WatchScreen({this.initialSeed}) — seed assignment uses widget.initialSeed ?? (clock().msSinceEpoch & 0x7fffffff). New `test/ui/deterministic_deep_states_test.dart` (12 tests): initialFen overrides starting position with e5 pawn, minimal king-only FEN renders two kings without crash, PlayScreen without initialFen uses standard start, AppShell default starts at Home (0), AppShell initialIndex=1 shows Play directly without Home navigation, AppShell initialIndex=7 shows Settings directly, WatchScreen with initialSeed=42 renders stably, two WatchScreens with same initialSeed both render, backward compat const constructors for all three screens. Evidence: `flutter analyze` clean on all 5 touched files; `flutter test test/ui/deterministic_deep_states_test.dart` 12/12 pass; full regression `flutter test` 542/542 pass (530 old + 12 new). Next: §10.8 Dispose audit.
 | P2 | §10.8 Dispose audit | DONE 2026-10-21: New `test/ui/dispose_audit_test.dart` (8 tests) covering all §10.8 spec requirements: ReviewScreen navigate-away mid-review disposes handle exactly once, Re-run review supersedes previous handle with disposal count verified, VariantReplayScreen dispose during async review disposes exactly once, stale completion guard prevents extra disposal without exception, SpyHandle property verification, single navigate-away disposal invariant, VariantReplayScreen dispose without analysis no crash, sequential Analyze calls each dispose prior handle. Uses _SpyHandle extending ReviewEvaluatorHandle injected via reviewEvaluatorFactoryProvider override to count .dispose() calls per instance. Evidence: `flutter analyze` clean; `flutter test test/ui/dispose_audit_test.dart` 8/8 pass; full regression `flutter test` 550/550 pass (542 old + 8 new). Next: complete — all roadmap rows in docs/FUTURE_WORK.md §§5–12 marked DONE. |
+| P1 | §11.6 Linux release build + Xvfb smoke on ubuntu-gate | DONE 2026-10-23: `ubuntu-gate` gained three steps — Install Linux desktop build deps (`ninja-build pkg-config libgtk-3-dev libsecret-1-dev libjsoncpp-dev xvfb openbox`), Build Linux release (`flutter build linux --release`), Smoke start Linux release (Xvfb: start `Xvfb :77` + `openbox` with `LIBGL_ALWAYS_SOFTWARE=1`, launch `build/linux/x64/release/bundle/llm_chess_arena`, require `kill -0` after a 15 s window, bounded SIGTERM→SIGKILL teardown). Closes the gap where analyze+test could pass while a runner/plugin/CMake regression broke the binary (previously only the Windows nightly built it). Engine assets are gitignored and extraction is lazy, so the smoke needs no download. Evidence: `flutter analyze` → `No issues found!`; `flutter build linux --release` → `✓ Built build/linux/x64/release/bundle/llm_chess_arena`; exact smoke recipe exits 0 locally (binary alive after 15 s under Xvfb :77 + openbox); full regression `flutter test` → 631/631 pass (no Dart changes); workflow re-parses clean via PyYAML (ubuntu-gate 11 steps, windows-nightly untouched); all new run blocks pass `bash -n`. |
 | P0 | §11.3 Nightly Windows CI gate (`.github/workflows/ci.yaml`) | DONE 2026-10-21: Created `.github/workflows/ci.yaml` with two jobs: (1) `ubuntu-gate` — `flutter analyze` + `flutter test` on every push/PR; (2) `windows-nightly` — scheduled nightly (`cron: "0 6 * * *"`) and `workflow_dispatch`: Flutter stable setup, pub get, analyze, `flutter build windows --release`, unit/widget tests, `flutter test integration_test/accessibility_windows_test.dart -d windows` (§9.1), PowerShell UIA smoke via `tool/windows_accessibility_smoke.ps1` (§9.2) with `-Exe`, `-RandomClicks 500`, `-Timeout 120`, `-PauseMs 200`; Event Viewer excerpt capture on exit code 2 → artifact upload via `actions/upload-artifact@v4`, cleanup in finally block. Per §9.2 spec: exit 0=pass, 1=exe missing, 2=crash detected. No Dart files changed. 2026-10-22 process fixes: integration-test + smoke steps now fail the job on ANY non-zero exit (previously only smoke exit 2 gated; Event Viewer excerpt exported on any smoke failure, not just the crash path); job-level pre-launch of the exe removed — the smoke script owns the app lifecycle (launch + finally-kill), so UIA attachment/clicks hit a single instance. Windows run itself still pending (§9.1/§9.2 need a Windows desktop/UIA session). |
 | P1 | `test/ui/watch_screen_test.dart` | DONE 2026-10-20: 21 widget tests covering §6.5 — transport flow (Start advances moves, Pause stops scheduling/Resume continues, Stop ends run, Stop during in-flight turn safe, Start→Pause→Start resets cleanly), agent selectors (empty catalog stability check, dropdowns render agent names, selectors disabled while running, idle selection change), tab switching (Activity/Moves/Errors idle and running), error panel state, move-list population and seek matching board, dispose drains timers, narrow/wide layouts, status chip lifecycle phases, semantics tree stable across Start+Pause+Stop transitions including reparenting guard. Uses deterministic fakes (MockProvider stepDelay=0, fixed clock UTC), defensive control visibility checks (Stop/Pause only when present), no real network/engine/wall-clock. Evidence: `flutter analyze` clean; `flutter test test/ui/watch_screen_test.dart` 21/21 pass; full regression `flutter test` 328/328 pass (307 old + 21 new). Next: `test/ui/arena_screen_test.dart` (§6.6, P1). |
 | P1 | `test/ui/arena_screen_test.dart` | DONE 2026-10-20: 27 widget tests covering §6.6 — config form (Name field default text, Rounds/Games-pairing dropdowns labels, Chaos variants FilterChip, Concurrency slider, Start button enabled), disabled controls during run, start transitions UI (message gone → Cards appear), Stop shows Cancelling… then completes, Start twice rejected (onPressed=null), no-agents guard prevents start, standings header + agent name rows after finish, Seed Chip renders, empty grid before start, mini-board cards appear after start, tap on card stable or opens dialog, resize while running safe (500→1400→500px), scheduler cancellation doesn't leave orchestrators running, dispose drains timers, narrow/wide layout renders, chaos toggle flips selected state, config changes during idle safe, status notice after finish, rapid taps safe, semantics tree invariant across Start+Stop including reparenting detection via parentMap. Uses deterministic fakes (MockProvider stepDelay=0, fixed clock UTC, AgentListStore seedDemos), never hits real network/engine. Evidence: `flutter analyze` clean; `flutter test test/ui/arena_screen_test.dart` 27/27 pass; full regression `flutter test` 355/355 pass (307 old + 27 new). Next: `test/ui/agent_setup_test.dart` (§6.10, P1) or `test/ui/review_screen_test.dart` (§6.8, P1). |
@@ -648,3 +649,51 @@ suites referenced above now exist. Native Windows execution is tracked in
   (b) run §9.1/§9.2/§11.3 on a Windows desktop/UIA session; or (c) repeat the
   §11.5 dependency audit each time new deps are added (the one-line check:
   `grep -rE "package:(dep)/" lib test tool integration_test`).
+- 2026-10-23Z — CI/PROCESS P1 §11.6 (Linux release build + Xvfb smoke on
+  the ubuntu-gate): closed the remaining Linux-implementable CI gap — the
+  push/PR Linux job gates only analyzer + tests, never building or starting
+  the release binary, so a runner/plugin/CMake regression bypasses CI and is
+  caught only on the nightly Windows runner. Promoted as §11.6 into
+  `docs/FUTURE_WORK.md` per the §11.4/§11.5 precedent. A subagent audit
+  confirmed no other Linux-implementable open work is missed: the only
+  genuine in-code "not implemented" is the deliberate, unscheduled
+  chaotic→ReviewLog wiring point (`lib/src/ui/screens/arena_screen.dart:28-30`);
+  the four TODO hits are Flutter-scaffold templates outside the analyzer;
+  `flutter analyze` covers Lints with no format/sorting gate beyond it.
+  Files changed:
+  `.github/workflows/ci.yaml` — `ubuntu-gate` gained three steps after
+  `Test` (windows-nightly untouched): (1) "Install Linux desktop build
+  deps" — `sudo apt-get install -y --no-install-recommends ninja-build
+  pkg-config libgtk-3-dev libsecret-1-dev libjsoncpp-dev xvfb openbox`
+  (ubuntu-latest preinstalls clang/cmake/ninja/pkg-config but not the
+  GTK/Secret/jsoncpp dev headers; docs/RUNBOOK.md headless recipe);
+  (2) "Build Linux release" — `flutter build linux --release`; (3) "Smoke
+  start Linux release (Xvfb)" — `set -euo pipefail`; starts `Xvfb :77 -screen
+  0 1280x1024x24` + `openbox` with `LIBGL_ALWAYS_SOFTWARE=1`, launches
+  `build/linux/x64/release/bundle/llm_chess_arena` redirecting to
+  `smoke.log`, requires the process to survive a 15 s window (`kill -0`),
+  then a bounded SIGTERM→SIGKILL teardown escalates if the app ignores TERM.
+  Engine assets are gitignored (`assets/engines/*/stockfish`) and first-run
+  Stockfish extraction is lazy (`lib/main.dart`), so startup requires no
+  engine download.
+  `docs/FUTURE_WORK.md` — §11.6 added + closed as DONE in the same run
+  (open list unchanged: §11.6 not an open item), header bumped.
+  `automation-track.md` — header line + §11.6 Roadmap status row + this Run
+  Log entry.
+  Evidence: `flutter analyze` → `No issues found! (ran in 3.0s)`;
+  `flutter build linux --release` → `✓ Built
+  build/linux/x64/release/bundle/llm_chess_arena`; the exact smoke recipe
+  (Xvfb :77 + openbox + release binary, 15 s `kill -0`) exits 0 locally —
+  an earlier `:99` attempt used a pre-existing X server, re-run on `:77`
+  verified the fresh-display path cleanly; full regression
+  `flutter test` → 631/631 pass (01:37, All tests passed! — no Dart
+  changes); workflow re-parses clean via PyYAML (ubuntu-gate now 11 steps
+  including checkout, windows-nightly still 10 steps, unchanged); all new
+  run blocks pass `bash -n`.
+  Commit: (recorded below).
+  Next: (a) trigger the §11.3 Windows nightly / run §9.1–9.2 on a Windows
+  desktop/UIA session (only remaining functional gaps: §14.1–14.2); (b) once
+  a GitHub PAT with `workflow` scope exists, `workflow_dispatch` the
+  §11.6-augmented `ubuntu-gate` and confirm the Linux build+smoke steps are
+  green on a hosted runner; or (c) decide the §13 Windows-runner /
+  safe-mode questions.

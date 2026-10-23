@@ -1,7 +1,7 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-23 (UTC) — §11.5 dependency hygiene: dead deps (`import_lint`, `cupertino_icons`, `intl`, `collection`, `hive_ce`) removed from pubspec; `intl`/`collection`/`hive_ce` demoted to transitive
+Last updated: 2026-10-23 (UTC) — §11.6 ubuntu-gate now builds + smokes the Linux release binary (hard gate on every push); §11.5 dependency hygiene: dead deps (`import_lint`, `cupertino_icons`, `intl`, `collection`, `hive_ce`) removed from pubspec; `intl`/`collection`/`hive_ce` demoted to transitive
 Related: [Runbook](RUNBOOK.md), [Engine runtime](ENGINE_RUNTIME.md),
 [Variant rules](VARIANT.md), [Chess engine notes](CHESS_ENGINE.md)
 
@@ -126,6 +126,38 @@ graph and the pub cache restore in CI. Removed:
 Evidence: `flutter analyze` → `No issues found!`; full `flutter test` →
 631/631 pass unchanged after the pubspec edit. See `automation-track.md`
 for the run log.
+
+### 11.6 Linux release build + Xvfb smoke on the ubuntu gate (P1 — DONE)
+
+`flutter analyze` + `flutter test` cannot catch runner/plugin/CMake
+regressions — on every push the CI Linux job checked Dart only, while the
+release binary was never built or started anywhere except the nightly
+Windows job. The `ubuntu-gate` job now hard-gates the Linux release
+artifact on every push/PR:
+
+- **Install Linux desktop build deps** — `ninja-build pkg-config
+  libgtk-3-dev libsecret-1-dev libjsoncpp-dev xvfb openbox` (ubuntu-latest
+  preinstalls clang/cmake/ninja/pkg-config but not the GTK/Secret/jsoncpp
+  dev headers; xvfb + openbox are the headless-start recipe from
+  `docs/RUNBOOK.md` "Linux desktop").
+- **Build Linux release** — `flutter build linux --release`.
+- **Smoke start Linux release (Xvfb)** — `set -euo pipefail`; starts
+  `Xvfb :77` + `openbox` with `LIBGL_ALWAYS_SOFTWARE=1`, launches
+  `build/linux/x64/release/bundle/llm_chess_arena`, requires the process to
+  survive a 15 s window (`kill -0`), then terminates it with a bounded
+  SIGTERM→SIGKILL teardown. The 2026-10-22 baseline proved this binary
+  starts under Xvfb; the step makes that a hard gate on every push. Engine
+  assets are gitignored and first-run Stockfish extraction is lazy
+  (`lib/main.dart`), so startup must not require an engine download.
+
+Evidence: workflow re-parses clean via PyYAML (ubuntu-gate now 11 steps,
+windows-nightly untouched); all new run blocks pass `bash -n`; locally the
+exact commands run green — `flutter analyze` → `No issues found!`,
+`flutter build linux --release` → `✓ Built
+build/linux/x64/release/bundle/llm_chess_arena`, and the exact smoke recipe
+(Xvfb :77 + openbox + release binary) exits 0 with the binary alive after
+15 s; full `flutter test` → 631/631 pass unchanged (no Dart changes). See
+`automation-track.md` for the run log.
 
 ---
 

@@ -40,6 +40,52 @@ jobs:
       - name: Test
         run: flutter test
 
+      - name: Install Linux desktop build deps
+        # analyze + test cannot catch runner/plugin/CMake regressions — the
+        # release binary is the real gate (§11.6). ubuntu-latest preinstalls
+        # clang/cmake/ninja/pkg-config but not the GTK/Secret/jsoncpp dev
+        # headers (docs/RUNBOOK.md "Linux desktop"); xvfb + openbox are the
+        # headless start recipe from the same page.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build pkg-config libgtk-3-dev libsecret-1-dev libjsoncpp-dev \
+            xvfb openbox
+
+      - name: Build Linux release
+        run: flutter build linux --release
+
+      - name: Smoke start Linux release (Xvfb)
+        # Mirrors the windows-nightly build+start pattern for the Linux gate:
+        # verify the release binary survives its startup window headless, then
+        # terminate it. Engine assets are gitignored and first-run Stockfish
+        # extraction is lazy (lib/main.dart), so startup must not require an
+        # engine download.
+        run: |
+          set -euo pipefail
+          LIBGL_ALWAYS_SOFTWARE=1 Xvfb :77 -screen 0 1280x1024x24 &
+          XVFB_PID=$!
+          export DISPLAY=:77
+          openbox &
+          WM_PID=$!
+          ./build/linux/x64/release/bundle/llm_chess_arena > smoke.log 2>&1 &
+          APP_PID=$!
+          sleep 15
+          if ! kill -0 "$APP_PID" 2>/dev/null; then
+            echo "::error::release binary exited during the 15s smoke window"
+            cat smoke.log
+            kill -9 "$XVFB_PID" "$WM_PID" 2>/dev/null || true
+            exit 1
+          fi
+          kill "$APP_PID" "$XVFB_PID" "$WM_PID" 2>/dev/null || true
+          # Bound the teardown: escalate to SIGKILL if the app ignores TERM.
+          for _ in 1 2 3 4 5 6 7 8 9 10; do
+            kill -0 "$APP_PID" 2>/dev/null || break
+            sleep 1
+          done
+          kill -9 "$APP_PID" "$XVFB_PID" "$WM_PID" 2>/dev/null || true
+          echo "smoke ok: release binary alive after 15s under Xvfb + openbox"
+
       - name: Test coverage (§11.4)
         # Coverage is explicitly NOT the success metric (§11.4): the goal is
         # that every interaction-matrix control is exercised and every
