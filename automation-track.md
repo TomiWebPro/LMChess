@@ -1674,7 +1674,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   confirms only the two track docs changed; the two decisive research sources
   fetched and read verbatim this run (pyjab windows-gui.yml session
   diagnostic; runner-images Windows2022-Readme.md WinAppDriver entry).
-  Commit: <set-after-commit>.
+  Commit: 058f5d7.
   Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
   host — re-audited this run (`git config --get credential.helper` empty, no
   `gh`, no SSH key, no `~/.git-credentials`, no `~/.netrc`, no token in env;
