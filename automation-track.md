@@ -1579,7 +1579,9 @@ suites referenced above now exist. Native Windows execution is tracked in
   resolution logic, proven by the executing engine test).
   `git status --short` confirms only the test file + the workflow + the two
   track docs changed.
-  Commit: local (hash recorded in the next track line).
+  Commit: ebadbd9 (§11.17; recorded in this Run Log — the workflow-side
+  steps are covered by the next line's precedent: later runs record the
+  commit hash the run produced).
   Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
   host — audited again this run (`git config --get credential.helper` empty,
   no `gh`, no SSH key, no `~/.git-credentials`, no `~/.netrc`, no token in
