@@ -1022,7 +1022,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   full regression `flutter test` → 637/637 pass (01:53, All tests passed! —
   635 baseline + 2 new). `git status --short` confirms only the two support
   files + the two track docs changed.
-  Commit: `TBD`.
+  Commit: `143cb1e`.
   Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
   host — audited again this run (`git config --get credential.helper` empty,
   no `gh`, no SSH key, no `~/.git-credentials`, no `~/.netrc`, no token in
