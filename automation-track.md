@@ -1253,14 +1253,14 @@ suites referenced above now exist. Native Windows execution is tracked in
   no lib/ changes, e2e smoke still prints the same status lines via
   debugPrint). `git status --short` confirms only the 12 test/support/
   integration_test files + the two track docs changed.
-  Commit: <to-fill-after-commit>.
+  Commit: 32071db.
   Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
   host — re-audited this run via a subagent (`git config --get
   credential.helper` empty, no `gh`, no SSH key, no `~/.git-credentials`, no
   `~/.netrc`, no token in env; `git push --dry-run origin main` → `fatal:
   could not read Username for 'https://github.com': terminal prompts
   disabled`, exit 128); `git ls-remote origin main` still shows `e1749b3`, so
-  `e1749b3..HEAD` (39 local commits incl. this run) remains local-only.
+  `e1749b3..HEAD` (42 local commits incl. this run) remains local-only.
   Re-run the push after credentials are provisioned.
   Next: (a) re-push the queued local commits once GitHub credentials exist;
   (b) trigger the §11.3 Windows nightly / run §9.1–9.2 on a Windows
