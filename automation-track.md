@@ -690,7 +690,14 @@ suites referenced above now exist. Native Windows execution is tracked in
   changes); workflow re-parses clean via PyYAML (ubuntu-gate now 11 steps
   including checkout, windows-nightly still 10 steps, unchanged); all new
   run blocks pass `bash -n`.
-  Commit: (recorded below).
+  Commit: 5e241b3.
+  Push **BLOCKED** (same as prior runs): no GitHub credentials on this host —
+  `git push origin main` → `fatal: could not read Username for
+  'https://github.com'` (no credential helper, `gh`, SSH private key,
+  `~/.git-credentials`, `~/.netrc`, or token in env — all audited this run);
+  `git ls-remote origin main` still shows e1749b3, so `5faf11b..HEAD` remains
+  local-only (un-pushed queue now 17 commits including this run's 5e241b3).
+  Re-run the push after credentials are provisioned.
   Next: (a) trigger the §11.3 Windows nightly / run §9.1–9.2 on a Windows
   desktop/UIA session (only remaining functional gaps: §14.1–14.2); (b) once
   a GitHub PAT with `workflow` scope exists, `workflow_dispatch` the
