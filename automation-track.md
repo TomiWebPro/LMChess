@@ -3545,7 +3545,8 @@ suites referenced above now exist. Native Windows execution is tracked in
   §14.1-§14.2 Windows-native, §2.6 upstream-external, `dart format`
   gate owner-pending, coverage comparison needs ≥2 CI runs, push
   queue credentials-blocked).
-  Commit: recorded in a follow-up track commit per the §13 precedent.
+  Commit: 0a4b39f (recorded in a follow-up track commit per the §13
+  precedent).
   Push **BLOCKED** (same as every prior run since the credentials
   audit): no GitHub credentials on this host (`git config --get
   credential.helper` empty, no `gh`, no `~/.git-credentials`, no
