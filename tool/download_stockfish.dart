@@ -786,6 +786,7 @@ void printUsage(String tag, String archiveDir, String enginesDir) {
     '  --proxy=PREFIX      proxy prefix to try after the official URL;\n'
     '                      repeatable (default "$defaultProxyPrefix")\n'
     '  --no-proxy          official URL only (no fallback proxy)\n'
+    '  --direct            alias for --no-proxy\n'
     '  --help              this text\n'
     'Env: STOCKFISH_TAG, STOCKFISH_ARCHIVE_DIR, STOCKFISH_PROXY '
     '(comma/space separated; "$defaultProxyPrefix" default, '

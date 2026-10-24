@@ -1,7 +1,34 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-24 (UTC) — §11.27: the ubuntu-gate's
+Last updated: 2026-10-24 (UTC) — §11.28: the remaining docs-nits
+batch from the §11.22/§11.23 audit trail is closed (CI P3 #2 — the
+`flutter test` + `test/ui --coverage` merge — stays open pending the
+explicit §11.4-owner decision the audit recorded; nothing left on this
+host is P0/P1). A docs-accuracy pass with zero open-item code changes:
+the stale "22 `test/ui/` suites" is corrected to 23 (the 23rd suite,
+arena_variant_review_test.dart, shipped 2026-10-23 — the count was wrong
+in the §11.21 docs-accuracy entry where 642 was right but 22 never was);
+the §11.16 step/key counts now match the re-measured workflow
+("24 steps/26 keys" → "26 steps/28 keys": windows-nightly grew 10 → 12
+in §11.17; §11.27 programmatically asserted 26 steps + 2 jobs = 28 keys);
+the live "Verified baseline" block reports 651/651; the two dangling
+`docs/RUNBOOK.md "Linux desktop"` cross-references (FUTURE_WORK.md §11.6
+and the ci.yaml build-deps comment) now point at the real "## Prereqs"
+heading — where both the build-deps line and the documented
+Xvfb + `LIBGL_ALWAYS_SOFTWARE=1` headless-start recipe live; and
+`tool/download_stockfish.dart` `--help` now documents the `--direct`
+alias for `--no-proxy` (the parser has accepted it since §11.19; the help
+text never said so). Evidence: `flutter analyze` → `No issues found!`;
+full `flutter test` → 651/651 pass (no Dart behavior change — help-text
++ docs only); ci.yaml re-parses with the §11.28 contract asserted
+(ubuntu-gate 14 + windows-nightly 12 steps, 28 timeout-minutes keys);
+`dart run tool/download_stockfish.dart --help` lists `--direct`.
+Recorded in `automation-track.md` (Run Log); per the open-items-only rule
+this file gains no new completed-work section — no open FUTURE_WORK item
+was touched (§9.1/§9.2/§11.3/§14 remain Windows-blocked, §2.6
+upstream-external).
+Previously (2026-10-24) §11.27: the ubuntu-gate's
 software-GL contract now reaches the processes that actually render.
 Both Xvfb display steps previously prefixed `LIBGL_ALWAYS_SOFTWARE=1`
 ONLY to the Xvfb launch line, so the two processes that matter — the
@@ -268,7 +295,7 @@ relied on GitHub's default 360-minute job timeout, so a hung step (pub get,
 engine download, apt, build, smoke, integration test) could stall the gate for
 up to 6 hours and overlap the next scheduled run. Both jobs now carry a job
 level backstop (ubuntu-gate 90 min — ~4x the observed ~15-20 min green wall
-time — windows-nightly 180 min) and every one of the 24 steps carries its own
+time — windows-nightly 180 min) and every one of the 26 steps carries its own
 tighter bound (checkout 5, Setup Flutter 15, pub-cache restore 5, pub get 5,
 analyze 10, engine cache 5, engine download 15, flutter test 30, apt install
 15, build linux 30, smoke 15, linux integration 20, coverage 30, upload 5,
@@ -322,7 +349,7 @@ investigation history are preserved in `automation-track.md` and git history.
 Verified baseline (2026-10-22):
 
 - `flutter analyze` — 0 issues.
-- `flutter test` — 631/631 pass.
+- `flutter test` — 651/651 pass.
 - `flutter build linux --release` — succeeds; release binary starts under Xvfb.
 - Roadmap §12 — 18/18 deliverables present; §10.1–10.8 refactors complete.
 - Interaction matrix §6 — all 12 screen/widget suites present.
@@ -469,7 +496,7 @@ artifact on every push/PR:
   libgtk-3-dev libsecret-1-dev libjsoncpp-dev xvfb openbox` (ubuntu-latest
   preinstalls clang/cmake/ninja/pkg-config but not the GTK/Secret/jsoncpp
   dev headers; xvfb + openbox are the headless-start recipe from
-  `docs/RUNBOOK.md` "Linux desktop").
+  `docs/RUNBOOK.md` "Prereqs").
 - **Build Linux release** — `flutter build linux --release`.
 - **Smoke start Linux release (Xvfb)** — `set -euo pipefail`; starts
   `Xvfb :77` + `openbox` with `LIBGL_ALWAYS_SOFTWARE=1`, launches
@@ -827,7 +854,7 @@ scheduled `windows-nightly` run. No `timeout-minutes` existed anywhere
   (~4x the observed ~15-20 min green wall time including the first-run
   Stockfish download); `windows-nightly`: `timeout-minutes: 180`
   (the §9.1 integration test + §9.2 UIA smoke are interactive and wider).
-- **Step-level bounds (all 24 steps across both jobs)** — checkout 5,
+- **Step-level bounds (all 26 steps across both jobs)** — checkout 5,
   Setup Flutter 15, pub-cache restore 5, pub get 5, analyze 10, engine
   cache restore 5, engine download 15, `flutter test` 30, apt install 15,
   `flutter build linux --release` 30, Linux smoke 15 (the §11.14/§11.15
@@ -839,9 +866,9 @@ scheduled `windows-nightly` run. No `timeout-minutes` existed anywhere
   step still cannot redden the gate.
 
 Evidence: workflow re-parses clean via PyYAML **with a strict
-duplicate-key loader** (ubuntu-gate 14 steps, windows-nightly 10 — step
-counts unchanged, only `timeout-minutes:` keys added); all 26
-`timeout-minutes` keys present (24 steps + 2 jobs) and exactly one per
+duplicate-key loader** (ubuntu-gate 14 steps, windows-nightly 12 — step
+counts unchanged, only `timeout-minutes:` keys added); all 28
+`timeout-minutes` keys present (26 steps + 2 jobs) and exactly one per
 step/job; every bash run-block passes `bash -n` (the sole "failure" is the
 Windows-only §9.1 PowerShell block — Windows-only by design, per §11.12);
 `flutter analyze` → `No issues found! (ran in 2.4s)`; full regression

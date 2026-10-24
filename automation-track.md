@@ -1,7 +1,35 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-24 (UTC) — §11.27 run: the ubuntu-gate's
+Last updated: 2026-10-24 (UTC) — §11.28 run: the remaining docs-nits
+batch from the §11.22/§11.23 audit trail is closed (CI P3 #2 — the
+`flutter test` + `test/ui --coverage` merge — stays open pending the
+explicit §11.4-owner decision the audit recorded; nothing left on this
+host is P0/P1). Docs-accuracy pass, zero open-item code changes:
+"22 `test/ui/` suites" → 23 in the two §11.21-accuracy entries where the
+642-test count was right but the suite count never was (arena_variant_
+review_test.dart shipped 2026-10-23); the §11.16 step/key counts now
+match the re-measured workflow ("24 steps/26 keys" → "26 steps/28 keys";
+windows-nightly grew 10 → 12 in §11.17); the live FUTURE_WORK "Verified
+baseline" reports 651/651; the dangling `docs/RUNBOOK.md "Linux desktop"`
+refs (FUTURE_WORK.md §11.6 + the ci.yaml build-deps comment) point at
+the real "## Prereqs" heading; `tool/download_stockfish.dart` `--help`
+now documents the `--direct` alias for `--no-proxy`; the §9.2 track row's
+`0xCAFABE` seed typo is `0xCAFEBABE` (matching `tool/windows_
+accessibility_smoke.ps1:30`). Evidence: `flutter analyze` → `No issues
+found!`; full `flutter test` → 651/651 pass (no Dart behavior change —
+help-text + docs only); ci.yaml §11.28 contract asserted (14 + 12 steps,
+28 timeout keys); `dart run tool/download_stockfish.dart --help` lists
+`--direct`. Next: (a) re-push the queued local commits once GitHub
+credentials exist; (b) trigger the §11.3 windows-nightly via
+`workflow_dispatch` (or wait for the 06:00 UTC schedule) on the hosted
+`windows-latest` runner per the §13 decision + §11.3 checklist — the ONLY
+remaining functional gap (§14.1-§14.2); or (c) re-check §2.6 on the next
+Flutter upgrade / when `flutter/flutter#190903` lands. CI P3 #2 (coverage
+merge) stays open pending the §11.4-owner decision; the `dart format`
+gate (102/127-file churn, needs an explicit owner decision) remains
+open; coverage-artifact comparison still needs ≥2 CI runs.
+Previously (2026-10-24) §11.27 run: the ubuntu-gate's
 software-GL contract now reaches the processes that actually render.
 Both Xvfb display steps previously prefixed `LIBGL_ALWAYS_SOFTWARE=1`
 ONLY to the Xvfb launch line, so the §11.15 release-binary smoke and the
@@ -263,7 +291,7 @@ windows-nightly job and step with `timeout-minutes` (the workflow previously
 relied on GitHub's default 360-minute job timeout, so a hung step could stall
 the gate for up to 6 hours and overlap the next scheduled run): job-level
 backstops (ubuntu-gate 90, windows-nightly 180) plus per-step bounds on all
-24 steps (checkout 5, Setup Flutter 15, cache restores 5, pub get 5, analyze
+26 steps (checkout 5, Setup Flutter 15, cache restores 5, pub get 5, analyze
 10, engine download 15, flutter test 30, apt 15, build linux 30, smoke 15,
 linux integration 20, coverage 30, uploads 5, build windows 60, windows
 integration 30, UIA smoke 20). The §11.14/§11.15 internal loops are untouched
@@ -355,7 +383,7 @@ This file is updated by the hourly scheduler agent (`lmchess-hourly`) **every ru
 | P0 | `test/ui/semantics_stability_test.dart` | DONE 2026-10-20: 32 widget tests covering §7 — destination invariants (all 8 wide + all 8 narrow), hidden-tab rule Home→Play→Stats (zero/occupied/zero square nodes), Play Activity/Moves tab switch stable, Watch Activity/Moves/Errors tab switches stable, Arena empty state zero mini-boards, dialog/sheet transitions (More sheet open/select/dismiss/stable, drawer implicit via shell structure), resize 699→700→1100→699 per-frame no-reparenting, theme light→dark semantic stability with equal square-count across modes, 50 rapid destination switches zero duplicate ids, Review empty-state navigate-away-back stability, Agents New-agent form push/pop semantics stability, wide rail completeness (NavigationRail.destinations.length==8 + all 8 labels visible), narrow AppBar presence on navigation change, captureSemanticsSafe wrapper exercise, expectNoExceptionWithSemanticsDump clean-pass, Settings colour-scheme segment toggles, quick round-trip Home→Play→Watch→Home. Each test asserts tree invariants + no reparenting via parentMap comparison. Evidence: `flutter analyze` clean; `flutter test test/ui/semantics_stability_test.dart` 32/32 pass; full regression `flutter test` 302/302 pass (270 old + 32 new). Next: monkey_tap_test.dart (§8, P0). |
 | P0 | `test/ui/monkey_tap_test.dart` | DONE 2026-10-20: 5 widget tests covering §8 — narrow grid sweep (600×800 @ 48px), wide grid sweep with Play mounted (1600×1000 @ 48px), 1500 random taps seed 0xC0FFEE, 300 random taps + per-step reparenting guard seed 0xCAFEBABE, bonus tapEveryLabelledControl on Home screen. Uses SeedRng for deterministic PRNG, async _tapOffset (await-compatible tapAt/pump), captureSemanticsSafe/parentMap/expectNoReparenting/expectSemanticsTreeInvariants at every step, _drainRoutes to dismiss dialogs/sheets, harness.disposeApp to drain timers. No pumpAndSettle; uses small pump slices. Each test Timeout(Duration(minutes: 2)). Evidence: flutter analyze clean; flutter test test/ui/monkey_tap_test.dart 5/5 pass; full regression flutter test 307/307 pass (302 old + 5 new). Next: integration_test/accessibility_windows_test.dart (§9, P0). |
 | P0 | `integration_test/accessibility_windows_test.dart` | DONE (built) 2026-10-21: 12 tests covering all §9.1 spec requirements; compiles clean and runs as a widget-level integration test. Native Windows execution is the remaining open item in `docs/FUTURE_WORK.md` §9.1. |
-| P0 | `tool/windows_accessibility_smoke.ps1` | DONE 2026-10-21: `tool/windows_accessibility_smoke.ps1` (511 lines) — native UIA smoke test per §9.2 spec. Steps: (1) launch release exe via `Start-Process -PassThru`, (2) attach UIAutomationCore COM, (3) find window by PID/title match (`llm_chess_arena.exe`), (4) enumerate invocable controls (InvokePattern first, LegacyIAccessiblePattern fallback), target >= 40, (5) walk UIA tree repeatedly (10 iterations), (6) perform 500 seeded random clicks (XorShift64 PRNG, seed 0xCAFEBABE) with user32.dll mouse_event API, (7) check Event Viewer for fresh flutter_windows.dll 0xC0000005 after run, (8) always kill process in finally block. Accepts params: -Exe (mandatory), -RandomClicks (default 500), -Seed (default 0xCAFABE), -Timeout (default 120s). Uses Exit code 0 = pass, 1 = exe missing, 2 = crash detected. No Dart dependency — pure PowerShell/.NET automation. Evidence: `flutter analyze` clean (pre-existing 3 warnings); `flutter test` full regression 467/467 pass unchanged; script verified syntax-free (PowerShell file, not executable on Linux). Next: P0 §9.2 integration into CI pipeline or move to P2 §6.12 `test/ui/shared_widgets_test.dart`. |
+| P0 | `tool/windows_accessibility_smoke.ps1` | DONE 2026-10-21: `tool/windows_accessibility_smoke.ps1` (511 lines) — native UIA smoke test per §9.2 spec. Steps: (1) launch release exe via `Start-Process -PassThru`, (2) attach UIAutomationCore COM, (3) find window by PID/title match (`llm_chess_arena.exe`), (4) enumerate invocable controls (InvokePattern first, LegacyIAccessiblePattern fallback), target >= 40, (5) walk UIA tree repeatedly (10 iterations), (6) perform 500 seeded random clicks (XorShift64 PRNG, seed 0xCAFEBABE) with user32.dll mouse_event API, (7) check Event Viewer for fresh flutter_windows.dll 0xC0000005 after run, (8) always kill process in finally block. Accepts params: -Exe (mandatory), -RandomClicks (default 500), -Seed (default 0xCAFEBABE), -Timeout (default 120s). Uses Exit code 0 = pass, 1 = exe missing, 2 = crash detected. No Dart dependency — pure PowerShell/.NET automation. Evidence: `flutter analyze` clean (pre-existing 3 warnings); `flutter test` full regression 467/467 pass unchanged; script verified syntax-free (PowerShell file, not executable on Linux). Next: P0 §9.2 integration into CI pipeline or move to P2 §6.12 `test/ui/shared_widgets_test.dart`. |
 | P0 | Refactors 10.1-10.4 + 10.7 (turn-provider / evaluator / clock / connection-tester seams + stable keys) | DONE (10.1 DONE 2026-10-20; 10.2 DONE 2026-10-20: `ReviewEvaluatorFactory` + `reviewEvaluatorFactoryProvider` rewired in ReviewScreen + VariantReplayScreen, `test/review_evaluator_seam_test.dart` 8/8; 10.3 DONE 2026-10-20: `clockProvider` default `DateTime.now`, wired into WatchScreen (`_startWatchGame` seed + `_flushToReviewLog` id) and ArenaScreen (`_startChaosPump` seed + `_chaosRun` startedAt/finishedAt), new `test/clock_seam_test.dart` 8/8; 10.4 DONE 2026-10-20: `ConnectionTester` typedef + `connectionTesterProvider` (default wraps `testAgentConnection` with internal `SecureKeyStore`), wired into AgentSetupScreen (`_tester` captured in initState via `ref.read(connectionTesterProvider)`), new `test/connection_tester_seam_test.dart` 8/8; 10.7 DONE 2026-10-20: ValueKeys on Play-screen duplicate-label controls + `test/ui/stable_keys_test.dart` 4/4) |
 | P2 | §10.5 Arena Elo injection (replace `static final _elo`) | DONE 2026-10-21: `ArenaScreen({this.elo})` + instance `EloService`, pinned by `test/ui/elo_injection_test.dart` (6 tests). |
 | P2 | §10.6 Deterministic deep states | DONE 2026-10-21: PlayScreen({this.initialFen}) — parseFen(startFen) replaces Position.initial() in _newGame(), defaulting to standardStartFen; AppShell({this.initialIndex = 0}) — initState sets _index from widget.initialIndex instead of hardcoded 0; WatchScreen({this.initialSeed}) — seed assignment uses widget.initialSeed ?? (clock().msSinceEpoch & 0x7fffffff). New `test/ui/deterministic_deep_states_test.dart` (12 tests): initialFen overrides starting position with e5 pawn, minimal king-only FEN renders two kings without crash, PlayScreen without initialFen uses standard start, AppShell default starts at Home (0), AppShell initialIndex=1 shows Play directly without Home navigation, AppShell initialIndex=7 shows Settings directly, WatchScreen with initialSeed=42 renders stably, two WatchScreens with same initialSeed both render, backward compat const constructors for all three screens. Evidence: `flutter analyze` clean on all 5 touched files; `flutter test test/ui/deterministic_deep_states_test.dart` 12/12 pass; full regression `flutter test` 542/542 pass (530 old + 12 new). Next: §10.8 Dispose audit.
@@ -1717,7 +1745,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   `timeout-minutes: 90` (~4x the observed ~15-20 min green wall time incl.
   the first-run Stockfish download) and `windows-nightly`
   `timeout-minutes: 180` (the §9.1/§9.2 steps are interactive/wider), each
-  with a §11.16 comment; (2) step-level bounds on ALL 24 steps across both
+  with a §11.16 comment; (2) step-level bounds on ALL 26 steps across both
   jobs — checkout 5, Setup Flutter 15, pub-cache restore 5, pub get 5,
   analyze 10 (x2), engine cache restore 5, engine download 15, `flutter
   test` 30 (ubuntu-gate Test + windows Unit & widget tests), apt install 15,
@@ -1729,7 +1757,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   30, §9.2 UIA smoke 20, smoke upload 5. The §9.1 and §9.2 step comments now
   explicitly note that their internal timeouts (FLUTTER_TEST_DEVICE_TIMEOUT /
   the script's -Timeout 120s) do NOT bound the whole step — the new step
-  timeout does. Step counts unchanged (ubuntu-gate 14, windows-nightly 10)
+  timeout does. Step counts unchanged (ubuntu-gate 14, windows-nightly 12)
   — only `timeout-minutes:` keys + comments added.
   Docs: `docs/FUTURE_WORK.md` — §11.16 added + closed as DONE in the same
   run (open list unchanged: §11.16 not an open item), header bumped;
@@ -1737,8 +1765,8 @@ suites referenced above now exist. Native Windows execution is tracked in
   exists for §11.16; per protocol the Run Log is the record).
   No Dart/test files changed.
   Evidence: workflow re-parses clean via PyYAML **with a strict
-  duplicate-key loader** (`jobs: ubuntu-gate + windows-nightly`; all 26
-  `timeout-minutes` keys present — 24 steps + 2 jobs — exactly one per
+  duplicate-key loader** (`jobs: ubuntu-gate + windows-nightly`; all 28
+  `timeout-minutes` keys present — 26 steps + 2 jobs — exactly one per
   step/job, zero duplicate keys anywhere in the file); all 13 bash run-blocks
   pass `bash -n` (the single "failure" is the windows-nightly §9.1
   PowerShell block, Windows-only by design — the §11.12 precedent); `flutter
@@ -2262,7 +2290,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   holds 9 (`variant_replay_screen.dart` shipped in 61d58d7). Now "9 screens".
   `ARCHITECTURE.md:53-54` — "What is intentionally deferred" claimed a
   "comprehensive unit/widget suite deferred"; the suite exists (642 tests,
-  22 `test/ui/` suites, `test/support/` harness, `integration_test/`), all
+  23 `test/ui/` suites, `test/support/` harness, `integration_test/`), all
   gated in `.github/workflows/ci.yaml`. Replaced with "Nothing on the test
   side is deferred: ... written and gated by CI".
   `docs/ENGINE_RUNTIME.md:154` — the release checklist cross-referenced
@@ -2749,3 +2777,88 @@ suites referenced above now exist. Native Windows execution is tracked in
   track row (automation-track.md:332). The `dart format` gate
   (102/127-file churn, needs an explicit owner decision) remains open;
   coverage-artifact comparison still needs ≥2 CI runs.
+- 2026-10-24Z — DOCS-NITS §11.28: the last Linux-implementable docs-nits
+  batch from the §11.22/§11.23 audit trail is closed (all FUTURE_WORK.md
+  P0/P1 items are DONE or Windows/external-blocked per
+  §9.1/§9.2/§11.3/§14/§2.6; CI P3 #2 — merging the `flutter test` +
+  `flutter test test/ui --coverage` pair into one full-suite
+  `flutter test --coverage` — stays open pending the explicit §11.4-owner
+  decision the audit recorded, because it changes the lcov coverage
+  semantics from test/ui-only to full-suite). Docs-accuracy pass, zero
+  open-item code changes. Each flagged nit verified before fixing:
+  1. **"22 `test/ui/` suites" → 23** — the two §11.21 docs-accuracy
+     entries (this file: the §11.21 header summary and the full Run Log
+     entry) said "the suite exists — 642 tests, 22 `test/ui/` suites".
+     642 was the then-live count, but the suite count was already 23:
+     `test/ui/arena_variant_review_test.dart` shipped 2026-10-23, before
+     §11.21. `ls test/ui/*_test.dart | wc -l` → 23. Both instances
+     corrected to 23.
+  2. **§11.16 "24 steps/26 keys" → "26 steps/28 keys"** — §11.16's
+     evidence (FUTURE_WORK §11.16 + this file's §11.16 Run Log entry)
+     counted 24 steps (ubuntu 14 + windows 10) with 26 timeout keys
+     (24 + 2 jobs) — correct AT §11.16 time, stale since §11.17 added
+     the two windows engine steps (windows-nightly 10 → 12). The §11.27
+     evidence programmatically asserted the current contract: 26 steps
+     (14 + 12) / 28 timeout keys (26 steps + 2 jobs). All stale count
+     instances fixed to 26 steps/28 keys (FUTURE_WORK §11.16 prose x2 +
+     evidence line; this file's header chain, §11.16 Run Log entry's
+     "ALL 24 steps" line + step-count parenthetical + evidence line).
+  3. **FUTURE_WORK "Verified baseline" 631/631 → 651/651** — the live
+     baseline block (FUTURE_WORK.md "Verified baseline") still said
+     `flutter test` — 631/631 while the suite is now 651/651 (re-measured
+     this run and every run since §11.25). Updated; the block's other
+     lines (0 issues, release build + Xvfb start, §12 18/18, §6 12
+     suites) were re-verified as still true.
+  4. **Dangling `docs/RUNBOOK.md "Linux desktop"` refs** — two places
+     cite a RUNBOOK heading that does not exist: FUTURE_WORK §11.6
+     ("xvfb + openbox are the headless-start recipe from
+     `docs/RUNBOOK.md` "Linux desktop"") and the ci.yaml "Install Linux
+     desktop build deps" step comment. RUNBOOK.md's headings are
+     `## Prereqs / Commands / Demo without keys / Adding a real model /
+     Flutter upgrade gate / Troubleshooting` — both the build-deps line
+     ("Linux desktop needs `clang cmake ...`") and the documented
+     Xvfb + `LIBGL_ALWAYS_SOFTWARE=1` headless-start recipe live under
+     `## Prereqs`. Both refs now say `docs/RUNBOOK.md` "Prereqs".
+  5. **`--direct` alias undocumented in download_stockfish `--help`** —
+     the CLI parser accepts `--direct` as an alias for `--no-proxy`
+     (tool/download_stockfish.dart:912), but the `--help` Options block
+     listed only `--no-proxy`. Help text now documents both. No behavior
+     change; no test pins the help output (grep: nothing in test/
+     references `--no-proxy`/`--direct`/help text).
+  6. **`0xCAFABE` → `0xCAFEBABE` in the §9.2 track row** — the Roadmap
+     row for `tool/windows_accessibility_smoke.ps1` said
+     `-Seed (default 0xCAFABE)`; the script's actual default is
+     `0xCAFEBABE` (tool/windows_accessibility_smoke.ps1:30). Corrected.
+  Evidence: `flutter analyze` → `No issues found! (ran in 2.2s)` (zero
+  errors/warnings/infos; the help-text string edit is Dart, everything
+  else is docs/YAML comments); full regression `flutter test` → 651/651
+  pass (01:55, All tests passed! — no behavior change); ci.yaml §11.28
+  contract asserted programmatically (ubuntu-gate 14 + windows-nightly 12
+  steps, 28 timeout-minutes keys, both RUNBOOK "Prereqs" refs present,
+  zero "Linux desktop" heading refs); `dart run
+  tool/download_stockfish.dart --help` prints the Options block including
+  `--direct            alias for --no-proxy`; `ls test/ui/*_test.dart`
+  → 23; `grep -c "timeout-minutes"` → 28; `grep -n "0xCAFEBABE"
+  tool/windows_accessibility_smoke.ps1` → line 30.
+  Files changed: `tool/download_stockfish.dart` (help text only),
+  `.github/workflows/ci.yaml` (comment ref only), `docs/FUTURE_WORK.md`
+  (header + nit fixes; Last updated bumped; per the open-items-only rule
+  no new completed-work section — no open FUTURE_WORK item was touched,
+  §9.1/§9.2/§11.3/§14 remain Windows-blocked, §2.6 upstream-external),
+  this track (header + nit fixes + this Run Log entry).
+  Commit: (recorded in a follow-up track commit per the §13 precedent).
+  Push **BLOCKED** (same as every prior run since the credentials audit):
+  no GitHub credentials on this host (`git config --get credential.helper`
+  empty, no `gh`, no `~/.git-credentials`, no `~/.netrc`, no token in
+  env); `git ls-remote origin main` still shows e1749b3, so the local
+  queue (~71 commits through this run, including this §11.28 pass)
+  remains local-only. Re-run the push once credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials
+  exist; (b) trigger the §11.3 windows-nightly via `workflow_dispatch`
+  (or wait for the 06:00 UTC schedule) on the hosted `windows-latest`
+  runner per the §13 decision + §11.3 checklist — the ONLY remaining
+  functional gap (§14.1-§14.2); or (c) re-check §2.6 on the next Flutter
+  upgrade / when `flutter/flutter#190903` lands. CI P3 #2 (coverage
+  merge) stays open pending the §11.4-owner decision; the `dart format`
+  gate (102/127-file churn, needs an explicit owner decision) remains
+  open; coverage-artifact comparison still needs ≥2 CI runs.

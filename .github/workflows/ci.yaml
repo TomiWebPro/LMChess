@@ -103,7 +103,7 @@ jobs:
         # analyze + test cannot catch runner/plugin/CMake regressions — the
         # release binary is the real gate (§11.6). ubuntu-latest preinstalls
         # clang/cmake/ninja/pkg-config but not the GTK/Secret/jsoncpp dev
-        # headers (docs/RUNBOOK.md "Linux desktop"); xvfb + openbox are the
+        # headers (docs/RUNBOOK.md "Prereqs"); xvfb + openbox are the
         # headless start recipe from the same page.
         timeout-minutes: 15
         run: |
