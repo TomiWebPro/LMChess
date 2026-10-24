@@ -1,7 +1,29 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-24 (UTC) — §11.35: the §11.33 audit-trail
+Last updated: 2026-10-24 (UTC) — §11.36 docs/baseline accuracy run on the
+terminal branch: an independent parallel subagent audit (full
+FUTURE_WORK.md open-item inventory + end-to-end ci.yaml defect audit)
+confirmed ZERO FUTURE_WORK.md open items implementable-and-verifiable on
+this Linux host (§9.1/§9.2/§11.3/§14.1-§14.2 Windows-native-blocked, §2.6
+upstream-external, the `dart format` gate owner-decision-pending, the
+coverage-artifact comparison needing ≥2 real CI runs, and the ~92-commit
+local queue still unpushable — no GitHub credentials on this host) and NO
+P0 (crash) or P1 (correctness) code or workflow-file defects. The one real
+finding was a stale-fact in the source of truth: the "Verified baseline"
+block still asserted 651/651 @ 2026-10-22 while the suite has been 666/666
+since §11.35. This run re-verified the full baseline itself — `flutter
+analyze` → `No issues found! (ran in 2.2s)`; full `flutter test` → 666/666
+pass (01:55, All tests passed!); `flutter build linux --release` → `✓
+Built build/linux/x64/release/bundle/llm_chess_arena`; release binary
+alive after 20s under a fresh Xvfb :117 (no orphan — the §11.27 env
+contract) — and updated the block in place to (2026-10-24) 666/666.
+Recorded in `automation-track.md` (Run Log); per the open-items-only rule
+this file gains no new completed-work section — no open FUTURE_WORK item
+was touched (§9.1/§9.2/§11.3/§14 remain Windows-blocked, §2.6
+upstream-external; the `dart format` gate and the coverage-artifact
+comparison still await their owner decisions / ≥2 real CI runs).
+Previously (2026-10-24) — §11.35: the §11.33 audit-trail
 code-P2 list is now FULLY closed — the §11.34 diagnostics pattern
 (`dart:developer` `log()` on silent-swallow catch sites, zero
 behavior change) is extended to the six remaining borderline sites:
@@ -510,10 +532,10 @@ The remaining items are release validation, CI automation, and process
 integration that cannot be closed on Linux. Completed work and the crash
 investigation history are preserved in `automation-track.md` and git history.
 
-Verified baseline (2026-10-22):
+Verified baseline (2026-10-24, re-verified §11.36):
 
 - `flutter analyze` — 0 issues.
-- `flutter test` — 651/651 pass.
+- `flutter test` — 666/666 pass.
 - `flutter build linux --release` — succeeds; release binary starts under Xvfb.
 - Roadmap §12 — 18/18 deliverables present; §10.1–10.8 refactors complete.
 - Interaction matrix §6 — all 12 screen/widget suites present.

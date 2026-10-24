@@ -1,7 +1,29 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-24 (UTC) — §11.35 run: the §11.33
+Last updated: 2026-10-24 (UTC) — §11.36 (docs/baseline
+accuracy run, terminal branch). An independent parallel subagent audit
+(full FUTURE_WORK.md open-item inventory + an end-to-end ci.yaml defect
+audit) confirmed ZERO open items implementable-and-verifiable on this
+Linux host and NO P0/P1 code or workflow defects: §9.1/§9.2/§11.3/§14.1-
+§14.2 remain Windows-native-blocked, §2.6 remains upstream-external
+(flutter/flutter#190903 unmerged), the `dart format` gate remains
+owner-decision-pending (dart format would churn 107/131 files; repo-wide
+reformat stays rejected as an unfocused diff per §11.7), the
+coverage-artifact comparison still needs ≥2 real CI runs, and the local
+commit queue still cannot be pushed (no GitHub credentials on this host;
+`git rev-list --count origin/main..HEAD` → 92). The one real finding was
+a stale fact in the source of truth: FUTURE_WORK.md's "Verified baseline"
+block still asserted 651/651 @ 2026-10-22 while the suite has been 666/666
+since §11.35. This run re-verified every baseline claim itself and fixed
+the block in place: `flutter analyze` → `No issues found! (ran in 2.2s)`;
+full `flutter test` → 666/666 pass (01:55, All tests passed!); `flutter
+build linux --release` → `✓ Built
+build/linux/x64/release/bundle/llm_chess_arena`; release binary alive
+after 20s under a fresh Xvfb :117 with LIBGL_ALWAYS_SOFTWARE=1 and no
+orphan left behind. Recorded in the Run Log below; per the open-items-only
+rule no new completed-work section; open-item set unchanged.
+Previously (2026-10-24) — §11.35 run: the §11.33
 audit-trail code-P2 list is now FULLY closed — the §11.34
 diagnostics pattern (`dart:developer` `log()` on silent-swallow
 catch sites, zero behavior change) is extended to all six remaining
@@ -3562,3 +3584,57 @@ suites referenced above now exist. Native Windows execution is tracked in
   (102/127-file churn, needs an explicit owner decision) remains
   open; coverage-artifact comparison still needs ≥2 real CI runs; the
   local commit queue still cannot be pushed.
+- 2026-10-24Z — DOCS/BASELINE §11.36 (terminal-branch docs
+  accuracy run). Independent parallel subagent audit #1 (full
+  FUTURE_WORK.md open-item inventory + Run Log tail cross-check):
+  ZERO open items are implementable-and-verifiable on this Linux
+  host — §9.1/§9.2 (§9 Windows-native: "It still needs a real
+  Windows desktop run", FUTURE_WORK.md:535-536), §11.3 (awaiting
+  first Windows run; workflow local-only, push credentials-blocked),
+  §14.1-§14.2 (Windows UIA smoke + Event Viewer), §2.6
+  (upstream-external; #190903 still `merged: false`). Subagent
+  audit #2 (end-to-end ci.yaml audit): NO P0/P1 workflow defect —
+  25 steps (ubuntu-gate 13 + windows-nightly 12), 27
+  `timeout-minutes` keys (25 steps + 2 jobs, exactly one per
+  step/job), `continue-on-error` 1+1, §11.23 job `if:` contracts
+  intact, all 13 bash run blocks pass `bash -n` (the 2 "failures"
+  are the Windows-only §9.1/§9.2 PowerShell blocks, per the §11.12
+  precedent), both PowerShell blocks parse clean under real pwsh.
+  The ONE real finding was a stale fact in the source of truth:
+  FUTURE_WORK.md's live "Verified baseline" block claimed 651/651 @
+  2026-10-22, but the suite has been 666/666 since §11.35 (and the
+  queue is now 92 unpushed commits, not 75/80 as older recap
+  entries stated). Fixed in place per the §11.28/§11.33 precedent:
+  re-verified EVERY baseline claim myself this run — `flutter
+  analyze` → `No issues found! (ran in 2.2s)`; full `flutter test`
+  → 666/666 pass (01:55, All tests passed!); `flutter build linux
+  --release` → `✓ Built build/linux/x64/release/bundle/
+  llm_chess_arena`; release binary alive after 20s under a fresh
+  Xvfb :117 with LIBGL_ALWAYS_SOFTWARE=1 (no orphan left; §11.27 env
+  contract) — and updated the block to `Verified baseline
+  (2026-10-24, re-verified §11.36): flutter analyze — 0 issues;
+  flutter test — 666/666 pass; flutter build linux --release —
+  succeeds; release binary starts under Xvfb`. Zero code/test/
+  workflow changes this run. Files changed: `docs/FUTURE_WORK.md`
+  (Last updated bumped to §11.36 + Verified baseline block),
+  this track (header + this entry). The `dart format` gate
+  (dart format would now churn 107/131 files; repo-wide reformat
+  stays rejected as an unfocused diff per the §11.7 rationale)
+  remains pending its explicit owner decision; the
+  coverage-artifact comparison still needs ≥2 real CI runs (and CI
+  itself cannot run while push is blocked); the 92-commit local
+  queue still cannot be pushed.
+  Commit: TBD (recorded in a follow-up track commit per precedent).
+  Push **BLOCKED** (same as every prior run since the credentials
+  audit): no GitHub credentials on this host (`git config --get
+  credential.helper` empty, no `gh`, no `~/.git-credentials`, no
+  `~/.netrc`, no token in env); `git push origin main` → `fatal:
+  could not read Username for 'https://github.com'` (origin main
+  still `e1749b3`). Re-run the push once credentials are
+  provisioned.
+  Next: (a) re-push the queued local commits once GitHub
+  credentials exist; (b) trigger the §11.3 windows-nightly via
+  `workflow_dispatch` on the hosted `windows-latest` runner per the
+  §13 decision + §11.3 checklist — the ONLY remaining functional
+  gap (§14.1-§14.2); or (c) re-check §2.6 on the next Flutter
+  upgrade / when `flutter/flutter#190903` lands.
