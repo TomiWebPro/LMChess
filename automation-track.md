@@ -1945,7 +1945,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   regression `flutter test` → 642/642 pass (All tests passed! — no Dart
   changes). `git status --short` confirms only the workflow + the two track
   docs changed.
-  Commit: <commit-hash> (recorded below once created).
+  Commit: 58f0c2d (recorded in a follow-up track commit per the §13 precedent).
   Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
   host — re-audited this run (`git config --get credential.helper` empty, no
   `gh`, no `~/.git-credentials`, no `~/.netrc`, no token in env);
