@@ -1,7 +1,31 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-24 (UTC) — §11.24: the AgentSetupScreen "Clear stored
+Last updated: 2026-10-24 (UTC) — §11.25: `resolveApiKey` no longer
+silently swallows a secure-store read failure (closes audit code-P2 #2
+from the §11.22/§11.23 trail — the read-side sibling of the §11.24 #3
+fix). The old `catch (_)` at `agent_config.dart` `resolveApiKey` returned
+`''` on ANY keychain read failure, so "store failed" read exactly like "no
+key stored": a configured agent with a stored key silently degraded to
+keyless (later auth failures with zero diagnostics; Test Connection failed
+for the wrong reason). The empty catch is gone: the failure is logged via
+`dart:developer` by default (the storage layer's own write-error fallback
+pattern) or handed to a new optional `onReadError` sink mirroring
+`LocalAppStore.onWriteError` — operators can now distinguish "no key"
+(quiet `''`) from "store failed" (logged/observed). The resolver still
+never throws and returns `''` on failure, preserving the keyless-backend
+contract. Six new deterministic offline tests in
+`test/resolve_api_key_test.dart` pin the short-circuits, the quiet
+no-secret path, the degrades-to-'' path, and the onReadError report path.
+Evidence: `flutter analyze` → `No issues found! (ran in 2.1s)`; `flutter
+test test/resolve_api_key_test.dart test/turn_provider_test.dart
+test/connection_tester_seam_test.dart` → 20/20 pass (6 new + 14 related);
+full `flutter test` → 651/651 pass (645 + 6 new, 01:57, All tests
+passed!). Recorded in `automation-track.md` (Run Log); per the
+open-items-only rule this file gains no new completed-work section — no
+open FUTURE_WORK item was touched (§9.1/§9.2/§11.3/§14 remain
+Windows-blocked, §2.6 upstream-external).
+Previously (2026-10-24) §11.24: the AgentSetupScreen "Clear stored
 key" action no longer silently swallows a secure-store delete failure. The
 repo convention (deterministic fakes, no empty catch) was broken at
 `agent_setup_screen.dart` `_clearApiKey`: on a secure-store delete error the

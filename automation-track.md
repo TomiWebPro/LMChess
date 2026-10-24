@@ -1,7 +1,37 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-24 (UTC) — §11.24 run: the AgentSetupScreen "Clear
+Last updated: 2026-10-24 (UTC) — §11.25 run: `resolveApiKey`'s silent
+secure-store read-failure swallow is gone (closes code-P2 #2 from the
+§11.22/§11.23 audit trail — the §11.24 fix's read-side sibling, the top
+remaining Linux-implementable audit candidate). `lib/src/agent/
+agent_config.dart` `resolveApiKey` caught secure-store READ failures with
+`catch (_)` and returned `''`, so an aged/inaccessible OS keychain was
+indistinguishable from "no key stored": a provider with a stored key
+silently degraded to keyless (later auth failures with zero diagnostics),
+and "Test Connection" reported false for the wrong reason. The empty
+`catch (_)` is gone (repo convention): the failure is logged via
+`dart:developer` by default — the storage layer's own write-error fallback
+pattern (`local_store.dart`) — or handed to a new optional `onReadError`
+sink mirroring `LocalAppStore.onWriteError` exactly, so operators can
+distinguish "no key" (quiet `''`) from "store failed" (logged/observed).
+The resolver still never throws and returns `''` on failure, preserving
+the keyless-backend contract pinned by `test/turn_provider_test.dart`'s
+throwing-reader test and `testAgentConnection`'s "Never throws" doc. New
+`test/resolve_api_key_test.dart` (6 deterministic offline tests): secret
+resolution, no-ref/empty-ref short-circuit without touching the store or
+invoking `onReadError`, null-secret quiet `''`, throwing store degrades to
+`''` instead of crashing, and the throwing store reports ref + error +
+stackTrace to `onReadError` while still returning `''`. Evidence:
+`flutter analyze` → `No issues found! (ran in 2.1s)`; `flutter test
+test/resolve_api_key_test.dart test/turn_provider_test.dart
+test/connection_tester_seam_test.dart` → 20/20 pass (6 new + 14 related);
+full `flutter test` → 651/651 pass (645 + 6 new, 01:57, All tests
+passed!). Files changed: `lib/src/agent/agent_config.dart`,
+`test/resolve_api_key_test.dart`, this track + `docs/FUTURE_WORK.md` (Last
+updated bumped; no open FUTURE_WORK item was touched — §9.1/§9.2/§11.3/§14
+remain Windows-blocked, §2.6 upstream-external).
+Previously (2026-10-24) §11.24 run: the AgentSetupScreen "Clear
 stored key" action no longer silently swallows a secure-store delete
 failure (code-P2 #3 from the §11.22/§11.23 audit trail, the top
 Linux-implementable open candidate). `agent_setup_screen.dart`
@@ -2449,6 +2479,74 @@ suites referenced above now exist. Native Windows execution is tracked in
   pair could merge into one full-suite `flutter test --coverage` (halves test
   execution; needs an explicit decision because it changes the §11.4 lcov
   coverage semantics from test/ui-only to full-suite); CI P3 #3 — `export
+  LIBGL_ALWAYS_SOFTWARE=1` next to `export DISPLAY=` at ci.yaml (the
+  software-GL contract is currently scoped to the Xvfb process only, not
+  exported for the app under test); docs nits — "22 test/ui suites" → 23,
+  §11.16 "24 steps/26 keys" → 26 steps/28 keys, FUTURE_WORK baseline
+  "631/631" → "642/642" (or annotate as historical), the dangling
+  "docs/RUNBOOK.md 'Linux desktop'" heading ref in FUTURE_WORK.md:346 +
+  ci.yaml:97, the missing `--direct` alias in download_stockfish `--help`
+  Options, the `0xCAFABE` → `0xCAFEBABE` typo in the §9.2 track row. The
+  `dart format` gate (102/127-file churn, needs an explicit owner decision)
+  remains open; coverage-artifact comparison still needs ≥2 CI runs.
+- 2026-10-24Z — CODE-P2 §11.25: `resolveApiKey` no longer silently swallows
+  secure-store READ failures (closes code-P2 #2 from the §11.22/§11.23 audit
+  trail — the read-side sibling of the §11.24 #3 fix and the top remaining
+  Linux-implementable audit candidate). `lib/src/agent/agent_config.dart`
+  `resolveApiKey` (was :551) used `catch (_)` and returned `''` on any
+  secure-store read failure, so an OS-keychain failure (unlock denial,
+  corrupt keychain, keychain migration glitch) was indistinguishable from
+  "no key stored": a configured OpenAI/Anthropic/Gemini agent with a stored
+  key silently degraded to keyless — later turns 401'd with zero
+  diagnostics, and Test Connection failed for the wrong reason while the
+  real fault sat in the keychain layer. Following the §11.24 precedent (no
+  empty catches) and the storage layer's own write-error pattern
+  (`LocalAppStore` logs fire-and-forget write failures via `dart:developer`
+  and offers `onWriteError`), the read path now: logs the failure via
+  `dart:developer` by default (`name: 'resolveApiKey'`, error + stackTrace,
+  ref named — never the secret) or hands it to a new optional `onReadError`
+  sink; the resolver still never throws and returns `''` on failure, so the
+  documented keyless-backend contract (`turn_provider_test.dart`'s
+  "a reader that throws degrades to an empty key instead of crashing" test
+  and `testAgentConnection`'s "Never throws" doc) is unchanged. New
+  `test/resolve_api_key_test.dart` (6 deterministic offline tests):
+  1. a valid ref resolves the stored secret; 2. no ref short-circuits to ''
+  without touching the store OR invoking `onReadError`; 3. an empty ref
+  short-circuits the same way; 4. a store holding no secret returns ''
+  quietly without invoking `onReadError`; 5. a throwing store degrades to
+  '' instead of crashing (default logging path); 6. a throwing store
+  reports ref + error + stackTrace to `onReadError` and still returns ''.
+  The diff is exactly the audit note: log the read failure so callers can
+  distinguish "no key" from "store failed"; no API consumers changed
+  (`resolveTurnProvider` / `testAgentConnection` use the default log).
+  Evidence: `flutter analyze` → `No issues found! (ran in 2.1s)` (zero
+  errors/warnings/infos); `flutter test test/resolve_api_key_test.dart
+  test/turn_provider_test.dart test/connection_tester_seam_test.dart` →
+  20/20 pass (6 new + 14 related); full regression `flutter test` → 651/651
+  pass (645 baseline + 6 new, 01:57, All tests passed!). Files changed:
+  `lib/src/agent/agent_config.dart`, `test/resolve_api_key_test.dart`,
+  this track + `docs/FUTURE_WORK.md` (Last updated bumped; per the
+  open-items-only rule no new completed-work section — no open FUTURE_WORK
+  item was touched, §9.1/§9.2/§11.3/§14 remain Windows-blocked, §2.6
+  upstream-external).
+  Push **BLOCKED** (same as every prior run since the credentials audit):
+  no GitHub credentials on this host (`git config --get credential.helper`
+  empty, no `gh`, no `~/.git-credentials`, no `~/.netrc`, no token in env);
+  `git ls-remote origin main` still shows e1749b3, so the local queue (~68
+  commits through this run, including this §11.25 fix) remains local-only.
+  Re-run the push once credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials exist;
+  (b) trigger the §11.3 windows-nightly via `workflow_dispatch` (or wait
+  for the 06:00 UTC schedule) on the hosted `windows-latest` runner per the
+  §13 decision + §11.3 checklist — the ONLY remaining functional gap
+  (§14.1-§14.2); or (c) re-check §2.6 on the next Flutter upgrade / when
+  `flutter/flutter#190903` lands. Remaining Linux-implementable audit
+  candidates (none P0/P1): code P2 #1 — clock_seam_test.dart:29's absolute
+  `now.year >= 2026` wall-clock assertion (make deterministic); CI P3 #2 —
+  the `flutter test` + `flutter test test/ui --coverage` pair could merge
+  into one full-suite `flutter test --coverage` (halves test execution;
+  needs an explicit decision because it changes the §11.4 lcov coverage
+  semantics from test/ui-only to full-suite); CI P3 #3 — `export
   LIBGL_ALWAYS_SOFTWARE=1` next to `export DISPLAY=` at ci.yaml (the
   software-GL contract is currently scoped to the Xvfb process only, not
   exported for the app under test); docs nits — "22 test/ui suites" → 23,

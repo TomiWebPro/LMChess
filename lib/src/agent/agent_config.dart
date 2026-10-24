@@ -7,6 +7,7 @@
 /// wrapper must live in its own file (storage layer) — never imported here.
 library;
 
+import 'dart:developer' show log;
 import 'dart:math' show Random;
 
 import 'package:http/http.dart' as http;
@@ -540,15 +541,37 @@ abstract class SecureKeyReader {
 ///
 /// Returns `''` when the config carries no ref or the store holds no
 /// secret (correct for keyless backends: Ollama, mock).
+///
+/// A secure-store READ failure is never silent: it is logged via
+/// `dart:developer` by default (mirroring the storage layer's write-error
+/// fallback) or handed to [onReadError] when provided, so operators can
+/// distinguish "no key stored" (quiet `''`) from "store failed" (a logged /
+/// observed error). The resolver still never throws and returns `''` on
+/// failure, so keyless backends and the connection probe keep working.
 Future<String> resolveApiKey(
   AgentConfig config,
-  SecureKeyReader keyStore,
-) async {
+  SecureKeyReader keyStore, {
+  /// Optional sink for secure-store read failures ([ref], [error],
+  /// [stackTrace]); defaults to a `dart:developer` log.
+  void Function(String ref, Object error, StackTrace stackTrace)?
+      onReadError,
+}) async {
   final ref = config.apiKeyRef;
   if (ref == null || ref.isEmpty) return '';
   try {
     return await keyStore.readApiKey(ref) ?? '';
-  } catch (_) {
+  } catch (error, stackTrace) {
+    if (onReadError != null) {
+      onReadError(ref, error, stackTrace);
+    } else {
+      log(
+        'resolveApiKey: secure-store read failed for ref "$ref" — '
+        'treating the agent as keyless (no API key)',
+        name: 'resolveApiKey',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
     return '';
   }
 }
