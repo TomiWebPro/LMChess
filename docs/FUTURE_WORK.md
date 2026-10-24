@@ -1,14 +1,30 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-24 (UTC) — docs-accuracy cleanup run (details in
-`automation-track.md`): stale claims in ARCHITECTURE.md (perft regression
-tests now exist and pass, 9 screens, test suite no longer deferred),
-ENGINE_RUNTIME.md (§3.3 → the real "Flutter upgrade gate" heading in
-RUNBOOK.md), and the "boot + e2e smoke tests" flutter-test comments in
-README.md + RUNBOOK.md (the suite is the full 642-test regression) were
-reconciled. No open item changed: §9.1/§9.2, §11.3, and §14.1/§14.2 remain
-Windows-blocked; §2.6 is upstream-external.
+Last updated: 2026-10-24 (UTC) — §11.22 run: the ci.yaml coverage artifact
+upload step could redden the gate. §11.4's documented contract is "coverage
+can never redden the gate" (and the coverage RUN step carries
+`continue-on-error: true`), but the `if: always()` "Upload coverage
+artifact" step that followed it did **not** — a transient
+`actions/upload-artifact@v4` backend failure (a documented Actions failure
+mode) would have turned the entire ubuntu-gate job red on a non-gating
+concern even though analyze/test/build/smoke/integration all passed. The
+upload step now carries `continue-on-error: true`, so a failed artifact
+push degrades to a warning exactly like a failed coverage run
+(`if-no-files-found: warn` already covers the missing-lcov case). Steps
+unchanged (ubuntu-gate 14, windows-nightly 12). No Dart/test files changed.
+Evidence: strict duplicate-key PyYAML re-parse clean (ubuntu-gate 14 steps —
+now with 2 continue-on-error steps — windows-nightly 12); all bash run
+blocks pass `bash -n` (the sole "failure" is the Windows-only §9.1
+PowerShell block, per the §11.12 precedent); `flutter analyze` → `No issues
+found!`; full `flutter test` → 642/642 pass (no Dart changes).
+Previously (2026-10-24) the docs-accuracy cleanup run reconciled stale
+claims in ARCHITECTURE.md (perft regression tests now exist and pass, 9
+screens, test suite no longer deferred), ENGINE_RUNTIME.md (§3.3 → the real
+"Flutter upgrade gate" heading in RUNBOOK.md), and the "boot + e2e smoke
+tests" flutter-test comments in README.md + RUNBOOK.md (the suite is the
+full 642-test regression). No open item changed: §9.1/§9.2, §11.3, and
+§14.1/§14.2 remain Windows-blocked; §2.6 is upstream-external.
 Previously (2026-10-24) §11.21 guards the §11.15/§11.18
 Linux-release-smoke xwininfo captures: the three
 `xwininfo -id "$WIN_ID" ... | awk` substitutions in the smoke step were
@@ -963,6 +979,39 @@ llm_chess_arena, 1278x720) under Xvfb + openbox`, exit 0, no orphan Xvfb or
 app process left behind. `flutter analyze` → `No issues found!`; full
 regression `flutter test` → 642/642 pass (All tests passed! — no Dart
 changes). See `automation-track.md` for the run log.
+
+---
+
+### 11.22 Coverage artifact upload can no longer redden the gate (P2 — DONE)
+
+The §11.4 contract is "coverage is explicitly NOT the success metric ... it
+never gates the build", and the coverage RUN step
+(`ci.yaml` "Test coverage (§11.4)") carries `continue-on-error: true` — but
+the `if: always()` "Upload coverage artifact" step that followed it did
+**not**. A transient `actions/upload-artifact@v4` backend failure (a
+documented Actions service failure mode) would have turned the entire
+ubuntu-gate job red on a non-gating concern — exactly the case §11.4 says
+coverage "can never redden the gate" for — while every real gate
+(analyze/test/build/smoke/integration) had passed. The upload step now also
+carries `continue-on-error: true`, so a failed artifact push degrades to a
+warning (visible in the job log) exactly like a failed coverage run;
+`if-no-files-found: warn` already handled the missing-lcov.info case. The
+`coverage-lcov` artifact upload itself is unchanged (name/path/retention
+identical), so coverage trend reporting works exactly as before on the
+successful path. Step counts unchanged (ubuntu-gate 14, windows-nightly 12)
+— only the one step gained `continue-on-error: true` + a §11.22 comment.
+No Dart/test files changed.
+
+Evidence: workflow re-parses clean via strict duplicate-key PyYAML (jobs:
+ubuntu-gate + windows-nightly; ubuntu-gate 14 steps — now 2
+continue-on-error steps: coverage run + upload; windows-nightly 12, no
+change); all five multi-command bash run blocks pass `bash -n` (the sole
+"failure" is the Windows-only §9.1 PowerShell block, Windows-only by design
+per §11.12); `flutter analyze` → `No issues found!`; full regression
+`flutter test` → 642/642 pass (no Dart changes). The gate-reddening failure
+mode is documented in §11.4's own step comment (never gates the build) and
+this section; the fix makes the two coverage steps behaviorally symmetric.
+See `automation-track.md` for the run log.
 
 ---
 

@@ -283,8 +283,18 @@ jobs:
         timeout-minutes: 30
         run: flutter test test/ui --coverage
 
-      - name: Upload coverage artifact
+      - name: Upload coverage artifact (§11.22)
+        # §11.22: coverage is explicitly NOT the success metric (§11.4) and
+        # "can never redden the gate" — but only the coverage RUN step above
+        # carried continue-on-error; this if: always() upload step did not, so
+        # a transient actions/upload-artifact backend failure (a documented
+        # Actions failure mode) would have failed the whole ubuntu-gate job on
+        # a non-gating concern even though every real gate passed. Continue on
+        # error here too: a failed artifact push degrades to a warning, exactly
+        # like a failed coverage run (if-no-files-found: warn handles the
+        # missing-lcov case the same way).
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         timeout-minutes: 5
         with:

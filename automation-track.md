@@ -1,7 +1,30 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-24 (UTC) — docs-accuracy cleanup (the §11.21 run's
+Last updated: 2026-10-24 (UTC) — §11.22 run: the ci.yaml coverage artifact
+upload step could redden the gate. §11.4's documented contract ("coverage
+can never redden the gate"; the coverage RUN step carries
+`continue-on-error: true`) was only half-implemented: the `if: always()`
+"Upload coverage artifact" step had no `continue-on-error`, so a transient
+`actions/upload-artifact@v4` backend failure (a documented Actions failure
+mode) would have turned the entire ubuntu-gate red on a non-gating concern
+even though analyze/test/build/smoke/integration all passed. The upload
+step now carries `continue-on-error: true` + a §11.22 comment, making the
+two coverage steps behaviorally symmetric (failed artifact push degrades to
+a warning; `if-no-files-found: warn` covers the missing-lcov case). Steps
+unchanged (ubuntu-gate 14, windows-nightly 12); no Dart/test files changed.
+Audit: three parallel subagents (full ci.yaml defect audit + test/code
+marker audit + docs/tooling open-item audit) found no P0/P1 defects; the
+open FUTURE_WORK.md items remain all Windows-native (§9.1/§9.2/§11.3/§14)
+or external (§2.6 — re-verified this run via GitHub API: flutter/flutter
+#190903 still open/unmerged, updated 2026-10-21; #175041 still open, updated
+2026-09-26). Evidence: strict duplicate-key PyYAML re-parse clean
+(ubuntu-gate 14 steps — now 2 continue-on-error — windows-nightly 12);
+all five multi-command bash blocks pass `bash -n` (the sole "failure" is the
+Windows-only §9.1 PowerShell block, per the §11.12 precedent);
+`flutter analyze` → `No issues found!`; full `flutter test` → 642/642 pass
+(no Dart changes).
+Previously (2026-10-24) docs-accuracy cleanup (the §11.21 run's
 Next: "stale-doc trio") closes the documented-but-stale claims flagged in the
 §11.21 audit: "regression tests pending" in ARCHITECTURE.md:12 (perft + FEN/SAN
 round-trip regression tests exist in `test/chess_rules_test.dart` and pass),
@@ -2165,3 +2188,106 @@ suites referenced above now exist. Native Windows execution is tracked in
   runs: the `dart format` gate (102/127-file churn, needs an explicit owner
   decision); coverage-artifact comparison (needs ≥2 CI runs — blocked on the
   push).
+- 2026-10-24Z — CI/PROCESS P2 §11.22 (coverage artifact upload can no
+  longer redden the gate). All documented FUTURE_WORK.md open items remain
+  Windows-native (§9.1/§9.2/§11.3/§14.1-14.2 — BLOCKED on this Linux host)
+  or external (§2.6 — re-verified this run via the GitHub API:
+  flutter/flutter#190903 still `state: open` / `merged: false`, updated
+  2026-10-21; #175041 still `state: open`, updated 2026-09-26 — unchanged),
+  so per the §11.18/§11.19/§11.20/§11.21 precedent this run took the
+  highest-priority genuine gap surfaced by three fresh-eyes parallel
+  subagent audits: the §11.4 coverage upload step could redden the gate.
+  §11.4's documented contract — coverage is explicitly NOT the success
+  metric and "can never redden the gate" (FUTURE_WORK.md §11.4 + the step's
+  own comment at ci.yaml:280-281) — was only half-implemented: the
+  "Test coverage (§11.4)" RUN step carries `continue-on-error: true`, but
+  the `if: always()` "Upload coverage artifact" step that follows it
+  (`ci.yaml:286-294`) did NOT. A transient `actions/upload-artifact@v4`
+  backend failure (an Actions service failure mode) would therefore have
+  turned the ENTIRE ubuntu-gate job red on a non-gating concern — the exact
+  case §11.4 says coverage "can never redden the gate" for — while
+  analyze/test/build/smoke/integration had all passed. Files changed:
+  `.github/workflows/ci.yaml` — the upload step now also carries
+  `continue-on-error: true` (plus a §11.22 comment explaining the symmetry:
+  a failed artifact push degrades to a warning exactly like a failed
+  coverage run; `if-no-files-found: warn` already covers the missing-lcov
+  case). Artifact name/path/retention unchanged, so coverage trend
+  reporting works identically on the success path. Step counts unchanged
+  (ubuntu-gate 14, windows-nightly 12) — only the one step gained
+  `continue-on-error: true` + comment.
+  `docs/FUTURE_WORK.md` — §11.22 added + closed as DONE in the same run per
+  the §11.4–§11.21 precedent (open list unchanged: §11.22 not an open
+  item), header bumped.
+  `automation-track.md` — header line + this Run Log entry (no Roadmap row
+  exists for §11.22; per protocol the Run Log is the record).
+  No Dart/test files changed.
+  Evidence: workflow re-parses clean via strict duplicate-key PyYAML (jobs:
+  ubuntu-gate + windows-nightly; ubuntu-gate 14 steps — now 2
+  continue-on-error steps (coverage run + upload) — windows-nightly 12, no
+  change); all five multi-command bash run blocks pass `bash -n` (the sole
+  "failure" is the Windows-only §9.1 PowerShell block, Windows-only by
+  design per §11.12; my change touched no run block); `flutter analyze` →
+  `No issues found!`; full regression `flutter test` → 642/642 pass
+  (All tests passed! — no Dart changes). `git status --short` confirms only
+  the workflow + the two track docs changed.
+  Audit method: three parallel subagents — (1) full ci.yaml defect audit
+  (very thorough; verified paths/binary names/engine README pins/shell
+  syntax; reported only 2 P2 + 3 P3, of which this is the top P2;
+  additional P3 candidates logged below), (2) test/code marker audit
+  (verified: zero TODO/FIXME/HACK/XXX, only the intentional e2e engine
+  self-gate skip, zero dead code, board_motion/premove/scrub_shortcuts logic
+  clean, only 3 P2 candidates — a latent `now.year >= 2026` wall-clock
+  assertion in clock_seam_test.dart:29, and two silent secure-store error
+  swallows in agent_config.dart:551 + agent_setup_screen.dart:425-427,
+  logged below), (3) docs/tooling open-item audit (confirmed all open
+  FUTURE_WORK items are Windows/external; found P2/P3 docs nits — stale
+  "22 test/ui suites" (actual 23), §11.16 evidence "24 steps/26 keys"
+  (actual 26 steps/28 keys), stale "631/631" baseline (actual 642/642),
+  a dangling "docs/RUNBOOK.md 'Linux desktop'" heading ref, the
+  undocumented `--direct` alias in download_stockfish --help, and a
+  `0xCAFABE` vs `0xCAFEBABE` seed typo in the §9.2 ps1 track row — logged
+  below).
+  Commit: (recorded in a follow-up track commit per
+  the §13 precedent).
+  Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
+  host — re-audited this run (`git config --get credential.helper` empty,
+  no `gh`, no `~/.git-credentials`, no `~/.netrc`, no token in env; `git
+  push --dry-run origin main` under `GIT_TERMINAL_PROMPT=0` → `fatal: could
+  not read Username for 'https://github.com': terminal prompts disabled`);
+  `git ls-remote origin main` still shows e1749b3, so the local queue (~60
+  commits through this run) remains local-only — including the ENTIRE
+  §11.3–§11.22 CI modernization, none of which has ever run on a hosted
+  runner. Re-run the push after credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials exist;
+  (b) trigger the §11.3 windows-nightly via `workflow_dispatch` (or wait for
+  the 06:00 UTC schedule) on the hosted `windows-latest` runner per the §13
+  decision + §11.3 checklist — the ONLY remaining functional gap
+  (§14.1-§14.2); or (c) re-check §2.6 on the next Flutter upgrade / when
+  `flutter/flutter#190903` lands. Audit candidates logged for future runs
+  (all Linux-implementable, none P0/P1): CI P3 trio — the nightly cron
+  (`0 6 * * *`) also fires a redundant full ubuntu-gate every night because
+  ubuntu-gate has no job-level `if:` (`if: github.event_name != 'schedule'`
+  would keep it on push/PR/dispatch only), the widget suite executes twice
+  per push (`flutter test` + `flutter test test/ui --coverage` — a single
+  `flutter test --coverage` would halve it), and `LIBGL_ALWAYS_SOFTWARE=1`
+  is scoped to the Xvfb process only, not exported for the app under test
+  (`export LIBGL_ALWAYS_SOFTWARE=1` next to `export DISPLAY=` at ci.yaml:127
+  and :240 would make the software-GL contract explicit); code P2 trio —
+  clock_seam_test.dart:29 `expect(now.year, greaterThanOrEqualTo(2026))`
+  asserts against the real wall clock with an absolute year threshold (fails
+  on any machine with a pre-2026 clock; a plausibility-only assertion would
+  be deterministic), agent_config.dart:551 `resolveApiKey`'s `catch (_)`
+  swallows a secure-store read failure silently (caller can't distinguish
+  "no key" from "store failed"; log the exception), and
+  agent_setup_screen.dart:425-427 `_clearApiKey`'s `catch (_)` swallows a
+  secure-store delete failure while the UI already cleared the local
+  indicator (surface a SnackBar on delete failure, mirroring the write path
+  at :392); docs nits — the "22 test/ui suites" → 23, §11.16 "24 steps/26
+  keys" → 26 steps/28 keys, FUTURE_WORK baseline "631/631" → "642/642"
+  (or annotate as historical), the dangling "docs/RUNBOOK.md 'Linux
+  desktop'" heading ref in FUTURE_WORK.md:346 + ci.yaml:97 (RUNBOOK's
+  headless recipe lives under "## Prereqs"), the missing `--direct` alias in
+  download_stockfish `--help` Options, and the `0xCAFABE` → `0xCAFEBABE`
+  typo in the §9.2 track row. The `dart format` gate (102/127-file churn,
+  needs an explicit owner decision) remains open; coverage-artifact
+  comparison still needs ≥2 CI runs.
