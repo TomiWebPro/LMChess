@@ -1,7 +1,24 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-24 (UTC) — §11.25: `resolveApiKey` no longer
+Last updated: 2026-10-24 (UTC) — §11.26: the final code-P2 audit
+candidate is closed — `test/clock_seam_test.dart`'s "defaults to
+DateTime.now" test no longer asserts an absolute wall-clock year
+(`expect(now.year, greaterThanOrEqualTo(2026))` — fails on any machine
+with a pre-2026 clock). The default clock's output is now checked
+relatively against an immediately adjacent `DateTime.now()` reading
+(`now.difference(reference).inSeconds.abs() <= 300`): `DateTime.difference`
+normalizes the local/UTC offset, no absolute epoch/year dependency exists,
+and the test still proves the default resolves to the real wall clock.
+Test-only determinism fix (no lib/ code changed). Evidence: `flutter
+analyze` → `No issues found! (ran in 2.2s)`; `flutter test
+test/clock_seam_test.dart` → 8/8 pass; clock-seam consumers → 84/84 pass;
+full `flutter test` → 651/651 pass (01:54, All tests passed! — count
+unchanged). Recorded in `automation-track.md` (Run Log); per the
+open-items-only rule this file gains no new completed-work section — no
+open FUTURE_WORK item was touched (§9.1/§9.2/§11.3/§14 remain
+Windows-blocked, §2.6 upstream-external).
+Previously (2026-10-24) §11.25: `resolveApiKey` no longer
 silently swallows a secure-store read failure (closes audit code-P2 #2
 from the §11.22/§11.23 trail — the read-side sibling of the §11.24 #3
 fix). The old `catch (_)` at `agent_config.dart` `resolveApiKey` returned

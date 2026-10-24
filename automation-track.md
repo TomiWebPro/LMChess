@@ -1,7 +1,27 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-24 (UTC) — §11.25 run: `resolveApiKey`'s silent
+Last updated: 2026-10-24 (UTC) — §11.26 run: the final code-P2 audit
+candidate is closed — `test/clock_seam_test.dart` no longer asserts against
+an absolute wall-clock year. The "defaults to DateTime.now" test used
+`expect(now.year, greaterThanOrEqualTo(2026))`, an absolute epoch threshold
+that fails on any machine with a pre-2026 clock (and pins the suite to a
+point in time for no reason). It now verifies the default clock against an
+immediately adjacent `DateTime.now()` reading
+(`now.difference(reference).inSeconds.abs() <= 300`): `difference`
+normalizes the local/UTC offset, there is no absolute year dependency, and
+the test still proves the default resolves to the real wall clock. A
+test-only determinism fix — no lib/ code changed. Evidence: `flutter
+analyze` → `No issues found! (ran in 2.2s)`; `flutter test
+test/clock_seam_test.dart` → 8/8 pass; clock-seam consumers
+(watch/arena/deterministic-deep-states/scrub/arena-variant-review) → 84/84
+pass; full `flutter test` → 651/651 pass (01:54, All tests passed! — count
+unchanged, test edit only). Files changed: `test/clock_seam_test.dart`,
+this track + `docs/FUTURE_WORK.md` (Last updated bumped; per the
+open-items-only rule no new completed-work section — no open FUTURE_WORK
+item was touched, §9.1/§9.2/§11.3/§14 remain Windows-blocked, §2.6
+upstream-external).
+Previously (2026-10-24) §11.25 run: `resolveApiKey`'s silent
 secure-store read-failure swallow is gone (closes code-P2 #2 from the
 §11.22/§11.23 audit trail — the §11.24 fix's read-side sibling, the top
 remaining Linux-implementable audit candidate). `lib/src/agent/
@@ -2544,6 +2564,67 @@ suites referenced above now exist. Native Windows execution is tracked in
   `flutter/flutter#190903` lands. Remaining Linux-implementable audit
   candidates (none P0/P1): code P2 #1 — clock_seam_test.dart:29's absolute
   `now.year >= 2026` wall-clock assertion (make deterministic); CI P3 #2 —
+  the `flutter test` + `flutter test test/ui --coverage` pair could merge
+  into one full-suite `flutter test --coverage` (halves test execution;
+  needs an explicit decision because it changes the §11.4 lcov coverage
+  semantics from test/ui-only to full-suite); CI P3 #3 — `export
+  LIBGL_ALWAYS_SOFTWARE=1` next to `export DISPLAY=` at ci.yaml (the
+  software-GL contract is currently scoped to the Xvfb process only, not
+  exported for the app under test); docs nits — "22 test/ui suites" → 23,
+  §11.16 "24 steps/26 keys" → 26 steps/28 keys, FUTURE_WORK baseline
+  "631/631" → "642/642" (or annotate as historical), the dangling
+  "docs/RUNBOOK.md 'Linux desktop'" heading ref in FUTURE_WORK.md:346 +
+  ci.yaml:97, the missing `--direct` alias in download_stockfish `--help`
+  Options, the `0xCAFABE` → `0xCAFEBABE` typo in the §9.2 track row. The
+  `dart format` gate (102/127-file churn, needs an explicit owner decision)
+  remains open; coverage-artifact comparison still needs ≥2 CI runs.
+- 2026-10-24Z — TEST-DETERMINISM §11.26: `clock_seam_test.dart` no longer
+  asserts against an absolute wall-clock year (closes code-P2 #1 from the
+  §11.22/§11.23/§11.24/§11.25 audit trail — the last remaining code-P2
+  candidate; all FUTURE_WORK.md P0/P1 items are DONE or Windows/external-
+  blocked per §9.1/§9.2/§11.3/§14/§2.6). The "defaults to DateTime.now"
+  test (clock_seam_test.dart:20-30) ended with
+  `expect(now.year, greaterThanOrEqualTo(2026))` — a real wall-clock
+  assertion with an ABSOLUTE year threshold, so any machine with a pre-2026
+  clock fails it, and the suite is pinned to a point in time for no reason.
+  The default clock's whole contract is "resolves to the real wall clock",
+  which needs no absolute epoch reference at all. The assertion is now a
+  relative plausibility check: `now` (the default clock's output) is
+  compared to an immediately adjacent `DateTime.now()` reading —
+  `expect(now.difference(reference).inSeconds.abs(), lessThanOrEqualTo(300))`.
+  `DateTime.difference` normalizes the local/UTC offset (so the
+  platform-dependent now/UTC question the old comment worried about is
+  handled by the API itself), there is no absolute year or epoch
+  dependency, and the test still proves the default resolves to the real
+  wall clock exactly as before. Test-only change — no lib/ code changed;
+  the other seven tests in the file (fixed-UTC override, ms-epoch, toUtc
+  identity, 31-bit mask, shared default identity, nested-scope shadowing,
+  non-determinism bound) are untouched, as are all clock-seam consumers.
+  Evidence: `flutter analyze` → `No issues found! (ran in 2.2s)` (zero
+  errors/warnings/infos); `flutter test test/clock_seam_test.dart` → 8/8
+  pass; clock-seam consumers `flutter test test/ui/watch_screen_test.dart
+  test/ui/arena_screen_test.dart test/ui/deterministic_deep_states_test.dart
+  test/ui/scrub_shortcuts_test.dart test/ui/arena_variant_review_test.dart`
+  → 84/84 pass; full regression `flutter test` → 651/651 pass (01:54, All
+  tests passed! — count unchanged, test edit only). Files changed:
+  `test/clock_seam_test.dart`, this track + `docs/FUTURE_WORK.md` (Last
+  updated bumped; per the open-items-only rule no new completed-work section
+  — no open FUTURE_WORK item was touched, §9.1/§9.2/§11.3/§14 remain
+  Windows-blocked, §2.6 upstream-external).
+  Commit: (recorded in a follow-up track commit per the §13 precedent).
+  Push **BLOCKED** (same as every prior run since the credentials audit):
+  no GitHub credentials on this host (`git config --get credential.helper`
+  empty, no `gh`, no `~/.git-credentials`, no `~/.netrc`, no token in env);
+  `git ls-remote origin main` still shows e1749b3, so the local queue (~69
+  commits through this run, including this §11.26 fix) remains local-only.
+  Re-run the push once credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials exist;
+  (b) trigger the §11.3 windows-nightly via `workflow_dispatch` (or wait
+  for the 06:00 UTC schedule) on the hosted `windows-latest` runner per the
+  §13 decision + §11.3 checklist — the ONLY remaining functional gap
+  (§14.1-§14.2); or (c) re-check §2.6 on the next Flutter upgrade / when
+  `flutter/flutter#190903` lands. Remaining Linux-implementable audit
+  candidates (none P0/P1 — the code-P2 trio is now fully closed): CI P3 #2 —
   the `flutter test` + `flutter test test/ui --coverage` pair could merge
   into one full-suite `flutter test --coverage` (halves test execution;
   needs an explicit decision because it changes the §11.4 lcov coverage

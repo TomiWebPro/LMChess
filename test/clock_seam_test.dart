@@ -24,9 +24,13 @@ void main() {
       final clock = container.read(clockProvider);
       expect(clock, isA<DateTime Function()>());
       final now = clock();
-      // DateTime.now() may or may not be UTC depending on platform; just
-      // verify it returns a reasonable value.
-      expect(now.year, greaterThanOrEqualTo(2026));
+      final reference = DateTime.now();
+      // The default clock is the real wall clock, so `now` must be a
+      // plausible timestamp: within five minutes of an immediately adjacent
+      // DateTime.now() reading. DateTime.difference normalizes the local/UTC
+      // offset, and there is NO absolute epoch or year threshold — this holds
+      // on any correctly-set machine, past, present, or future (deterministic).
+      expect(now.difference(reference).inSeconds.abs(), lessThanOrEqualTo(300));
     });
 
     testWidgets('override returns a fixed UTC timestamp', (tester) async {
