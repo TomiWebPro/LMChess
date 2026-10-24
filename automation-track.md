@@ -3107,11 +3107,13 @@ suites referenced above now exist. Native Windows execution is tracked in
   updated bumped; §11.4 mechanism updated in place; CI P3 #2 removed
   from the pending-owner list — per the open-items-only rule no new
   completed-work section).
+  Commit: 0ada33c (recorded in a follow-up track commit per the §13
+  precedent).
   Push **BLOCKED** (same as every prior run since the credentials
   audit): no GitHub credentials on this host (`git config --get
   credential.helper` empty, no `gh`, no `~/.git-credentials`, no
   `~/.netrc`, no token in env); `git ls-remote origin main` still shows
-  e1749b3, so the local queue (~81 commits through this run) remains
+  e1749b3, so the local queue (~80 commits through this run) remains
   local-only. Re-run the push once credentials are provisioned.
   Next: (a) re-push the queued local commits once GitHub credentials
   exist; (b) trigger the §11.3 windows-nightly via `workflow_dispatch`
@@ -3123,3 +3125,8 @@ suites referenced above now exist. Native Windows execution is tracked in
   remains open; coverage-artifact comparison still needs ≥2 real CI
   runs; CI P3 #2 is now closed — no Linux-implementable process items
   remain open.
+- 2026-10-24Z — CI §11.31 (follow-up, docs): the §11.31 entry above
+  now records its commit hash (`Commit: 0ada33c`) per the
+  §13/§11.30 precedent, and the local queue count is corrected to ~80
+  commits through that commit (`git rev-list --count origin/main..HEAD`
+  → 80). No functional changes — pure track accuracy.
