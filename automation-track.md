@@ -2846,7 +2846,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   no new completed-work section — no open FUTURE_WORK item was touched,
   §9.1/§9.2/§11.3/§14 remain Windows-blocked, §2.6 upstream-external),
   this track (header + nit fixes + this Run Log entry).
-  Commit: (recorded in a follow-up track commit per the §13 precedent).
+  Commit: 575a4a6 (recorded in a follow-up track commit per the §13 precedent).
   Push **BLOCKED** (same as every prior run since the credentials audit):
   no GitHub credentials on this host (`git config --get credential.helper`
   empty, no `gh`, no `~/.git-credentials`, no `~/.netrc`, no token in
