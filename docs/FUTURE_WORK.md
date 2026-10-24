@@ -1,7 +1,30 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-24 (UTC) — §11.19 makes the Stockfish download tool
+Last updated: 2026-10-24 (UTC) — §11.20 fixes the frozen Stockfish CI cache
+slots. Both engine-restore steps (ubuntu-gate §11.7, windows-nightly §11.17)
+used CONSTANT cache keys (`${{ runner.os }}-stockfish-linux-x86-64` /
+`-windows-x86-64`), so after a Stockfish release bump (sf_19 → sf_20 — the
+README pins size + SHA-256 the download tool verifies against) the restored
+slot would stay permanently frozen stale: every run restores 103 MiB, the
+download tool's self-heal rejects the mismatch and re-downloads, and the
+fresh binary is never saved — actions/cache saves only on a primary-key
+miss, so the constant key guarantees both a permanent 103 MiB re-download
+per run AND a cache slot that can never refresh. The keys are now
+`${{ runner.os }}-stockfish-<platform>-${{ hashFiles('assets/engines/<platform>/README.md') }}`,
+so bumping the pinned README changes the key and invalidates the slot —
+exactly one fresh download after a bump, then the new binary is cached
+under the new key. No restore-keys fallback on purpose (a version-less
+prefix would re-introduce the permanent stale restore). Content-validity is
+still enforced on every restore by the tool's size/SHA-256/`file`/UCI
+re-verification. §11.7/§11.17's "fixed key" design is thereby superseded.
+Evidence: `flutter analyze` → `No issues found!`; full `flutter test` →
+642/642 pass (no Dart changes); workflow re-parses clean via strict
+duplicate-key PyYAML (ubuntu-gate 14 steps, windows-nightly 12 — step counts
+unchanged, only each cache step's `with:` changed); all bash run blocks pass
+`bash -n`; hash-invalidation property proven empirically — sha256 of the
+current linux/windows READMEs vs a bumped copy differ, so the key expression
+changes when the pinned version changes. Previously (2026-10-24) §11.19 makes the Stockfish download tool
 self-heal corrupt caches. `tool/download_stockfish.dart` — the linchpin of the
 §11.7/§11.17 real-engine gates — trusted any cached release archive blindly
 (`ensureArchive` returned a file at `--archive-dir` on existence alone), so a
@@ -798,6 +821,58 @@ binary, and re-run the same command: `tar: Unexpected EOF in archive` →
 `re-downloading once` → `OK fetched (re-downloaded: cached archive was
 corrupt)` with the full 81 MB archive restored and size/sha256/file/uciok
 re-verified. See `automation-track.md` for the run log.
+
+### 11.20 Engine cache keys invalidate on the pinned release (P1 — DONE)
+
+Both engine-restore steps — the ubuntu-gate's §11.7 step and the
+windows-nightly's §11.17 step — used a CONSTANT cache key:
+`${{ runner.os }}-stockfish-linux-x86-64` resp.
+`${{ runner.os }}-stockfish-windows-x86-64`. The §11.7/§11.17 design comment
+called this a "fixed key" whose staleness was safely handled by the download
+tool's size/SHA-256/`file`/UCI self-heal — which is true for CORRECTNESS but
+not for freshness: after a Stockfish release bump (the per-platform
+`assets/engines/*/README.md` pins a new size + SHA-256, sf_19 → sf_20), the
+constant key still HITS the old frozen-stale slot, so every run restores
+103 MiB of a binary that the tool then rejects and re-downloads — a permanent
+103 MiB re-download per run, forever — and the freshly downloaded correct
+binary is never saved back, because `actions/cache@v4` saves only on a
+primary-key **miss** and the constant key never misses. The cache slot can
+therefore never refresh on its own after a release bump; the repo documented
+nothing about the manual cache-eviction chore that the design silently
+created.
+
+Fixed by keying the cache on the pinned version contract itself:
+
+- Both keys now end in
+  `-${{ hashFiles('assets/engines/<platform>/README.md') }}` (the README is
+  committed and pins the exact size + SHA-256 the download tool verifies
+  against). A release bump edits that README, which changes the hash and thus
+  the key: the bump's first run does one fresh 103 MiB download (cache miss),
+  and the correct binary is then saved under the NEW key — subsequent runs
+  hit the fresh cache.
+- **No `restore-keys` fallback on purpose.** A version-less prefix (the
+  canonical pub-cache pattern) would partially restore the frozen-stale slot
+  after a bump and re-introduce exactly the permanent-stale-restore loop this
+  fix eliminates, with no correctness upside — content validity is already
+  enforced on every restore by the download tool's size/SHA-256/`file`/UCI
+  re-verification, regardless of which cache the bytes came from.
+- The §11.7/§11.17 "fixed key" wording is superseded; the download tool, the
+  engine READMEs, and the download steps are unchanged.
+
+Evidence: workflow re-parses clean via PyYAML with a strict duplicate-key
+loader (ubuntu-gate 14 steps, windows-nightly 12 — step counts unchanged;
+only each cache step's `with:` block changed); all bash run blocks pass
+`bash -n` (the sole "failure" is the Windows-only §9.1 PowerShell block, per
+§11.12); `flutter analyze` → `No issues found! (ran in 2.4s)`; full
+regression `flutter test` → 642/642 pass (All tests passed! — no Dart
+changes); the invalidation property is proven empirically — `sha256sum` of
+the current linux-x86-64 README
+(`c9798ef3fb62a1ac79c386c72d991b877e117b6c7beab8dfa1845d5c609e3a2f`) vs a
+bumped copy (`f681d999e3fae5b24c29d4336a44a1b1f3f5fca7d843cca3f0766e7ccc94b0a1`)
+differ, and the windows-x86-64 README hashes to a distinct independent value
+(`947f1e188b6eb80ecdc955d627f4d578dc9d868ba9b8e754a9584cbc1af7a444`), so a
+README content change ⇒ key change ⇒ slot invalidation on both platforms.
+See `automation-track.md` for the run log.
 
 ---
 

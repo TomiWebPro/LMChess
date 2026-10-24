@@ -1,7 +1,26 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-24 (UTC) — §11.19 makes the Stockfish download tool
+Last updated: 2026-10-24 (UTC) — §11.20 fixes the frozen Stockfish CI cache
+slots: both engine-restore steps used a CONSTANT key
+(`${{ runner.os }}-stockfish-linux-x86-64` /
+`-windows-x86-64`), so after a Stockfish release bump the restored slot would
+stay permanently frozen stale — every run restores 103 MiB, the §11.7/§11.17
+download-tool self-heal rejects the size/SHA-256 mismatch and re-downloads,
+and the fresh binary is never saved (actions/cache saves only on a primary-key
+miss). The keys now carry the pinned version contract:
+`…-${{ hashFiles('assets/engines/linux-x86-64/README.md') }}` (resp.
+`windows-x86-64/README.md`), the README that pins the exact size + SHA-256 the
+tool verifies against — so bumping it (sf_19 → sf_20) changes the key and
+invalidates the cache slot exactly once, and no restore-keys fallback can
+re-introduce the frozen stale restore. We enforce the same on every restore:
+the tool's size/SHA-256/`file`/UCI re-verification still rejects any corrupt
+restore. Evidence: workflow re-parses clean via strict-duplicate-key PyYAML
+(ubuntu-gate 14 steps, windows-nightly 12 — step counts unchanged); all bash
+run blocks pass `bash -n`; `flutter analyze` → `No issues found!`; full
+`flutter test` → 642/642 pass (no Dart changes); hash-invalidation property
+proven empirically (README content change ⇒ hash component change, both
+platforms). Previously (2026-10-24) §11.19 makes the Stockfish download tool
 self-heal corrupt caches: `tool/download_stockfish.dart` trusted any cached
 release archive blindly (`ensureArchive` returned a file on existence alone),
 so a truncated archive — the residue of a killed download — stuck every later
@@ -1882,3 +1901,71 @@ suites referenced above now exist. Native Windows execution is tracked in
   `set -euo pipefail` — a window destroyed between the xdotool search and
   the xwininfo call would abort the step and skip its diagnostics + Xvfb
   teardown).
+- 2026-10-24Z — CI/PROCESS P1 §11.20 (engine cache keys invalidate on the
+  pinned release). All documented FUTURE_WORK.md open items remain
+  Windows-native (§9.1/§9.2/§11.3/§14.1-14.2 — BLOCKED on this Linux host)
+  or external (§2.6), so per the §11.18/§11.19 precedent this run took the
+  highest-priority logged audit candidate: §11.18-bis — both Stockfish
+  engine-restore steps used a CONSTANT cache key
+  (`${{ runner.os }}-stockfish-linux-x86-64` /
+  `-windows-x86-64`), so a Stockfish release bump (sf_19 → sf_20; the
+  per-platform `assets/engines/*/README.md` pins size + SHA-256 the download
+  tool verifies against) left the restored slot permanently frozen stale:
+  every run restores 103 MiB, the §11.7/§11.17 self-heal rejects the
+  mismatch and re-downloads the same 103 MiB, and the correct binary is
+  never saved back (actions/cache saves only on a primary-key miss — the
+  constant key never misses). Promoted as §11.20 into
+  `docs/FUTURE_WORK.md` and closed in the same run. Files changed:
+  `.github/workflows/ci.yaml` — both cache steps now key on the pinned
+  version contract:
+  `${{ runner.os }}-stockfish-<platform>-${{ hashFiles('assets/engines/<platform>/README.md') }}`;
+  each step's design comment rewritten (the "fixed key" wording is
+  superseded; why no `restore-keys` fallback — a version-less prefix would
+  re-introduce the permanent stale restore, with no correctness upside since
+  content validity is enforced on every restore by the tool's
+  size/SHA-256/`file`/UCI re-verification). Step counts unchanged
+  (ubuntu-gate 14, windows-nightly 12); no Dart/test files changed.
+  `docs/FUTURE_WORK.md` — §11.20 added + closed as DONE in the same run per
+  the §11.4–§11.19 precedent, header bumped.
+  `automation-track.md` — header line + this Run Log entry (no Roadmap row
+  exists for §11.20; per protocol the Run Log is the record).
+  Evidence: workflow re-parses clean via PyYAML with a strict duplicate-key
+  loader (jobs: ubuntu-gate + windows-nightly; step counts unchanged; both
+  engine keys carry the README hashFiles component; no restore-keys on
+  either); all 11 bash run blocks pass `bash -n` (the sole "failure" is the
+  Windows-only §9.1 PowerShell block, Windows-only by design per §11.12);
+  the invalidation property is proven empirically — `sha256sum` of the
+  current linux-x86-64 README
+  `c9798ef3fb62a1ac79c386c72d991b877e117b6c7beab8dfa1845d5c609e3a2f` vs a
+  bumped copy `f681d999e3fae5b24c29d4336a44a1b1f3f5fca7d843cca3f0766e7ccc94b0a1`
+  differ (⇒ key change on bump), and the windows-x86-64 README hashes to a
+  distinct per-platform value
+  `947f1e188b6eb80ecdc955d627f4d578dc9d868ba9b8e754a9584cbc1af7a444`;
+  `flutter analyze` → `No issues found! (ran in 2.4s)` (exact output); full
+  regression `flutter test` → 642/642 pass (All tests passed! — no Dart
+  changes). `git status --short` confirms only the workflow + the two track
+  docs changed.
+  Commit: <commit-hash> (recorded below once created).
+  Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
+  host — re-audited this run (`git config --get credential.helper` empty, no
+  `gh`, no `~/.git-credentials`, no `~/.netrc`, no token in env);
+  `git ls-remote origin main` still shows `e1749b3`, so `e1749b3..HEAD` (58
+  local commits through this run) remains local-only — including the ENTIRE
+  §11.3–§11.20 CI modernization: the hosted CI on the remote still runs the
+  old 6-step analyze+test job, so none of the modern gates have ever run on
+  a hosted runner. Re-run the push after credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials exist;
+  (b) trigger the §11.3 windows-nightly via `workflow_dispatch` (or wait for
+  the 06:00 UTC schedule) on the hosted `windows-latest` runner per the §13
+  decision + §11.3 checklist — the ONLY remaining functional gap
+  (§14.1-14.2); or (c) re-check §2.6 on the next Flutter upgrade / when
+  `flutter/flutter#190903` lands. Audit candidates logged for future runs:
+  the ci.yaml smoke-step `xwininfo` race (the
+  `MAP_STATE/WIDTH/HEIGHT=$(xwininfo ...)` substitutions are unguarded under
+  `set -euo pipefail` — a window destroyed between the xdotool search and
+  the xwininfo call would abort the step and skip its diagnostics + Xvfb
+  teardown) and the stale-doc trio (ARCHITECTURE.md:12 "regression tests
+  pending" — perft tests exist; ARCHITECTURE.md:54 "unit/widget suite
+  deferred" — 12 screen suites + 642 tests exist; ENGINE_RUNTIME.md:154
+  references "§3.3" which no longer exists in RUNBOOK.md). §11.20 itself is
+  closed; the §11.7/§11.17 "fixed key" quotes above are historical records.

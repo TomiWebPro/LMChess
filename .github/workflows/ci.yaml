@@ -61,11 +61,22 @@ jobs:
         # cache it here so only the first runner downloads. Stale caches
         # self-heal: download_stockfish.dart re-verifies size + SHA-256 +
         # `file` type + UCI handshake and re-fetches on any mismatch.
+        #
+        # The key MUST carry the pinned version, not a constant (§11.20):
+        # this README pins the exact size + SHA-256 the download tool
+        # verifies against, so bumping it (a new Stockfish release, eg
+        # sf_19 -> sf_20) changes the key and invalidates the cache slot.
+        # A constant key would restore the frozen-stale cache forever:
+        # every run restores 103 MiB, the self-heal then rejects the
+        # mismatch and re-downloads, and the fresh binary is never saved
+        # (actions/cache saves only on a primary-key miss). No
+        # restore-keys fallback on purpose — a version-less prefix would
+        # re-introduce exactly that permanent stale restore.
         uses: actions/cache@v4
         timeout-minutes: 5
         with:
           path: assets/engines/linux-x86-64
-          key: ${{ runner.os }}-stockfish-linux-x86-64
+          key: ${{ runner.os }}-stockfish-linux-x86-64-${{ hashFiles('assets/engines/linux-x86-64/README.md') }}
 
       - name: Download Stockfish engine (real-engine E2E, §11.7)
         # Requires tar + chmod + file, all preinstalled on ubuntu-latest.
@@ -320,13 +331,18 @@ jobs:
         # gitignored; cache it so only the first runner downloads. Stale
         # caches self-heal: download_stockfish.dart re-verifies size +
         # SHA-256 + `file` type + UCI handshake and re-fetches on any
-        # mismatch, so the fixed key can never smuggle a corrupt binary
-        # past the gate.
+        # mismatch, so a stale key cannot smuggle a corrupt binary past
+        # the gate.
+        #
+        # Key carries the pinned README hash (§11.20), same rationale as
+        # ubuntu-gate: the README pins the size + SHA-256 the tool verifies
+        # against, so a Stockfish release bump changes the key and the old
+        # frozen-stale slot is never restored. No restore-keys on purpose.
         uses: actions/cache@v4
         timeout-minutes: 5
         with:
           path: assets/engines/windows-x86-64
-          key: ${{ runner.os }}-stockfish-windows-x86-64
+          key: ${{ runner.os }}-stockfish-windows-x86-64-${{ hashFiles('assets/engines/windows-x86-64/README.md') }}
 
       - name: Download Stockfish engine (real-engine E2E, §11.17)
         # The Windows release asset is a .zip; the download tool extracts it
