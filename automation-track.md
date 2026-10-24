@@ -1,7 +1,25 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-24 (UTC) — §11.21 guards the §11.15/§11.18
+Last updated: 2026-10-24 (UTC) — docs-accuracy cleanup (the §11.21 run's
+Next: "stale-doc trio") closes the documented-but-stale claims flagged in the
+§11.21 audit: "regression tests pending" in ARCHITECTURE.md:12 (perft + FEN/SAN
+round-trip regression tests exist in `test/chess_rules_test.dart` and pass),
+the "comprehensive unit/widget suite deferred" line in ARCHITECTURE.md:53-54
+(the suite exists — 642 tests, 22 `test/ui/` suites, `test/support/` harness,
+`integration_test/`), and the dangling "§3.3" cross-reference in
+ENGINE_RUNTIME.md:154 (RUNBOOK.md uses unnumbered `##` headings; the real
+gate is "Flutter upgrade gate", acceptance criterion 14.8). A subagent audit
+of ARCHITECTURE.md/RUNBOOK.md/ENGINE_RUNTIME.md/README.md surfaced three more
+same-class claims, fixed in the same pass: ARCHITECTURE.md:33 said "8 screens"
+(there are 9 — `variant_replay_screen.dart` shipped in 61d58d7), and the
+"flutter test # boot + e2e smoke tests" comments in README.md:17 +
+RUNBOOK.md:22 were stale (`flutter test` runs the full 642-test regression).
+No Dart/test files changed; no open FUTURE_WORK item touched (§9.1/§9.2,
+§11.3, §14.1/§14.2 remain Windows-blocked; §2.6 upstream-external).
+Evidence: `flutter analyze` → `No issues found! (ran in 2.3s)`; full
+`flutter test` → 642/642 pass (01:50, All tests passed!).
+Previously (2026-10-24) §11.21 guards the §11.15/§11.18
 Linux-release-smoke xwininfo captures. The smoke step's window-verdict loop
 read geometry with three `xwininfo -id "$WIN_ID" ... | awk` command
 substitutions that were unguarded under `set -euo pipefail` (the `xdotool
@@ -2087,3 +2105,63 @@ suites referenced above now exist. Native Windows execution is tracked in
   (2:21.1.22-1ubuntu1.2 → .3) — incidental dev-tooling bumps, no config
   changes; the corrected extraction used the §11.15/§11.18-style
   smoke-step-only range.
+
+- 2026-10-24Z — DOCS-ACCURACY (stale-doc cleanup): closed the stale-doc trio
+  the §11.21 run's Next: logged as "a docs-only P2 that can be closed in a
+  future run". This is the highest-priority open item implementable and
+  verifiable on this Linux host — every remaining open item in
+  `docs/FUTURE_WORK.md` needs a Windows desktop/UIA session (§9.1/§9.2,
+  §11.3, §14.1/§14.2) or is upstream-external (§2.6), so those stay BLOCKED.
+  Files changed:
+  `ARCHITECTURE.md:12` — the chess-rules decision row ended "(regression
+  tests pending)"; the perft + FEN/SAN round-trip regression tests have
+  existed since `test/chess_rules_test.dart` (groups at :59 perft counts /
+  :91 SAN / :179 FEN round-trips) and pass in the 642-test suite. Now reads
+  "Verified by regression tests (`test/chess_rules_test.dart`: perft node
+  counts + FEN/SAN round-trips)".
+  `ARCHITECTURE.md:33` — the module map said "8 screens"; the screens dir
+  holds 9 (`variant_replay_screen.dart` shipped in 61d58d7). Now "9 screens".
+  `ARCHITECTURE.md:53-54` — "What is intentionally deferred" claimed a
+  "comprehensive unit/widget suite deferred"; the suite exists (642 tests,
+  22 `test/ui/` suites, `test/support/` harness, `integration_test/`), all
+  gated in `.github/workflows/ci.yaml`. Replaced with "Nothing on the test
+  side is deferred: ... written and gated by CI".
+  `docs/ENGINE_RUNTIME.md:154` — the release checklist cross-referenced
+  "`docs/RUNBOOK.md` (§3.3)"; RUNBOOK.md uses unnumbered `##` headings, so
+  §3.3 is dangling. The real gate is "## Flutter upgrade gate (release
+  block, acceptance criterion 14.8)". Now cites that heading + criterion.
+  `docs/RUNBOOK.md:22` + `README.md:17` — "flutter test  # boot + e2e smoke
+  tests" comments stale (subagent-confirmed same-class); `flutter test` runs
+  the full 642-test regression. Now "# full suite: unit + widget + smoke".
+  `docs/FUTURE_WORK.md` — header bumped only (no open item touched; the
+  Windows/external items are unchanged and still listed).
+  `automation-track.md` — header + this Run Log entry (no Roadmap row exists
+  for this item; per protocol the Run Log is the record).
+  Audit method: one `explore` subagent (medium) audited the four docs for
+  stale claims against the 642-test/9-screen/CI reality; every finding was
+  re-fact-checked against the repo (screens dir listing, RUNBOOK headings,
+  chess_rules_test groups) before editing. All six edits are documentation
+  truth-reconciliation; no behavior change.
+  Evidence: `flutter analyze` → `No issues found! (ran in 2.3s)` (exact
+  output; Flutter 3.47.6 stable / Dart 3.13.5); full regression `flutter
+  test` → 642/642 pass (01:50, All tests passed! — no Dart changes, docs
+  only). `git status --short` before commit: only the four docs + the two
+  track docs modified (no lib/test/workflow changes).
+  Commit: <hash> (recorded after the commit below).
+  Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
+  host (re-audited this run — `git config --get credential.helper` empty,
+  no `gh`, no `~/.git-credentials`, no `~/.netrc`; `git push` under
+  `GIT_TERMINAL_PROMPT=0` fails immediately with "could not read Username"
+  rather than prompting); `git ls-remote origin main` still shows e1749b3,
+  so the ~60 local commits through this run — including the ENTIRE
+  §11.3–§11.21 CI modernization — remain local-only and have never run on a
+  hosted runner. Re-run the push after credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials exist;
+  (b) trigger the §11.3 windows-nightly via `workflow_dispatch` (or wait for
+  the 06:00 UTC schedule) on the hosted `windows-latest` runner per the §13
+  decision + §11.3 checklist — the ONLY remaining functional gap
+  (§14.1-§14.2); or (c) re-check §2.6 on the next Flutter upgrade / when
+  `flutter/flutter#190903` lands. Remaining audit candidates for future
+  runs: the `dart format` gate (102/127-file churn, needs an explicit owner
+  decision); coverage-artifact comparison (needs ≥2 CI runs — blocked on the
+  push).

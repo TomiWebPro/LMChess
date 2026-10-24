@@ -1,7 +1,15 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-24 (UTC) — §11.21 guards the §11.15/§11.18
+Last updated: 2026-10-24 (UTC) — docs-accuracy cleanup run (details in
+`automation-track.md`): stale claims in ARCHITECTURE.md (perft regression
+tests now exist and pass, 9 screens, test suite no longer deferred),
+ENGINE_RUNTIME.md (§3.3 → the real "Flutter upgrade gate" heading in
+RUNBOOK.md), and the "boot + e2e smoke tests" flutter-test comments in
+README.md + RUNBOOK.md (the suite is the full 642-test regression) were
+reconciled. No open item changed: §9.1/§9.2, §11.3, and §14.1/§14.2 remain
+Windows-blocked; §2.6 is upstream-external.
+Previously (2026-10-24) §11.21 guards the §11.15/§11.18
 Linux-release-smoke xwininfo captures: the three
 `xwininfo -id "$WIN_ID" ... | awk` substitutions in the smoke step were
 unguarded under `set -euo pipefail` (the `xdotool search` line already

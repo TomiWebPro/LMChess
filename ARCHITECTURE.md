@@ -9,7 +9,7 @@
 |---|---|---|
 | App shape | Standalone Flutter (offline-first), backend contracts in-Dart | Prompt requires "standalone in flutter"; a deployable server would block delivery. All persistence/orchestration runs locally behind `AppRepository`/`EventStore` interfaces identical to the future REST/WS API. `backend/` holds the OpenAPI stub + data contracts so a server can be dropped in later without touching domain logic. |
 | State mgmt | `flutter_riverpod` (no codegen) | Maintainable, testable, matches prompt; no established alternative in repo (greenfield). |
-| Chess rules | Hand-written pure-Dart move generator | Guarantees variant isolation, null-safety, no dependency on third-party chess packages whose castling/EP edge cases vary. Designed to be verified via perft + FEN/SAN round-trips (regression tests pending). |
+| Chess rules | Hand-written pure-Dart move generator | Guarantees variant isolation, null-safety, no dependency on third-party chess packages whose castling/EP edge cases vary. Verified by regression tests (`test/chess_rules_test.dart`: perft node counts + FEN/SAN round-trips). |
 | Variant model | `VariantBoard` with stable piece IDs, custom JSON | FEN cannot express duplicated/missing kings or spawned pieces; FEN used only when `canRepresentAsFen()` is true. |
 | Secrets | `flutter_secure_storage`; never in logs/exports | Keys stay on device (later: server only). Export redacts `apiKey*`. |
 | Clocks | Orchestrator-owned, runs during whole agent turn | Deterministic timeout-vs-move race handling. |
@@ -30,7 +30,7 @@ lib/src/stats/      event_log (idempotent), metrics (denominators documented)
 lib/src/review/     engine_adapter, quality labels, wintrchess notes
 lib/src/storage/    AppRepository, LocalAppStore (Hive), migrations/retention hooks
 lib/src/theme/      board/piece themes + registry
-lib/src/ui/         widgets (chessboard/activity/boards) + 8 screens + app shell
+lib/src/ui/         widgets (chessboard/activity/boards) + 9 screens + app shell
 backend/            OpenAPI stub mirroring AppRepository; server roadmap
 ```
 
@@ -50,5 +50,7 @@ import-lint gate configured (`analysis_options.yaml` covers lints, not layering)
 
 - Real server (Postgres/Redis/auth/WS) — contracts ready, see `backend/SERVER_ROADMAP.md`.
 - Public leaderboard website — export format ready.
-- Smoke tests present (`test/boot_smoke_test.dart` + `test/e2e_smoke_test.dart`);
-  comprehensive unit/widget suite deferred.
+- Nothing on the test side is deferred: smoke tests (`test/boot_smoke_test.dart`
+  + `test/e2e_smoke_test.dart`), the per-screen widget suites under
+  `test/ui/`, and the semantics/telemetry harness in `test/support/` are all
+  written and gated by CI (`.github/workflows/ci.yaml` ubuntu-gate).

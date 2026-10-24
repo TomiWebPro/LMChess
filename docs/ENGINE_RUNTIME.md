@@ -151,10 +151,11 @@ The license/attribution material is in place, but shipping binaries triggers
 the GPLv3 **Corresponding Source** and **Installation Information**
 obligations. Before cutting a release:
 
-- Run the Flutter upgrade gate in `docs/RUNBOOK.md` (§3.3) — `flutter
-  analyze` + `flutter test` clean on the shipped revision, and for Windows
-  builds the §9.1 integration test + §9.2 UIA smoke both pass before the
-  known-issue note can be removed.
+- Run the Flutter upgrade gate in `docs/RUNBOOK.md` (the "Flutter upgrade
+  gate" section, acceptance criterion 14.8) — `flutter analyze` +
+  `flutter test` clean on the shipped revision, and for Windows builds the
+  §9.1 integration test + §9.2 UIA smoke both pass before the known-issue
+  note can be removed.
 - Publish or archive the exact Corresponding Source for the shipped build
   (this repository's Dart source plus any modified Stockfish), and reference
   it from the app's about/attribution screen.

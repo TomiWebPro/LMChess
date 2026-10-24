@@ -14,7 +14,7 @@ cd llm_chess_arena
 flutter pub get
 dart run tool/download_stockfish.dart linux-x86-64   # embedded engine (first time only)
 flutter analyze
-flutter test                     # boot + e2e smoke tests
+flutter test                     # full suite: unit + widget + smoke
 flutter run -d linux             # or: windows / macos
 flutter build linux --release    # standalone artifact
 ```
