@@ -9,6 +9,8 @@
 /// `stockfish-uci`.
 library;
 
+import 'dart:developer' show log;
+
 import '../chess/piece.dart';
 import '../review/engine_adapter.dart';
 import '../variant/evaluator.dart';
@@ -264,8 +266,14 @@ class VariantReviewService {
         } else {
           partial = true;
         }
-      } catch (_) {
+      } catch (error) {
         partial = true;
+        log(
+          'VariantReviewService: projection evaluation failed — marking '
+          'score partial',
+          name: 'variant-review',
+          error: error,
+        );
       }
     }
     if (samples.isEmpty) {

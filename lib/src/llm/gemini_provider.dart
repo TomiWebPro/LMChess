@@ -22,6 +22,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' show log;
 
 import 'package:http/http.dart' as http;
 
@@ -93,7 +94,12 @@ class GeminiProvider extends LlmProvider {
           .get(Uri.parse('$_base/v1beta/models'), headers: _headers)
           .timeout(const Duration(seconds: 10));
       return response.statusCode == 200;
-    } catch (_) {
+    } catch (error) {
+      log(
+        'testConnection: $id models probe failed — reporting false',
+        name: 'gemini-provider',
+        error: error,
+      );
       return false;
     }
   }

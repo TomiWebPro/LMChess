@@ -1,7 +1,31 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-24 (UTC) — §11.34: the §11.33 audit-trail
+Last updated: 2026-10-24 (UTC) — §11.35: the §11.33 audit-trail
+code-P2 list is now FULLY closed — the §11.34 diagnostics pattern
+(`dart:developer` `log()` on silent-swallow catch sites, zero
+behavior change) is extended to the six remaining borderline sites:
+`backend_bridge.dart` `testAgentConnection` (name `connection-tester`;
+doc contract restated — failure reason surfaced with no secret
+material) and `rawToolCallFrom` (name `backend-bridge`);
+`OpenAiProvider`/`AnthropicProvider`/`GeminiProvider` `testConnection`
+(names `openai-provider`/`anthropic-provider`/`gemini-provider`;
+Ollama inherits the openai site); `variant_review.dart` `evaluateBoard`
+(name `variant-review`); `variant_projection.dart` `project` (name
+`variant-projection`). New deterministic offline suite
+`test/swallow_diagnostics_test.dart` (8 tests, fake `http.BaseClient`
+throwing before any wire I/O) pins `rawToolCallFrom`'s malformed-JSON
+raw-preserved/null-map path and the transport-failure→false contract
+for all three providers (+ a 200→true happy path). Verified with
+`flutter analyze` → `No issues found! (ran in 2.5s)`, related suites
+→ 56/56 pass, and full `flutter test` → 666/666 pass (658 baseline +
+8 new). Recorded in `automation-track.md` (Run Log); per the
+open-items-only rule this file gains no new completed-work section —
+no open FUTURE_WORK item was touched (§9.1/§9.2/§11.3/§14 remain
+Windows-blocked, §2.6 upstream-external; the `dart format` gate and
+the coverage-artifact comparison still await their owner decisions /
+≥2 real CI runs).
+Previously (2026-10-24) §11.34: the §11.33 audit-trail
 code-P2 list is now empty — its top candidate, "engine failure
 diagnostics silently swallowed in lib/src/review/engine_adapter.dart",
 is closed. `dart:developer` `log()` calls now surface the four

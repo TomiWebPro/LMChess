@@ -1,7 +1,37 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-24 (UTC) — §11.34 run: the §11.33
+Last updated: 2026-10-24 (UTC) — §11.35 run: the §11.33
+audit-trail code-P2 list is now FULLY closed — the §11.34
+diagnostics pattern (`dart:developer` `log()` on silent-swallow
+catch sites, zero behavior change) is extended to all six remaining
+borderline sites. `log()` now surfaces: `backend_bridge.dart`
+`testAgentConnection`'s `catch (_) → false` (name
+`connection-tester`; the "never logs the secret" doc contract is
+updated to "surfaces the failure reason with no secret material",
+the provider id + exception only); `backend_bridge.dart`
+`rawToolCallFrom`'s jsonDecode catch (name `backend-bridge`);
+`OpenAiProvider`/`AnthropicProvider`/`GeminiProvider`
+`testConnection`'s identical `catch (_) → false` (names
+`openai-provider`/`anthropic-provider`/`gemini-provider`; Ollama
+inherits the openai site); `variant_review.dart`
+`evaluateBoard`'s `catch (_) → partial` (name `variant-review`);
+and `variant_projection.dart` `project`'s `catch (_) →
+unsupportedProjection` (name `variant-projection`). New
+deterministic offline suite `test/swallow_diagnostics_test.dart`
+(8 tests, fake `http.BaseClient` throwing before any wire I/O):
+`rawToolCallFrom` null/malformed/non-map/well-formed paths +
+transport-failure→false for all three providers + a 200→true happy
+path. Evidence: `flutter analyze` → `No issues found! (ran in
+2.5s)`, re-verified immediately before staging; new suite 8/8
+pass; related suites (connection_tester_seam, agent_runner,
+variant_review, variant_projection, variant_fuzz, turn_provider,
+game_mirror, review_evaluator_seam) → 56/56 pass; full `flutter
+test` → 666/666 pass (658 baseline + 8 new; 02:00, All tests
+passed!). Recorded in the Run Log below; FUTURE_WORK.md Last
+updated bumped (§11.35), per the open-items-only rule no new
+completed-work section; open-item set unchanged.
+Previously (2026-10-24) — §11.34 run: the §11.33
 audit-trail code-P2 list is now empty — its top candidate,
 "engine failure diagnostics silently swallowed in
 lib/src/review/engine_adapter.dart", is closed. `dart:developer`
@@ -3458,3 +3488,76 @@ suites referenced above now exist. Native Windows execution is tracked in
   `dart format` gate (102/127-file churn, needs an explicit owner
   decision) remains open; coverage-artifact comparison still needs
   ≥2 real CI runs; the local commit queue still cannot be pushed.
+
+- 2026-10-24Z — §11.35 run: the §11.33 audit-trail code-P2 list is
+  now FULLY closed — this run extends the §11.34 diagnostics pattern
+  to all six remaining borderline silent-swallow sites.
+  `dart:developer` `log()` calls (zero behavior change — every catch
+  body keeps its exact return/degrade value, only the exception
+  binding and a log call are added) now surface: (1)
+  `backend_bridge.dart` `testAgentConnection`'s
+  `catch (_) { return false; }` → `catch (error)` logs
+  `testAgentConnection: probe failed for ${provider.id} — reporting
+  false` (name `connection-tester`; the doc contract "never logs the
+  secret" is preserved and restated — only the exception object and
+  provider id are logged, no secret material); (2)
+  `backend_bridge.dart` `rawToolCallFrom`'s jsonDecode catch → logs
+  the parse failure while keeping the raw string, decoded map null
+  (name `backend-bridge`); (3-5) `OpenAiProvider` /
+  `AnthropicProvider` / `GeminiProvider` `testConnection`'s identical
+  `catch (_) { return false; }` → `catch (error)` logs
+  `testConnection: $id models probe failed — reporting false` (names
+  `openai-provider` / `anthropic-provider` / `gemini-provider`;
+  Ollama inherits the openai site); (6) `variant_review.dart`
+  `VariantReviewService.evaluateBoard`'s `catch (_) { partial =
+  true; }` → logs the failed projection evaluation (name
+  `variant-review`); (7) `variant_projection.dart`
+  `VariantPositionProjector.project`'s `catch (_) {
+  issues.add(unsupportedProjection); continue; }` → logs the parseFen
+  rejection (name `variant-projection`). New deterministic offline
+  suite `test/swallow_diagnostics_test.dart` (8 tests; injected fake
+  `http.BaseClient` throwing before any wire I/O — no sockets, no
+  real LLM endpoint): `rawToolCallFrom` null / malformed-JSON (raw
+  preserved, decoded null) / decodes-to-non-map / well-formed paths +
+  transport-failure→false for all three providers + a 200→true
+  happy-path sanity. The variant_review throwing-evaluator path was
+  already behavior-pinned by `test/variant_review_test.dart:236`
+  ("engine failure falls back to the variant heuristic honestly");
+  variant_projection's catch has no deterministic trigger (its
+  `_fenFor` renderer always emits parseable FEN — the catch is
+  defensive), so both remain covered by their existing suites.
+  Evidence: `flutter analyze` → `No issues found! (ran in 2.5s)`,
+  re-verified immediately before staging; new suite 8/8 pass;
+  related suites over the modified connect/parse/review/projection
+  paths (connection_tester_seam + agent_runner + variant_review +
+  variant_projection + variant_fuzz + turn_provider + game_mirror +
+  review_evaluator_seam) → 56/56 pass; full `flutter test` → 666/666
+  pass (658 baseline + 8 new; 02:00, All tests passed!). Files
+  changed: `lib/src/ui/backend_bridge.dart` (dart:developer import +
+  2 log sites + 2 doc-contract updates), `lib/src/llm/openai_provider.dart`,
+  `lib/src/llm/anthropic_provider.dart`, `lib/src/llm/gemini_provider.dart`
+  (import + 1 log site each), `lib/src/review/variant_review.dart`,
+  `lib/src/review/variant_projection.dart` (import + 1 log site
+  each), `test/swallow_diagnostics_test.dart` (new), this track
+  (header + this Run Log entry), `docs/FUTURE_WORK.md` (Last updated
+  bumped to §11.35; per the open-items-only rule no new
+  completed-work section; open-item set unchanged — §9.1/§9.2/§11.3/
+  §14.1-§14.2 Windows-native, §2.6 upstream-external, `dart format`
+  gate owner-pending, coverage comparison needs ≥2 CI runs, push
+  queue credentials-blocked).
+  Commit: recorded in a follow-up track commit per the §13 precedent.
+  Push **BLOCKED** (same as every prior run since the credentials
+  audit): no GitHub credentials on this host (`git config --get
+  credential.helper` empty, no `gh`, no `~/.git-credentials`, no
+  `~/.netrc`, no token in env); `git push origin main` → `fatal:
+  could not read Username for 'https://github.com'`. Re-run the push
+  once credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials
+  exist; (b) trigger the §11.3 windows-nightly via `workflow_dispatch`
+  on the hosted `windows-latest` runner per the §13 decision + §11.3
+  checklist — the ONLY remaining functional gap (§14.1-§14.2); or (c)
+  re-check §2.6 on the next Flutter upgrade / when
+  `flutter/flutter#190903` lands. The `dart format` gate
+  (102/127-file churn, needs an explicit owner decision) remains
+  open; coverage-artifact comparison still needs ≥2 real CI runs; the
+  local commit queue still cannot be pushed.

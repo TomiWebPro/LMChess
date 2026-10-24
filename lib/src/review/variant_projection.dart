@@ -18,6 +18,8 @@
 /// bad projection can never reach the engine.
 library;
 
+import 'dart:developer' show log;
+
 import '../chess/fen.dart';
 import '../chess/piece.dart';
 import '../chess/position.dart';
@@ -192,8 +194,14 @@ class VariantPositionProjector {
       final fen = _fenFor(squares, board, castling);
       try {
         parseFen(fen);
-      } catch (_) {
+      } catch (error) {
         issues.add(VariantProjectionIssue.unsupportedProjection);
+        log(
+          'VariantPositionProjector: FEN projection rejected by parseFen — '
+          'marking projection unsupported',
+          name: 'variant-projection',
+          error: error,
+        );
         continue;
       }
       positions.add(VariantProjectedPosition(

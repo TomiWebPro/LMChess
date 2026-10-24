@@ -85,6 +85,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' show log;
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -397,8 +398,9 @@ class SecureKeyReaderAdapter implements agent_backend.SecureKeyReader {
 /// lightweight [LlmProvider.testConnection] ping.
 ///
 /// Never throws and never logs/returns the secret: any failure reports
-/// `false`. The provider is closed afterwards so a probe cannot leak an HTTP
-/// client (see [closeProvider]).
+/// `false` (the failure reason is surfaced via a `dart:developer` log that
+/// carries no secret material). The provider is closed afterwards so a probe
+/// cannot leak an HTTP client (see [closeProvider]).
 Future<bool> testAgentConnection(
   ui.AgentConfig uiAgent,
   SecureKeyStore keyStore, {
@@ -417,7 +419,13 @@ Future<bool> testAgentConnection(
   );
   try {
     return await provider.testConnection();
-  } catch (_) {
+  } catch (error) {
+    log(
+      'testAgentConnection: probe failed for ${provider.id} — reporting '
+      'false',
+      name: 'connection-tester',
+      error: error,
+    );
     return false;
   } finally {
     closeProvider(provider);
@@ -1504,7 +1512,7 @@ Future<void> retireOrchestrator(
 /// Replay/audit uses the exact model payload, not a re-serialized move. Falls
 /// back to [AgentTurnResult.selectedMove] when the event stream did not retain
 /// the raw string. Never throws; unparseable JSON yields a null map but keeps
-/// the raw string.
+/// the raw string (the parse failure is surfaced via a `dart:developer` log).
 ({String? rawToolArgsJson, Map<String, Object?>? rawToolCallJson})
     rawToolCallFrom(AgentTurnResult? result) {
   if (result == null) {
@@ -1518,8 +1526,14 @@ Future<void> retireOrchestrator(
     Object? decoded;
     try {
       decoded = jsonDecode(raw);
-    } catch (_) {
+    } catch (error) {
       decoded = null;
+      log(
+        'rawToolCallFrom: unparseable tool-call JSON — keeping the raw '
+        'string, decoded map is null',
+        name: 'backend-bridge',
+        error: error,
+      );
     }
     return (
       rawToolArgsJson: raw,
