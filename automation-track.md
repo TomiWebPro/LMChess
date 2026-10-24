@@ -1,7 +1,34 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-24 (UTC) — §11.20 fixes the frozen Stockfish CI cache
+Last updated: 2026-10-24 (UTC) — §11.21 guards the §11.15/§11.18
+Linux-release-smoke xwininfo captures. The smoke step's window-verdict loop
+read geometry with three `xwininfo -id "$WIN_ID" ... | awk` command
+substitutions that were unguarded under `set -euo pipefail` (the `xdotool
+search` limit above them already carried `|| true`; the xwininfo trio was
+missed). When the app crashes right after mapping its window — the exact
+failure class this gate exists to catch — the window id found by the search
+is destroyed before the next `xwininfo` call: xwininfo exits 1 ("No such
+window"), pipefail propagates it into the substitution, the failing
+assignment aborts the shell INSIDE the loop, and the `::error::` diagnostic,
+`cat smoke.log`, and the `kill -9 "$APP_PID" "$XVFB_PID" "$WM_PID"` teardown
+never run — the :77 display leaks on the runner (the §11.12/§11.14 leak
+class). The three captures now end `|| true` (matching the xdotool guard): a
+vanished window degrades to empty values, the loop's next iteration
+re-searches, and a window that stays gone flows into the post-loop verdict
+with full diagnostics + teardown (exit 1). Evidence: strict duplicate-key
+PyYAML parse clean (ubuntu-gate 14 steps, windows-nightly 12 — step counts
+unchanged); smoke block passes `bash -n`; abort proven empirically (real
+`xwininfo -id <bad>` substitution in `set -euo pipefail` → exit 1, nothing
+after; guarded form survives); OLD-vs-NEW full-block harness (fake xdotool
+finds the window, fake xwininfo always fails; Xvfb/openbox/app stubbed as
+PID-recording daemons) — OLD exits 1 with zero output and leaves all three
+stubs alive, NEW prints the full `::error::` + tears down + exits 1 + leaks
+nothing; the FULL modified block run verbatim against the real Linux release
+bundle on a fresh display → `smoke ok: ... window mapped (title
+llm_chess_arena, 1278x720) ...`, exit 0, no orphans; `flutter analyze` →
+`No issues found!`; full `flutter test` → 642/642 pass (no Dart changes).
+Previously (2026-10-24) §11.20 fixes the frozen Stockfish CI cache
 slots: both engine-restore steps used a CONSTANT key
 (`${{ runner.os }}-stockfish-linux-x86-64` /
 `-windows-x86-64`), so after a Stockfish release bump the restored slot would
@@ -1969,3 +1996,94 @@ suites referenced above now exist. Native Windows execution is tracked in
   deferred" — 12 screen suites + 642 tests exist; ENGINE_RUNTIME.md:154
   references "§3.3" which no longer exists in RUNBOOK.md). §11.20 itself is
   closed; the §11.7/§11.17 "fixed key" quotes above are historical records.
+- 2026-10-24Z — CI/PROCESS P1 §11.21 (Linux-release smoke: xwininfo captures
+  guarded against the vanishing-window abort). All documented FUTURE_WORK.md
+  open items remain Windows-native (§9.1/§9.2/§11.3/§14.1-14.2 — BLOCKED on
+  this Linux host) or external (§2.6), so per the §11.18/§11.19/§11.20
+  precedent this run took the highest-priority logged audit candidate: the
+  ci.yaml smoke-step `xwininfo` race. The §11.15/§11.18 smoke step's
+  window-verdict loop reads geometry via three
+  `xwininfo -id "$WIN_ID" ... | awk` command substitutions that were
+  unguarded under the step's `set -euo pipefail` — the `xdotool search` line
+  above already carried `|| true` (line 187), but the xwininfo trio (lines
+  189/191/192) was missed. The failure mode is exactly what the gate exists
+  to catch: the app crashes right after mapping its window, so the window id
+  found by the search is destroyed before the next `xwininfo` call → xwininfo
+  exits 1 ("No such window") → `pipefail` propagates it into the
+  substitution → the failing assignment makes `set -e` abort the shell
+  INSIDE the loop → the `::error::` diagnostic, `cat smoke.log`, and the
+  `kill -9 "$APP_PID" "$XVFB_PID" "$WM_PID"` teardown never run → the :77
+  display leaks on the runner (the §11.12/§11.14 leak class, re-introduced by
+  the very gate that was hardened against it). A fresh-eyes subagent audit of
+  the whole workflow independently confirmed lines 189/191/192 are the only
+  unguarded-substitution defect in the file (all other bash run blocks
+  either have no substitutions, use them only in `if` conditions, or are
+  `|| true`-guarded). Promoted as §11.21 into `docs/FUTURE_WORK.md` and
+  closed in the same run.
+  Files changed:
+  `.github/workflows/ci.yaml` — the three xwininfo capture lines (MAP_STATE /
+  WIDTH / HEIGHT) now each end `|| true`, plus a §11.21 comment block
+  explaining the abort hazard and the degrade-and-research behavior. A
+  vanished window now degrades to empty values; the loop's next iteration
+  re-searches, and a window that stays gone flows into the post-loop verdict
+  below, which prints the full `::error::` (observed map state + geometry),
+  dumps `smoke.log`, runs the teardown, and exits 1. Healthy windows behave
+  unchanged (`|| true` is a no-op on success). Step counts unchanged
+  (ubuntu-gate 14, windows-nightly 12); no Dart/test files changed.
+  `docs/FUTURE_WORK.md` — §11.21 added + closed as DONE in the same run per
+  the §11.4–§11.20 precedent (open list unchanged: §11.21 not an open item),
+  header bumped.
+  `automation-track.md` — header line + this Run Log entry (no Roadmap row
+  exists for §11.21; per protocol the Run Log is the record).
+  Evidence: workflow re-parses clean via PyYAML with a strict duplicate-key
+  loader (jobs: ubuntu-gate + windows-nightly; ubuntu-gate 14 steps,
+  windows-nightly 12; step counts unchanged); the extracted smoke run block
+  passes `bash -n`; the smoke body now has 4 guarded substitutions (xdotool +
+  3× xwininfo) vs 1 before. The abort semantics are proven empirically on
+  this host (bash 5.3.9 — same set -e assignment-abort class as the runners'
+  bash 5.x): `MAP_STATE=$(xwininfo -id <bad> 2>/dev/null | awk ...)` under
+  `set -euo pipefail` aborts the shell (exit 1, the line after never runs),
+  while the `|| true`-guarded form survives with an empty capture. The
+  teardown consequence is proven with a full-block harness (extracted from
+  BOTH `git show HEAD:...ci.yaml` and the working tree, verbatim, with
+  Xvfb/openbox/app stubbed as long-lived PID-recording daemons, fake
+  `xdotool` always finding a window id and fake `xwininfo` always exiting 1
+  to simulate the vanished window): the OLD block exits 1 with ZERO output
+  and leaves all three stub daemons alive (the silent leak), while the NEW
+  block prints
+  `::error::release binary is alive but no mapped window titled
+  'llm_chess_arena' with sane geometry on :77 ... got map_state='<none>',
+  0x0 ...`, exits 1, and tears all three stubs down (no leaks). The positive
+  path is unchanged: the FULL modified smoke block executed verbatim against
+  the real Linux release bundle on a fresh display (:93, pre-probed free) →
+  `smoke ok: release binary alive after 15s and window mapped (title
+  llm_chess_arena, 1278x720) under Xvfb + openbox`, exit 0, with no :93
+  Xvfb and no app process left behind. `flutter analyze` → `No issues found!
+  (ran in 2.3s)` (exact output); full regression `flutter test` → 642/642
+  pass (01:52, All tests passed! — no Dart changes). `git status --short`
+  confirms only the workflow + the two track docs changed (release bundle
+  build/ stays untracked).
+  Commit: recorded in a follow-up track commit per the §13 precedent.
+  Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
+  host — re-audited this run (`git config --get credential.helper` empty, no
+  `gh`, no `~/.git-credentials`, no `~/.netrc`, no token in env);
+  `git ls-remote origin main` still shows e1749b3, so `e1749b3..HEAD` (59
+  local commits through this run) remains local-only — including the ENTIRE
+  §11.3–§11.21 CI modernization, none of which has ever run on a hosted
+  runner. Re-run the push after credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials exist;
+  (b) trigger the §11.3 windows-nightly via `workflow_dispatch` (or wait for
+  the 06:00 UTC schedule) on the hosted `windows-latest` runner per the §13
+  decision + §11.3 checklist — the ONLY remaining functional gap
+  (§14.1-14.2); or (c) re-check §2.6 on the next Flutter upgrade / when
+  `flutter/flutter#190903` lands. Audit candidates logged for future runs:
+  the stale-doc trio (ARCHITECTURE.md:12 "regression tests pending",
+  ARCHITECTURE.md:54 "unit/widget suite deferred", ENGINE_RUNTIME.md:154
+  "§3.3") — a docs-only P2 that can be closed in a future run; the
+  coverage-artifact comparison (needs ≥2 CI runs); the `dart format` gate
+  (102/127-file churn, needs an explicit owner decision). Note for the
+  record: this run's first (mistakenly over-broad) block extraction re-ran
+  the workflow's apt step locally, upgrading xvfb/xserver-common
+  (2:21.1.22-1ubuntu1.2 → .3) — incidental dev-tooling bumps, no config
+  changes; the corrected extraction used the §11.15/§11.18-style
+  smoke-step-only range.

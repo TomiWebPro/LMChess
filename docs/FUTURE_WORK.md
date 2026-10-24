@@ -1,7 +1,35 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-24 (UTC) — §11.20 fixes the frozen Stockfish CI cache
+Last updated: 2026-10-24 (UTC) — §11.21 guards the §11.15/§11.18
+Linux-release-smoke xwininfo captures: the three
+`xwininfo -id "$WIN_ID" ... | awk` substitutions in the smoke step were
+unguarded under `set -euo pipefail` (the `xdotool search` line already
+carried `|| true`), so a window destroyed between the search and a capture
+call — an app crash right after mapping, the exact failure class this gate
+exists to catch — made xwininfo exit 1, pipefail propagated it, the failing
+assignment aborted the step INSIDE the window loop, and the `::error::`
+diagnostic, `cat smoke.log`, and the
+`kill -9 "$APP_PID" "$XVFB_PID" "$WM_PID"` teardown never ran: the :77 display
+leaked on the runner (the §11.12/§11.14 leak class). The captures now end
+`|| true`, so a vanished window degrades to empty values; the loop's next
+iteration re-searches and a window that stays gone flows into the post-loop
+verdict, which prints full diagnostics and always runs the teardown (exit 1).
+Evidence: workflow re-parses clean via strict duplicate-key PyYAML
+(ubuntu-gate 14 steps, windows-nightly 12 — step counts unchanged); extracted
+smoke block passes `bash -n`; the abort is proven empirically — a real
+failing `xwininfo -id <bad>` substitution in a `set -euo pipefail` shell
+aborts it (exit 1, nothing after) while the guarded form survives — and a
+full-block harness (fake xdotool always finds the window, fake xwininfo
+always exits 1) running the OLD block verbatim exits 1 with ZERO output and
+leaves all three stub daemons (Xvfb/WM/app) alive, while the NEW block prints
+the full `::error::`, tears down, exits 1, and leaks nothing; the FULL
+modified smoke block run verbatim against the real Linux release bundle on a
+fresh display → `smoke ok: release binary alive after 15s and window mapped
+(title llm_chess_arena, 1278x720) under Xvfb + openbox`, exit 0, no orphan
+Xvfb/app; `flutter analyze` → `No issues found!`; full `flutter test` →
+642/642 pass (no Dart changes).
+Previously (2026-10-24) §11.20 fixes the frozen Stockfish CI cache
 slots. Both engine-restore steps (ubuntu-gate §11.7, windows-nightly §11.17)
 used CONSTANT cache keys (`${{ runner.os }}-stockfish-linux-x86-64` /
 `-windows-x86-64`), so after a Stockfish release bump (sf_19 → sf_20 — the
@@ -873,6 +901,60 @@ differ, and the windows-x86-64 README hashes to a distinct independent value
 (`947f1e188b6eb80ecdc955d627f4d578dc9d868ba9b8e754a9584cbc1af7a444`), so a
 README content change ⇒ key change ⇒ slot invalidation on both platforms.
 See `automation-track.md` for the run log.
+
+---
+
+### 11.21 Linux-release smoke: xwininfo captures guarded against the vanishing-window abort (P1 — DONE)
+
+The §11.15/§11.18 smoke step's window-verdict loop reads the window geometry
+with three `xwininfo -id "$WIN_ID" ... | awk` command substitutions. Under the
+step's `set -euo pipefail` those substitutions were **unguarded** — the
+`xdotool search` line above them already carried `|| true` (line `WIN_ID=$(
+xdotool search ... | head -1 || true)`), but the three xwininfo captures were
+missed. The failure mode is the exact class this gate exists to catch: the app
+crashes right after mapping its window (first-frame abort, display failure,
+renderer stall), so the window id found by `xdotool search` is destroyed
+before the next `xwininfo` call. `xwininfo` then exits 1 ("No such window"),
+`pipefail` propagates that into the command substitution, the failing
+assignment makes `set -e` abort the shell **inside the loop** — and the
+`::error::` diagnostic, `cat smoke.log`, and the
+`kill -9 "$APP_PID" "$XVFB_PID" "$WM_PID"` teardown that follow the loop never
+run. The :77 display server leaks on the runner (the §11.12/§11.14 leak class
+— a gate failure now leaks the very resource the §11.14 readiness gate was
+added to protect), and the crash is reported with no context.
+
+The three captures now end with `|| true`, matching the existing xdotool
+guard. A vanished window degrades to an empty capture; the loop's next
+iteration re-searches, and a window that stays gone flows into the post-loop
+verdict below — which prints the full `::error::` diagnostic with the observed
+map state + geometry, dumps `smoke.log`, runs the teardown, and exits 1. A
+healthy window behaves exactly as before (the captures succeed, `|| true` is a
+no-op). Step counts unchanged (ubuntu-gate 14, windows-nightly 12); no
+Dart/test files changed.
+
+Evidence: workflow re-parses clean via PyYAML with a strict duplicate-key
+loader (ubuntu-gate 14 steps, windows-nightly 12 — step counts unchanged, only
+the three capture lines changed); the extracted smoke run block passes
+`bash -n`. The abort semantics are proven empirically on this host (bash
+5.3.9, same semantics class as the runners' bash 5.x): a real
+`MAP_STATE=$(xwininfo -id <bad-id> 2>/dev/null | awk ...)` under
+`set -euo pipefail` aborts the shell (exit 1, the line after never runs),
+while the `|| true`-guarded form survives with an empty capture. The teardown
+consequence is proven with a full-block harness: the OLD block (from
+`git show HEAD:...ci.yaml`, verbatim, with Xvfb/openbox/app stubbed as
+long-lived PID-recording daemons and fake `xdotool` (always finds a window) +
+fake `xwininfo` (always exit 1) simulating the vanished window) exits 1 with
+**zero output** and leaves all three stub daemons alive — the silent leak; the
+NEW block (same harness) prints the full
+`::error::release binary is alive but no mapped window titled 'llm_chess_arena'
+... got map_state='<none>', 0x0 ...`, exits 1, and tears all three stubs down
+(no leaks). The positive path is unchanged: the FULL modified smoke block run
+verbatim against the real Linux release bundle on a fresh Xvfb display →
+`smoke ok: release binary alive after 15s and window mapped (title
+llm_chess_arena, 1278x720) under Xvfb + openbox`, exit 0, no orphan Xvfb or
+app process left behind. `flutter analyze` → `No issues found!`; full
+regression `flutter test` → 642/642 pass (All tests passed! — no Dart
+changes). See `automation-track.md` for the run log.
 
 ---
 

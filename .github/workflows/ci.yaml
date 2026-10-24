@@ -186,10 +186,22 @@ jobs:
           for _ in $(seq 1 75); do
             WIN_ID=$(xdotool search --name "^llm_chess_arena$" 2>/dev/null | head -1 || true)
             if [ -n "$WIN_ID" ]; then
-              MAP_STATE=$(xwininfo -id "$WIN_ID" 2>/dev/null | awk '/Map State/ {print $3}')
+              # §11.21: every xwininfo capture is guarded with `|| true`. Under
+              # `set -euo pipefail`, an unguarded substitution ABORTS the step
+              # when the window vanishes between the xdotool search and the
+              # xwininfo call (an app crash right after mapping — the exact
+              # failure this gate exists to catch): no ::error:: diagnostic,
+              # no `cat smoke.log`, and no Xvfb/app/WM teardown, so the :77
+              # display leaks on the runner (the §11.12/§11.14 leak class —
+              # the xdotool line above was already guarded; these three were
+              # missed). With `|| true` a vanished window degrades to empty
+              # captures and the next loop iteration re-searches; a window
+              # that stays gone flows into the post-loop verdict below, which
+              # prints full diagnostics and always runs the teardown.
+              MAP_STATE=$(xwininfo -id "$WIN_ID" 2>/dev/null | awk '/Map State/ {print $3}' || true)
               if [ "$MAP_STATE" = "IsViewable" ]; then
-                WIDTH=$(xwininfo -id "$WIN_ID" 2>/dev/null | awk '/^  Width:/ {print $2}')
-                HEIGHT=$(xwininfo -id "$WIN_ID" 2>/dev/null | awk '/^  Height:/ {print $2}')
+                WIDTH=$(xwininfo -id "$WIN_ID" 2>/dev/null | awk '/^  Width:/ {print $2}' || true)
+                HEIGHT=$(xwininfo -id "$WIN_ID" 2>/dev/null | awk '/^  Height:/ {print $2}' || true)
                 if [ "${WIDTH:-0}" -ge 100 ] && [ "${HEIGHT:-0}" -ge 100 ]; then
                   break
                 fi
