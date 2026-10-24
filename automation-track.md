@@ -3443,9 +3443,10 @@ suites referenced above now exist. Native Windows execution is tracked in
   credential.helper` empty, no `gh`, no `~/.git-credentials`, no
   `~/.netrc`, no token in env); `git push origin main` → `fatal:
   could not read Username for 'https://github.com'`; the local queue
-  now counts 87 commits through this run's final commit (per `git
-  rev-list --count origin/main..HEAD`). Re-run the push once
-  credentials are provisioned.
+  now counts 89 commits through this run's final commit (87 at the
+  pre-commit `git rev-list --count origin/main..HEAD` measurement +
+  this run's two commits). Re-run the push once credentials are
+  provisioned.
   Next: (a) re-push the queued local commits once GitHub credentials
   exist; (b) extend the §11.34 diagnostics pattern to the remaining
   §11.33 borderline swallow sites (backend_bridge.dart:420/1521,
