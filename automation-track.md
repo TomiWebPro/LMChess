@@ -1,7 +1,35 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-24 (UTC) — §11.29 run: NO ACTIONABLE ITEM —
+Last updated: 2026-10-24 (UTC) — §11.30 run: the windows-nightly
+"Upload smoke artifacts" step now carries `continue-on-error: true`
+(CI process fix — §11.22's defect class finally fixed on its twin).
+An independent three-pronged subagent audit this run (FUTURE_WORK.md
+section inventory, full-repo unfinished-marker scan, ci.yaml workflow
+audit) re-confirmed the §11.29 terminal verdict on open FUTURE_WORK.md
+items (§9.1/§9.2/§11.3/§14.1-§14.2 Windows-native; §2.6
+upstream-external — flutter/flutter#190903 live-checked `merged: false`;
+CI P3 #2 coverage merge + `dart format` gate await explicit owner
+decisions) — BUT the workflow audit also caught a real un-fixed defect
+every prior run missed: `ci.yaml:481-490`, the windows-nightly "Upload
+smoke artifacts" step, was `if: always()` + `actions/upload-artifact@v4`
+with NO `continue-on-error` — the byte-for-byte defect class §11.22
+fixed for the ubuntu-gate coverage upload. The nightly would redden on
+a transient artifact-upload backend failure (a documented Actions
+failure mode) over a purely diagnostic upload (uia_smoke_output.txt,
+event_viewer_excerpt.txt) even though every real gate passed. Fixed:
+the step now carries `continue-on-error: true` + `if-no-files-found:
+warn`, mirroring the §11.22 contract exactly (a §11.30 comment
+cross-references both markers). No Dart/test changes: `flutter analyze`
+→ `No issues found! (ran in 2.4s)`; full `flutter test` → 651/651 pass
+(02:27, All tests passed!); workflow re-parses clean via a strict
+duplicate-key PyYAML loader (ubuntu-gate 14 + windows-nightly 12 steps
+unchanged; 28 timeout-minutes keys; the 2 `bash -n` "failures" are the
+Windows-only §9.1/§9.2 PowerShell blocks, per the §11.12 precedent).
+Recorded in the Run Log below; per the open-items-only rule
+FUTURE_WORK.md gains no new completed-work section (§11.3's process-fix
+list gained the §11.30 bullet in place; Last updated bumped).
+Previously (2026-10-24) §11.29 run: NO ACTIONABLE ITEM —
 hourly terminal branch. An independent parallel subagent audit (full
 FUTURE_WORK.md section inventory, automation-track.md tail
 "Next:"/candidate clauses, marker grep across lib/test/tool/
@@ -2927,6 +2955,82 @@ suites referenced above now exist. Native Windows execution is tracked in
   'https://github.com'`); `git ls-remote origin main` still shows
   e1749b3, so the local queue (76 commits through this run) remains
   local-only. Re-run the push once credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials
+  exist; (b) trigger the §11.3 windows-nightly via `workflow_dispatch`
+  (or wait for the 06:00 UTC schedule) on the hosted `windows-latest`
+  runner per the §13 decision + §11.3 checklist — the ONLY remaining
+  functional gap (§14.1-§14.2); or (c) re-check §2.6 on the next Flutter
+  upgrade / when `flutter/flutter#190903` lands. CI P3 #2 (coverage
+  merge) stays open pending the §11.4-owner decision; the `dart format`
+  gate (102/127-file churn, needs an explicit owner decision) remains
+  open; coverage-artifact comparison still needs ≥2 CI runs.
+- 2026-10-24Z — CI §11.30: the windows-nightly "Upload smoke artifacts"
+  step now carries `continue-on-error: true` — §11.22's defect class
+  finally fixed on its twin step, found by THIS run's independent
+  three-pronged audit (see below). Prior runs (§11.22–§11.29) declared
+  the §11.22 fix complete but its byte-for-byte twin on the other job —
+  `ci.yaml:481-490`, the `windows-nightly` "Upload smoke artifacts"
+  step (`if: always()` + `actions/upload-artifact@v4`, purely
+  diagnostic `uia_smoke_output.txt` / `event_viewer_excerpt.txt`) — was
+  never granted `continue-on-error`, so a transient
+  `actions/upload-artifact@v4` backend failure (the documented Actions
+  failure mode §11.22's own comment cites) would still have failed the
+  ENTIRE windows-nightly job on a non-gating concern even though every
+  real gate (build, unit/widget tests, §9.1 integration, §9.2 UIA
+  smoke) passed. The track records no decision to keep the nightly
+  reddening — the twin was simply missed. The step now matches the
+  §11.22 contract exactly: `continue-on-error: true` + a §11.30 comment
+  cross-referencing §11.22, plus `if-no-files-found: warn` for the
+  missing-files case (the §11.22 upload already had it). No Dart/test
+  files changed — workflow only.
+  Method: instead of trusting the §11.29 terminal verdict, an
+  independent three-pronged parallel subagent audit ran this run:
+  (1) full FUTURE_WORK.md section + checkbox + open-sounding-keyword
+  inventory — confirms the two §14.1/§14.2 unchecked boxes and every
+  other open §9/§11.3/§2.6 item remain Windows-native or
+  upstream-external (flutter/flutter#190903 re-checked live this run:
+  `merged: false`, updated 2026-10-21 — still no stable contains the
+  fix; the RUNBOOK upgrade gate is the sanctioned re-check point);
+  (2) a full-repo unfinished-marker scan (TODO/FIXME/HACK/XXX,
+  UnimplementedError, empty catches, test skips, no-op bodies) — zero
+  actionable hits; every hit is a deliberate documented design decision
+  (WintrChessAdapter RESERVED, UnsupportedError platform gates, engine
+  binary placeholders), the intentional e2e engine self-gate skip
+  (test/e2e_smoke_test.dart), or scaffold TODOs outside lib/test; and
+  (3) a ci.yaml workflow audit with strict duplicate-key PyYAML
+  re-parse, step-count/timeout-key assertions, and `bash -n` on every
+  run block — which surfaced the §11.30 defect above; everything else
+  checked clean (14/12 step counts, 28 timeout-minutes keys, all
+  §11.21–§11.27 guards present). Verdict: the §11.29 "no actionable
+  item" claim was nearly right but NOT complete — this one real
+  Linux-verifiable CI process fix existed and is now shipped. CI P3 #2
+  (coverage merge) and the `dart format` gate still await their
+  explicit owner decisions; coverage-artifact comparison needs ≥2 real
+  CI runs; §9.1/§9.2/§11.3/§14.1-§14.2 remain Windows-blocked; §2.6
+  upstream-external.
+  Evidence: workflow re-parses clean via a strict duplicate-key loader
+  (ubuntu-gate 14 steps, windows-nightly 12 — counts unchanged;
+  continue-on-error steps now ubuntu-gate 2 + windows-nightly 1; 28
+  timeout-minutes keys intact); all 14 bash run blocks pass `bash -n`
+  (the sole "failures" are the two Windows-only §9.1/§9.2 PowerShell
+  blocks, per the §11.12 precedent); `flutter analyze` → `No issues
+  found! (ran in 2.4s)` (zero errors/warnings/infos); full regression
+  `flutter test` → 651/651 pass (02:27, All tests passed! — no Dart
+  changes). `git status --short` before edits was clean; queue count
+  re-measured: `git rev-list --count origin/main..HEAD` → 77 (the
+  header's "75" predates the §11.29 two-commit pair; same direction).
+  Files changed: `.github/workflows/ci.yaml` (one step), this track
+  (header + this Run Log entry), `docs/FUTURE_WORK.md` (Last updated
+  bumped; §11.3's in-progress "Process fixes shipped" list gained the
+  §11.30 bullet in place; per the open-items-only rule no new
+  completed-work section — §11.3 itself stays open as Windows-awaiting).
+  Commit: recorded in a follow-up track commit per the §13 precedent.
+  Push **BLOCKED** (same as every prior run since the credentials audit):
+  no GitHub credentials on this host (`git config --get credential.helper`
+  empty, no `gh`, no `~/.git-credentials`, no `~/.netrc`, no token in
+  env); `git ls-remote origin main` still shows e1749b3, so the local
+  queue (~78 commits through this run) remains local-only. Re-run the
+  push once credentials are provisioned.
   Next: (a) re-push the queued local commits once GitHub credentials
   exist; (b) trigger the §11.3 windows-nightly via `workflow_dispatch`
   (or wait for the 06:00 UTC schedule) on the hosted `windows-latest`

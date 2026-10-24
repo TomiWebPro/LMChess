@@ -1,7 +1,28 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-24 (UTC) — §11.29: hourly NO-ACTIONABLE-ITEM
+Last updated: 2026-10-24 (UTC) — §11.30: the windows-nightly "Upload
+smoke artifacts" step now carries `continue-on-error: true` (CI process
+fix — §11.22's defect class fixed on its twin; found by this run's
+independent three-pronged audit, see `automation-track.md` Run Log).
+The open-item set is unchanged: §9.1/§9.2/§11.3/§14.1-§14.2 remain
+Windows-native; §2.6 remains upstream-external (flutter/flutter#190903
+re-checked live: still `merged: false`); CI P3 #2 (coverage merge) and
+the `dart format` gate remain pending their explicit owner decisions;
+coverage-artifact comparison still needs ≥2 real CI runs; and the
+~77-commit local queue still cannot be pushed (no GitHub credentials on
+this host). Evidence: `flutter analyze` → `No issues found! (ran in
+2.4s)`; full `flutter test` → 651/651 pass (02:27); workflow re-parses
+clean via a strict duplicate-key PyYAML loader (ubuntu-gate 14 +
+windows-nightly 12 steps unchanged; continue-on-error steps now
+ubuntu-gate 2 + windows-nightly 1; 28 timeout-minutes keys); all 14
+bash run blocks pass `bash -n` (the 2 "failures" are the Windows-only
+§9.1/§9.2 PowerShell blocks, per the §11.12 precedent). Recorded in
+`automation-track.md` (Run Log); per the open-items-only rule this file
+gains no new completed-work section (§11.3's process-fix list gained
+the §11.30 bullet in place; the item itself stays open as
+Windows-awaiting).
+Previously (2026-10-24) §11.29: hourly NO-ACTIONABLE-ITEM
 run (terminal branch). An independent parallel subagent audit (full
 section inventory, track "Next:" clauses, marker grep across
 lib/test/tool/integration_test/.github, docs/ roadmap scan) confirms
@@ -450,6 +471,15 @@ Process fixes shipped 2026-10-22:
   kills the process in its own `finally` block, §9.2 steps 3 + 8). The
   previous job-level `Start-Process` double-launched the app, splitting UIA
   attachment and seeded random clicks between two windows.
+- (§11.30, 2026-10-24) The "Upload smoke artifacts" step now carries
+  `continue-on-error: true` (plus `if-no-files-found: warn`), mirroring
+  the ubuntu-gate "Upload coverage artifact" step's §11.22 contract: the
+  step is `if: always()` and uploads purely diagnostic files
+  (`uia_smoke_output.txt`, `event_viewer_excerpt.txt`), so a transient
+  `actions/upload-artifact@v4` backend failure (a documented Actions
+  failure mode) must not redden the entire nightly on a non-gating
+  concern — a red §9.1/§9.2 gate is the only thing that should fail this
+  job.
 
 Remaining:
 

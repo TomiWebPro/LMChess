@@ -478,8 +478,19 @@ jobs:
             Exit $LASTEXITCODE
           }
 
-      - name: Upload smoke artifacts
+      - name: Upload smoke artifacts (§11.30)
+        # §11.30 (mirrors §11.22): these are purely diagnostic artifacts
+        # (uia_smoke_output.txt, event_viewer_excerpt.txt) and this
+        # if: always() step must never redden the nightly on a non-gating
+        # concern — a transient actions/upload-artifact backend failure (a
+        # documented Actions failure mode) would otherwise fail the whole
+        # windows-nightly job even though every real gate passed. Continue
+        # on error here too: a failed artifact push degrades to a warning,
+        # exactly like the coverage-lcov upload on ubuntu-gate
+        # (if-no-files-found: warn handles the missing-files case the same
+        # way).
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         timeout-minutes: 5
         with:
@@ -487,4 +498,5 @@ jobs:
           path: |
             uia_smoke_output.txt
             event_viewer_excerpt.txt
+          if-no-files-found: warn
           retention-days: 30
