@@ -3236,9 +3236,11 @@ suites referenced above now exist. Native Windows execution is tracked in
   Push **BLOCKED** (same as every prior run since the credentials
   audit): no GitHub credentials on this host (`git config --get
   credential.helper` empty, no `gh`, no `~/.git-credentials`, no
-  `~/.netrc`, no token in env); `git ls-remote origin main` still
-  shows e1749b3, so the local queue (~81 commits through this run)
-  remains local-only. Re-run the push once credentials are provisioned.
+  `~/.netrc`, no token in env); `git push origin main` → `fatal: could
+  not read Username for 'https://github.com'`; `git ls-remote origin
+  main` still shows e1749b3, so the local queue (83 commits through
+  this run, per `git rev-list --count origin/main..HEAD`) remains
+  local-only. Re-run the push once credentials are provisioned.
   Next: (a) re-push the queued local commits once GitHub credentials
   exist; (b) trigger the §11.3 windows-nightly via `workflow_dispatch`
   (or wait for the 06:00 UTC schedule) on the hosted `windows-latest`
