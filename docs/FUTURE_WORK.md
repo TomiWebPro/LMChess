@@ -1,7 +1,41 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-24 (UTC) — §11.18 closes the last bypass in the §11.15
+Last updated: 2026-10-24 (UTC) — §11.19 makes the Stockfish download tool
+self-heal corrupt caches. `tool/download_stockfish.dart` — the linchpin of the
+§11.7/§11.17 real-engine gates — trusted any cached release archive blindly
+(`ensureArchive` returned a file at `--archive-dir` on existence alone), so a
+truncated archive (a killed download; the §11.16 CI step timeout can SIGKILL
+the tool mid-write) stuck every later run at extraction forever with no
+automatic recovery — directly contradicting the documented "stale caches
+self-heal" promise, which was true only for the extracted binary, never the
+archive layer. `fetchPlatform` now runs a bounded two-attempt loop: new helper
+`extractAndVerify` deletes the unusable archive and any partial binary on ANY
+failure (unlistable archive, failed member extraction, or a binary that fails
+size/SHA-256/`file`/handshake after extraction) and throws; `fetchPlatform`
+then re-downloads exactly once (`fetched (re-downloaded: cached archive was
+corrupt)`). A pure download failure (no archive obtained at all) is
+deliberately NOT retried — the same URLs would only double the hang. The
+helper also creates `dest.parent` itself (the old code relied on
+`fetchPlatform`'s pre-create, so a direct call into a missing directory could
+hang forever in `File.openWrite`'s lazy-open error path — this run's
+direct-call probe hit exactly that hang). `--base-url=`/`baseOverride` added as
+a single-candidate download-base seam for loopback tests. New
+`test/download_stockfish_test.dart` (5 deterministic offline tests): corrupt
+cache recovery (discard + exactly one re-download + verified binary), bounded
+retry when the re-download is also garbage (no corrupt cache left; a later run
+starts clean), no-retry on pure download failure, `baseOverride`
+single-candidate semantics, and the helper's happy path on a valid cached
+archive — loopback HTTP server only, no external network. Evidence:
+`flutter analyze` → `No issues found!`; `flutter test
+test/download_stockfish_test.dart` → 5/5 pass; full `flutter test` → 642/642
+pass (637 + 5 new); real happy path unchanged (`OK present`); and the REAL
+recovery was proven empirically: fresh fetch of the real 81,388,977-byte
+archive → extract+verify OK → truncate the cached archive to 1 KiB and delete
+the binary → the same command recovers (`tar: Unexpected EOF in archive` →
+`re-downloading once` → `OK fetched (re-downloaded: cached archive was
+corrupt)`, full archive restored, size/sha256/file/uciok re-verified).
+Previously (2026-10-24) §11.18 closes the last bypass in the §11.15
 Linux-release smoke gate: the window-size sanity check (width/height ≥ 100)
 only gated the `break` inside the 75×1 s window-search loop, never the
 post-loop verdict — a window that was `IsViewable` at a capped <100×100 size
@@ -708,6 +742,62 @@ llm_chess_arena, 1278x720) under Xvfb + openbox`, exit 0, no :91 Xvfb/app
 orphan left behind (the pre-existing leaked :77/:79 servers remain untouched
 per the §11.12/§11.14 precedent — the §11.14 pre-flight probe correctly
 refused the occupied :77). See `automation-track.md` for the run log.
+
+### 11.19 Download tool self-heals corrupt cached archives (P1 — DONE)
+
+`tool/download_stockfish.dart` is the linchpin of the §11.7/§11.17 real-engine
+gates, and its `ensureArchive` trusted any cached release archive blindly — a
+file existing under `--archive-dir` was returned as-is, never verified. A
+truncated archive (a killed download — the §11.16 CI step timeout can SIGKILL
+the tool mid-write) therefore stuck every later run at extraction forever:
+`tar -tzf`/`tar -xzOf` failed, the corrupt archive was never deleted, and the
+run reported FAIL every time with no automatic recovery. That directly
+contradicted the documented "stale caches self-heal: ... re-fetches on any
+mismatch" promise (§11.7/§11.17) — which was true only for the extracted
+binary, never for the archive layer.
+
+The tool now self-heals:
+
+- **`fetchPlatform` runs a bounded two-attempt loop.** Attempt 1 uses whatever
+  is cached (or downloads if missing). New helper `extractAndVerify` deletes
+  the archive and any partial binary on ANY failure — an unlistable archive, a
+  failed member extraction, or a binary that fails size/SHA-256/`file`/
+  handshake after extraction — and throws. `fetchPlatform` then re-downloads
+  exactly once and reports `fetched (re-downloaded: cached archive was
+  corrupt)`. A pure download failure (no archive obtained at all) is
+  deliberately NOT retried — the same URLs would only double the hang.
+- **`extractAndVerify` creates `dest.parent` itself.** The original code
+  relied on `fetchPlatform`'s pre-create, so a direct call into a missing
+  directory could hang forever in `File.openWrite`'s lazy-open error path —
+  this run's direct-call probe hit exactly that hang before the fix.
+- **`--base-url=` + `baseOverride`** (default unchanged): a single-candidate
+  download-base override so tests can point at a loopback server; documented
+  in `--help`.
+
+New `test/download_stockfish_test.dart` (5 deterministic offline tests):
+(1) a corrupt cached archive is discarded, re-downloaded exactly once, and the
+recovered binary verifies; (2) a re-download that also yields garbage is
+bounded (exactly one re-download attempt) and leaves no corrupt archive or
+partial binary behind, so a later run starts from a clean cache; (3) a pure
+download failure is NOT retried (fails fast with `all download candidates
+failed`); (4) `baseOverride` yields a single candidate under the given base
+(the official base is unchanged without it); (5) `extractAndVerify` succeeds
+on a valid cached archive without any download and leaves the valid archive in
+place. All downloads go to a loopback HTTP server — no external network — and
+the fake `PlatformAsset` reports its own payload's size/SHA-256 so verification
+is self-contained.
+
+Evidence: `flutter analyze` → `No issues found!`; `flutter test
+test/download_stockfish_test.dart` → 5/5 pass; full regression `flutter test`
+→ 642/642 pass (637 baseline + 5 new); real happy path unchanged
+(`dart run tool/download_stockfish.dart linux-x86-64` → `OK present`, with
+size/sha256/file/uciok all verified); and the REAL recovery was proven
+empirically on this host — fetch a fresh real archive (81,388,977 bytes),
+extract + verify OK, then truncate the cached archive to 1 KiB and delete the
+binary, and re-run the same command: `tar: Unexpected EOF in archive` →
+`re-downloading once` → `OK fetched (re-downloaded: cached archive was
+corrupt)` with the full 81 MB archive restored and size/sha256/file/uciok
+re-verified. See `automation-track.md` for the run log.
 
 ---
 

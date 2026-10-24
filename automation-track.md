@@ -1,7 +1,28 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-24 (UTC) — §11.18 closes the last bypass in the §11.15
+Last updated: 2026-10-24 (UTC) — §11.19 makes the Stockfish download tool
+self-heal corrupt caches: `tool/download_stockfish.dart` trusted any cached
+release archive blindly (`ensureArchive` returned a file on existence alone),
+so a truncated archive — the residue of a killed download — stuck every later
+run at extraction forever, contradicting the §11.7/§11.17 "stale caches
+self-heal" contract (which held only for the extracted binary, never the
+archive). `fetchPlatform` now runs a bounded two-attempt loop: new
+`extractAndVerify` deletes the unusable archive + any partial binary on ANY
+failure (unlistable archive, failed extraction, or post-extraction verification
+failure) and `fetchPlatform` re-downloads exactly once (`fetched (re-downloaded:
+cached archive was corrupt)`); a pure download failure is NOT retried (no
+double hang). The helper also creates `dest.parent` (the old code relied on
+`fetchPlatform`'s pre-create — a direct call could hang writing into a missing
+directory; hit empirically this run). New `test/download_stockfish_test.dart`
+(5 deterministic offline tests, loopback-only) pins recovery, bounded retry,
+no-retry-on-download-failure, the `--base-url=` seam, and the helper's happy
+path. Evidence: `flutter analyze` → `No issues found!`; full `flutter test` →
+642/642 pass (637 + 5 new); real CLI recovered empirically from a truncated
+real 81,388,977-byte archive (`tar: Unexpected EOF in archive` → `re-downloading
+once` → `OK fetched (re-downloaded: cached archive was corrupt)`, full archive
+restored, size/sha256/file/uciok re-verified).
+Previously (2026-10-24) §11.18 closes the last bypass in the §11.15
 Linux-release smoke: the ≥100×100 window-size sanity check gated only the
 search-loop `break` (never the post-loop verdict), so a window that was
 `IsViewable` at a capped <100×100 size through all 75 iterations was greenlit
@@ -1775,3 +1796,88 @@ suites referenced above now exist. Native Windows execution is tracked in
   deferred" — 12 screen suites + 637 tests exist; ENGINE_RUNTIME.md:154
   references "§3.3" which no longer exists in RUNBOOK.md — the section is
   "Flutter upgrade gate (release block, acceptance criterion 14.8)").
+- 2026-10-24Z — TOOL/PROCESS P1 §11.19 (download tool corrupt-archive
+  self-heal). Three parallel subagent audits (download-tool code audit,
+  fresh-eyes ci.yaml audit, repo hygiene scan) confirmed the open
+  FUTURE_WORK.md items are all Windows-native (§9.1/§9.2/§11.3/§14.1-14.2 —
+  BLOCKED on this Linux host), external (§2.6 — re-verified this run:
+  flutter/flutter#190903 still open/unmerged, #175041 still open), or
+  resolved decisions (§13), but surfaced one genuine tool defect nobody had
+  logged: the §11.7/§11.17 "stale caches self-heal" promise held only for
+  the extracted binary, never the cached release archive. `ensureArchive`
+  trusts any existing archive file under `--archive-dir`, so a truncated
+  archive (a killed download — the §11.16 CI step timeout can SIGKILL the
+  tool mid-write) stuck every later run at extraction forever: `tar -tzf`/
+  `-xzOf` failed, the corrupt archive was never deleted, and the run
+  reported FAIL every time with no automatic recovery. Promoted as §11.19
+  into `docs/FUTURE_WORK.md` per the §11.4–§11.18 precedent and closed in
+  the same run. Files changed:
+  `tool/download_stockfish.dart` — `fetchPlatform` now runs a bounded
+  two-attempt loop: new helper `extractAndVerify` deletes the unusable
+  archive + any partial binary on ANY failure (unlistable archive, failed
+  member extraction, or post-extraction size/SHA-256/`file`/handshake
+  verification failure) and throws; `fetchPlatform` re-downloads exactly
+  once and returns `fetched (re-downloaded: cached archive was corrupt)`.
+  A pure download failure (no archive obtained at all) is NOT retried — the
+  same URLs would only double the hang. The helper also creates
+  `dest.parent` itself (the old code relied on `fetchPlatform`'s pre-create;
+  a direct call into a missing directory could hang forever in
+  `File.openWrite`'s lazy-open error path — reproduced by this run's
+  direct-call probe before the fix). `candidateUrls`/`FetchOptions`/`main`
+  gained a `baseOverride`/`--base-url=` seam (single candidate under a given
+  base; documented in `--help`) for loopback tests.
+  `test/download_stockfish_test.dart` (new, 5 deterministic offline tests):
+  (1) corrupt cached archive → discarded + exactly one re-download +
+  recovered binary verifies; (2) re-download that is also garbage → bounded
+  (exactly one retry) + no corrupt archive/partial binary left (a later run
+  starts clean); (3) pure download failure → NOT retried, fails fast with
+  `all download candidates failed`; (4) `baseOverride` single-candidate
+  semantics (official base unchanged without it); (5) `extractAndVerify`
+  happy path on a valid cached archive (no download; valid archive kept).
+  Downloads hit a loopback HTTP server only (no external network); the fake
+  `PlatformAsset` reports its own payload's size/SHA-256.
+  `docs/FUTURE_WORK.md` — §11.19 added + closed as DONE in the same run
+  (open list unchanged: §11.19 not an open item), header bumped.
+  `automation-track.md` — header line + this Run Log entry (no Roadmap row
+  exists for §11.19; per protocol the Run Log is the record).
+  Evidence: `flutter analyze` → `No issues found! (ran in 2.4s)` (exact
+  output); `flutter test test/download_stockfish_test.dart` → 5/5 pass
+  (All tests passed!); full regression `flutter test` → 642/642 pass
+  (02:04, All tests passed! — 637 baseline + 5 new); real happy path
+  unchanged — `dart run tool/download_stockfish.dart linux-x86-64` → `OK
+  present` with size/sha256/file/uciok all verified; and the REAL self-heal
+  proven empirically on this host: fetch a fresh real linux archive
+  (81,388,977 bytes) + extract + verify OK, then truncate the cached archive
+  to 1 KiB and delete the binary, re-run the same command →
+  `tar: Unexpected EOF in archive` → `re-downloading once` → `OK fetched
+  (re-downloaded: cached archive was corrupt)` with the full archive restored
+  and size/sha256/file/uciok re-verified. `git status --short` confirms only
+  the tool + new test + the two track docs changed.
+  Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
+  host — re-audited this run (`git config --get credential.helper` empty, no
+  `gh`, no SSH key, no `~/.git-credentials`, no `~/.netrc`, no token in env;
+  `git push --dry-run origin main` → `fatal: could not read Username for
+  'https://github.com'`); `git ls-remote origin main` still shows `e1749b3`,
+  so `e1749b3..HEAD` (57 local commits through this run) remains local-only —
+  including the ENTIRE §11.3–§11.19 CI modernization: the hosted CI on the
+  remote still runs the old 6-step analyze+test job, so none of the modern
+  gates (§11.4–§11.19) have ever run on a hosted runner. Re-run the push
+  after credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials exist;
+  (b) trigger the §11.3 windows-nightly via `workflow_dispatch` (or wait for
+  the 06:00 UTC schedule) on the hosted `windows-latest` runner per the §13
+  decision + §11.3 checklist — the ONLY remaining functional gap
+  (§14.1-14.2); or (c) re-check §2.6 on the next Flutter upgrade / when
+  `flutter/flutter#190903` lands. Audit candidates logged for future runs:
+  §11.18-bis (Stockfish cache keys never invalidate — constant key, no
+  `hashFiles`/version component; correctness saved by the download tool's
+  self-heal, but after a release bump the restored cache slot is frozen
+  stale and every run re-downloads the ~103 MiB binary; a fix could key on
+  the pinned SHA-256 in `assets/engines/*/README.md` via `hashFiles`), the
+  stale-doc trio (ARCHITECTURE.md:12 "regression tests pending",
+  ARCHITECTURE.md:54 "unit/widget suite deferred", ENGINE_RUNTIME.md:154
+  "§3.3"), and the ci.yaml smoke-step `xwininfo` race (the
+  `MAP_STATE/WIDTH/HEIGHT=$(xwininfo ...)` substitutions are unguarded under
+  `set -euo pipefail` — a window destroyed between the xdotool search and
+  the xwininfo call would abort the step and skip its diagnostics + Xvfb
+  teardown).

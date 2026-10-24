@@ -435,6 +435,10 @@ class FetchOptions {
   /// Skip the UCI handshake (useful for foreign-arch binaries).
   final bool skipHandshake;
 
+  /// Overrides the download base URL (single candidate under that base;
+  /// tests/debugging only — e.g. a loopback server).
+  final String? baseUrl;
+
   /// Creates fetch options.
   const FetchOptions({
     required this.tag,
@@ -444,6 +448,7 @@ class FetchOptions {
     required this.force,
     required this.redownload,
     required this.skipHandshake,
+    this.baseUrl,
   });
 }
 
@@ -463,11 +468,21 @@ class FetchResult {
 }
 
 /// Download URL candidates for [platform]: official first, then each proxy.
+///
+/// [baseOverride] (used by tests to point at a loopback server) replaces the
+/// candidate list with a single URL under that base.
 List<Uri> candidateUrls(
   PlatformAsset platform,
   String tag,
-  List<String> proxyPrefixes,
-) {
+  List<String> proxyPrefixes, {
+  String? baseOverride,
+}) {
+  if (baseOverride != null) {
+    final base = baseOverride.endsWith('/')
+        ? baseOverride
+        : '$baseOverride/';
+    return <Uri>[Uri.parse('$base${platform.asset}')];
+  }
   final urls = <Uri>[Uri.parse('${releaseBase(tag)}/${platform.asset}')];
   for (final proxy in proxyPrefixes) {
     if (proxy.isEmpty) continue;
@@ -492,6 +507,7 @@ Future<File> ensureArchive(PlatformAsset platform, FetchOptions options) async {
     platform,
     options.tag,
     options.proxyPrefixes,
+    baseOverride: options.baseUrl,
   )) {
     stdout.writeln('  downloading $url ...');
     try {
@@ -582,32 +598,95 @@ Future<FetchResult> fetchPlatform(
     }
     stdout.writeln('  existing binary invalid; re-fetching ...');
   }
+  // Self-healing fetch (§11.19): when the cached archive is unusable
+  // (corrupt/truncated, e.g. from a killed download) [extractAndVerify]
+  // deletes it, so the second attempt re-downloads cleanly instead of
+  // failing forever against the same bad cache. A pure download failure is
+  // deliberately NOT retried — the same URLs would only double the hang.
+  File? obtained;
   try {
     final archive = await ensureArchive(platform, options);
-    var member = platform.conventionalMember();
+    obtained = archive;
+    await extractAndVerify(platform, archive, dest, options);
+    return FetchResult(platform.dir, true, 'fetched');
+  } on Object catch (e) {
+    if (obtained == null) {
+      return FetchResult(platform.dir, false, e.toString());
+    }
+    stdout.writeln('  cached archive unusable ($e); re-downloading once ...');
+  }
+  try {
+    final archive = await ensureArchive(platform, options);
+    await extractAndVerify(platform, archive, dest, options);
+    return FetchResult(
+      platform.dir,
+      true,
+      'fetched (re-downloaded: cached archive was corrupt)',
+    );
+  } on Object catch (e) {
+    return FetchResult(platform.dir, false, e.toString());
+  }
+}
+
+/// Extracts and verifies [platform] from [archive] into [dest].
+///
+/// Returns normally on success. On ANY failure — a corrupt/truncated archive
+/// that cannot even be listed, a failed member extraction, or a binary that
+/// fails verification after extraction — it deletes [archive] and any partial
+/// [dest] and throws, so a later attempt re-downloads cleanly: a bad cached
+/// archive is never reused (§11.19).
+Future<void> extractAndVerify(
+  PlatformAsset platform,
+  File archive,
+  File dest,
+  FetchOptions options,
+) async {
+  dest.parent.createSync(recursive: true);
+  final String member;
+  try {
+    var candidate = platform.conventionalMember();
     final members = await listMembers(archive);
-    if (!members.contains(member)) {
+    if (!members.contains(candidate)) {
       final discovered = pickBinaryMember(members);
       if (discovered == null) {
-        return FetchResult(platform.dir, false, 'binary not found in archive');
+        throw StateError('binary not found in archive');
       }
       stdout.writeln('  conventional member missing; using $discovered');
-      member = discovered;
+      candidate = discovered;
     }
-    stdout.writeln('  extracting $member ...');
+    member = candidate;
+  } on Object {
+    _discardArchive(archive, dest);
+    rethrow;
+  }
+  stdout.writeln('  extracting $member ...');
+  try {
     await extractMember(archive, member, dest);
     if (!Platform.isWindows) {
       final chmod = await Process.run('chmod', <String>['+x', dest.path]);
       if (chmod.exitCode != 0) {
-        return FetchResult(platform.dir, false, 'chmod +x failed');
+        throw StateError('chmod +x failed');
       }
     }
     if (await verifyBinary(platform, dest, options)) {
-      return FetchResult(platform.dir, true, 'fetched');
+      return;
     }
-    return FetchResult(platform.dir, false, 'verification failed');
-  } on Object catch (e) {
-    return FetchResult(platform.dir, false, e.toString());
+    stdout.writeln('  verification failed after extraction; treating the archive as corrupt');
+  } on Object {
+    _discardArchive(archive, dest);
+    rethrow;
+  }
+}
+
+/// Deletes the unusable [archive] and any partially extracted [dest] binary
+/// so the next attempt re-downloads instead of reusing a corrupt cache.
+void _discardArchive(File archive, File dest) {
+  stdout.writeln('  discarding unusable archive and any partial binary');
+  if (archive.existsSync()) {
+    archive.deleteSync();
+  }
+  if (dest.existsSync()) {
+    dest.deleteSync();
   }
 }
 
@@ -701,6 +780,8 @@ void printUsage(String tag, String archiveDir, String enginesDir) {
     '  --engines-dir=DIR   engines dir (default $enginesDir)\n'
     '  --force             re-extract even when the binary verifies\n'
     '  --redownload        re-download archives even when cached\n'
+    '  --base-url=URL      override the download base (single candidate;\n'
+    '                      tests/debugging only)\n'
     '  --skip-handshake    skip the UCI handshake check\n'
     '  --proxy=PREFIX      proxy prefix to try after the official URL;\n'
     '                      repeatable (default "$defaultProxyPrefix")\n'
@@ -815,6 +896,7 @@ Future<void> main(List<String> args) async {
   var force = false;
   var redownload = false;
   var skipHandshake = false;
+  String? baseUrl;
   final wanted = <String>[];
   for (final arg in args) {
     if (arg == '--all') {
@@ -838,6 +920,8 @@ Future<void> main(List<String> args) async {
       archiveDir = arg.substring('--archive-dir='.length);
     } else if (arg.startsWith('--engines-dir=')) {
       enginesDir = arg.substring('--engines-dir='.length);
+    } else if (arg.startsWith('--base-url=')) {
+      baseUrl = arg.substring('--base-url='.length);
     } else if (arg.startsWith('--proxy=')) {
       cliProxies.add(arg.substring('--proxy='.length));
     } else if (arg.startsWith('--')) {
@@ -893,6 +977,7 @@ Future<void> main(List<String> args) async {
     force: force,
     redownload: redownload,
     skipHandshake: skipHandshake,
+    baseUrl: baseUrl,
   );
   final results = <FetchResult>[];
   for (final platform in selected) {
