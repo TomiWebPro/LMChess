@@ -2147,7 +2147,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   test` → 642/642 pass (01:50, All tests passed! — no Dart changes, docs
   only). `git status --short` before commit: only the four docs + the two
   track docs modified (no lib/test/workflow changes).
-  Commit: <hash> (recorded after the commit below).
+  Commit: c879019 (recorded in a follow-up track commit per the §13 precedent).
   Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
   host (re-audited this run — `git config --get credential.helper` empty,
   no `gh`, no `~/.git-credentials`, no `~/.netrc`; `git push` under
