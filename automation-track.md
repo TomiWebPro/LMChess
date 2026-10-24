@@ -3231,7 +3231,8 @@ suites referenced above now exist. Native Windows execution is tracked in
   Run Log entry), `docs/FUTURE_WORK.md` (Last updated bumped; header
   recap updated — per the open-items-only rule no new completed-work
   section; open-item set unchanged).
-  Commit: <hash-inserted-here>.
+  Commit: 8f04b93 (recorded in a follow-up track commit per the §13
+  precedent).
   Push **BLOCKED** (same as every prior run since the credentials
   audit): no GitHub credentials on this host (`git config --get
   credential.helper` empty, no `gh`, no `~/.git-credentials`, no
