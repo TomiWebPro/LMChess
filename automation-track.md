@@ -2918,7 +2918,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   rule no new completed-work section — no open FUTURE_WORK item was
   touched, §9.1/§9.2/§11.3/§14 remain Windows-blocked, §2.6
   upstream-external).
-  Commit: <hash> (recorded in a follow-up track commit per the §13
+  Commit: 3fca2bb (recorded in a follow-up track commit per the §13
   precedent).
   Push **BLOCKED** (same as every prior run since the credentials audit):
   no GitHub credentials on this host (`git config --get credential.helper`
