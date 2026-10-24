@@ -43,7 +43,17 @@ both edited steps; all 13 bash run blocks pass `bash -n`. Files
 changed: `.github/workflows/ci.yaml`, this track +
 `docs/FUTURE_WORK.md` (header recap + Last updated bumped; per the
 open-items-only rule no new completed-work section — the open-item set
-is unchanged). Next: re-push the queued local commits once GitHub
+is unchanged). Commit: 13ef7a8 (recorded in a follow-up track commit
+per the §11.37/§11.36 precedent — the run's own commit first, then a
+`docs(lmchess): record §11.38 commit hash in track` follow-up). Push
+**BLOCKED** (same as every prior run since the credentials audit): no
+GitHub credentials on this host — re-confirmed this run with `git
+config --get credential.helper` (empty), no `gh` CLI, no SSH keys for
+github.com, and `git push origin main` → `fatal: could not read
+Username for 'https://github.com'`; `git rev-list --count
+origin/main..HEAD` → 97 (the queue grew 96 → 97 with this run's
+commit). Re-run the push once credentials are provisioned.
+Next: re-push the queued local commits once GitHub
 credentials exist; trigger the §11.3 windows-nightly on hosted
 `windows-latest`; or re-check §2.6 when `flutter/flutter#190903` lands.
 Previously (2026-10-24) — §11.37 run (no-actionable-item
