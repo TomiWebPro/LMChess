@@ -3729,7 +3729,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   in-place edit; the "Last updated" line already carries §11.36
   and the open-items-only rule forbids append-only notes for
   no-op runs).
-  Commit: <hash-to-fill> (recorded in a follow-up track commit per
+  Commit: 327a2b8 (recorded in a follow-up track commit per
   the §11.36/§11.35 precedent — the run's own commit first, then a
   `docs(lmchess): record §11.37 commit hash in track` follow-up).
   Push **BLOCKED** (same as every prior run since the credentials
