@@ -3349,7 +3349,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   corrected in place — per the open-items-only rule no new
   completed-work section; open-item set unchanged), this track (header
   + this Run Log entry).
-  Commit: to be recorded in a follow-up track commit (per the §13
+  Commit: afc80a8 (recorded in a follow-up track commit per the §13
   precedent).
   Push **BLOCKED** (same as every prior run since the credentials
   audit): no GitHub credentials on this host (`git config --get
