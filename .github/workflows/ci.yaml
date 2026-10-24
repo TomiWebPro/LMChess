@@ -134,6 +134,15 @@ jobs:
         run: |
           set -euo pipefail
           export DISPLAY=:77
+          # §11.27: the software-GL contract must reach the APP, not just the
+          # Xvfb server. The variable was previously prefixed only to the Xvfb
+          # launch line, so the release binary inherited nothing — on a runner
+          # with a reachable GPU driver it could pick hardware GL, breaking
+          # the §11.15 reproducibility (the window-wait budget was measured
+          # under llvmpipe; first frame takes ~26-52s there). This matches the
+          # documented headless recipe (docs/RUNBOOK.md "## Prereqs"):
+          # `DISPLAY=:91 LIBGL_ALWAYS_SOFTWARE=1 ./build/.../llm_chess_arena`.
+          export LIBGL_ALWAYS_SOFTWARE=1
           # §11.14: a backgrounded `Xvfb :77 &` that dies instantly (display
           # already occupied by a leaked server from an earlier run, lock
           # conflict, init failure) is invisible to `set -e`; without this
@@ -148,7 +157,7 @@ jobs:
             echo "::error::display :77 already in use by another X server (stale Xvfb from a prior run?); refusing to attach to it"
             exit 1
           fi
-          LIBGL_ALWAYS_SOFTWARE=1 Xvfb :77 -screen 0 1280x1024x24 &
+          Xvfb :77 -screen 0 1280x1024x24 &
           XVFB_PID=$!
           ready=
           for _ in $(seq 1 50); do
@@ -247,6 +256,12 @@ jobs:
         run: |
           set -euo pipefail
           export DISPLAY=:79
+          # §11.27: export the software-GL contract for the suite's processes
+          # too (the app-under-test rendered by the integration tests). The
+          # variable was previously scoped to the Xvfb launch line only; the
+          # integration suite and any app it drives must render under llvmpipe
+          # exactly like the §11.15 smoke, not silently pick hardware GL.
+          export LIBGL_ALWAYS_SOFTWARE=1
           # §11.14 (same readiness gate as the §11.6 smoke step): a dead-on-
           # arrival `Xvfb :79 &` must fail HERE with a clear error instead of
           # surfacing as a misleading `flutter test` failure — or attaching
@@ -257,7 +272,7 @@ jobs:
             echo "::error::display :79 already in use by another X server (stale Xvfb from a prior run?); refusing to attach to it"
             exit 1
           fi
-          LIBGL_ALWAYS_SOFTWARE=1 Xvfb :79 -screen 0 1280x1024x24 &
+          Xvfb :79 -screen 0 1280x1024x24 &
           XVFB_PID=$!
           ready=
           for _ in $(seq 1 50); do

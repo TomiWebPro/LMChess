@@ -1,7 +1,36 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-24 (UTC) — §11.26: the final code-P2 audit
+Last updated: 2026-10-24 (UTC) — §11.27: the ubuntu-gate's
+software-GL contract now reaches the processes that actually render.
+Both Xvfb display steps previously prefixed `LIBGL_ALWAYS_SOFTWARE=1`
+ONLY to the Xvfb launch line, so the two processes that matter — the
+§11.15 release-binary smoke and the §11.11 headless integration suite —
+inherited nothing. On a runner with a reachable GPU driver the app could
+silently pick hardware GL, breaking the smoke's reproducibility: its
+window-wait budget (15s + 75×1s) was measured under llvmpipe, where the
+first frame takes ~26-52s, and the §11.15 gate exists precisely to catch
+"alive but never properly rendered". Both steps now
+`export LIBGL_ALWAYS_SOFTWARE=1` right next to `export DISPLAY=`,
+matching the documented headless recipe (docs/RUNBOOK.md "## Prereqs":
+`DISPLAY=:91 LIBGL_ALWAYS_SOFTWARE=1 ./build/.../llm_chess_arena`), and
+the now-redundant env-prefix on the Xvfb lines is removed. Evidence:
+workflow re-parses clean via strict duplicate-key PyYAML (ubuntu-gate 14
+steps, windows-nightly 12 — step counts unchanged, only run-block content
+changed); all 14 bash run blocks pass `bash -n` (the sole "failures" are
+the two Windows-only §9.1/§9.2 PowerShell blocks, per the §11.12
+precedent); the FULL modified smoke block run verbatim against the real
+Linux release bundle on a fresh display → `smoke ok: release binary alive
+after 15s and window mapped (title llm_chess_arena, 1278x720) under Xvfb
++ openbox`, exit 0, no :113 Xvfb or app orphan; the §11.11 headless suite
+under the exported var → 12/12 pass, exit 0, no orphan; `flutter
+analyze` → `No issues found! (ran in 2.2s)`; full `flutter test` →
+651/651 pass (All tests passed! — no Dart changes). Recorded in
+`automation-track.md` (Run Log); per the open-items-only rule this file
+gains no new completed-work section — no open FUTURE_WORK item was
+touched (§9.1/§9.2/§11.3/§14 remain Windows-blocked, §2.6
+upstream-external).
+Previously (2026-10-24) §11.26: the final code-P2 audit
 candidate is closed — `test/clock_seam_test.dart`'s "defaults to
 DateTime.now" test no longer asserts an absolute wall-clock year
 (`expect(now.year, greaterThanOrEqualTo(2026))` — fails on any machine

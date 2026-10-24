@@ -1,7 +1,33 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-24 (UTC) — §11.26 run: the final code-P2 audit
+Last updated: 2026-10-24 (UTC) — §11.27 run: the ubuntu-gate's
+software-GL contract now reaches the processes that actually render.
+Both Xvfb display steps previously prefixed `LIBGL_ALWAYS_SOFTWARE=1`
+ONLY to the Xvfb launch line, so the §11.15 release-binary smoke and the
+§11.11 headless integration suite ran WITHOUT it — on a runner with a
+reachable GPU driver the app could silently pick hardware GL, breaking
+the smoke's reproducibility (its window-wait budget was measured under
+llvmpipe, where first frame takes ~26-52s). Both steps now
+`export LIBGL_ALWAYS_SOFTWARE=1` next to `export DISPLAY=`, matching the
+documented headless recipe (docs/RUNBOOK.md "## Prereqs"), and the
+redundant env-prefix on the Xvfb lines is removed. Evidence: `flutter
+analyze` → `No issues found! (ran in 2.2s)`; full `flutter test` →
+651/651 pass (01:54, All tests passed! — no Dart changes); strict
+duplicate-key PyYAML re-parse clean (ubuntu-gate 14 + windows-nightly 12
+steps, step counts unchanged); all 14 bash run blocks pass `bash -n` (the
+sole "failures" are the Windows-only §9.1/§9.2 PowerShell blocks, per the
+§11.12 precedent); the FULL modified smoke block run verbatim against the
+real Linux release bundle on a fresh :113 display → `smoke ok: release
+binary alive after 15s and window mapped (title llm_chess_arena,
+1278x720) under Xvfb + openbox`, exit 0, no :113 Xvfb/app orphan; the
+§11.11 headless suite under the exported var (fresh :117) → 12/12 pass,
+exit 0, no orphan. Files changed: `.github/workflows/ci.yaml`, this track
++ `docs/FUTURE_WORK.md` (Last updated bumped; per the open-items-only
+rule no new completed-work section — no open FUTURE_WORK item was
+touched, §9.1/§9.2/§11.3/§14 remain Windows-blocked, §2.6
+upstream-external).
+Previously (2026-10-24) §11.26 run: the final code-P2 audit
 candidate is closed — `test/clock_seam_test.dart` no longer asserts against
 an absolute wall-clock year. The "defaults to DateTime.now" test used
 `expect(now.year, greaterThanOrEqualTo(2026))`, an absolute epoch threshold
@@ -2639,3 +2665,87 @@ suites referenced above now exist. Native Windows execution is tracked in
   Options, the `0xCAFABE` → `0xCAFEBABE` typo in the §9.2 track row. The
   `dart format` gate (102/127-file churn, needs an explicit owner decision)
   remains open; coverage-artifact comparison still needs ≥2 CI runs.
+- 2026-10-24Z — CI-PROCESS §11.27: the ubuntu-gate's software-GL contract
+  now reaches the processes that actually render (closes audit candidate
+  CI P3 #3 from the §11.23/§11.24/§11.25/§11.26 audit trail; all
+  FUTURE_WORK.md P0/P1 items are DONE or Windows/external-blocked per
+  §9.1/§9.2/§11.3/§14/§2.6). Both ubuntu-gate Xvfb display steps — the
+  §11.6/§11.15 "Smoke start Linux release (Xvfb)" step (:77) and the
+  §11.11 "Integration test on Linux" step (:79) — prefixed
+  `LIBGL_ALWAYS_SOFTWARE=1` ONLY to the Xvfb launch line. An env-prefix on
+  `Xvfb ... &` scopes the variable to the Xvfb process alone, so the two
+  processes that actually render under that display — the release binary
+  in the smoke step (`./build/linux/x64/release/bundle/llm_chess_arena`,
+  the §11.15 subject) and the `flutter test integration_test/... -d
+  linux` suite (whose app-under-test renders too) — inherited NOTHING. On
+  a runner where a GPU driver is reachable, the app could silently pick
+  hardware GL instead of llvmpipe, breaking the smoke's reproducibility:
+  §11.15's window-wait budget (15s + 75×1s) was measured under software
+  GL, where the first frame takes ~26-52s — and the whole gate exists to
+  catch "alive but never properly rendered", which the GL backend entirely
+  determines. The documented headless recipe (docs/RUNBOOK.md "##
+  Prereqs": `DISPLAY=:91 LIBGL_ALWAYS_SOFTWARE=1
+  ./build/linux/x64/release/bundle/llm_chess_arena`) exports the variable
+  FOR THE APP; CI was the lone deviation. Files changed:
+  `.github/workflows/ci.yaml` — both steps now carry
+  `export LIBGL_ALWAYS_SOFTWARE=1` immediately next to
+  `export DISPLAY=:77` / `export DISPLAY=:79` (with a §11.27 comment on
+  each explaining the app-reachability contract and the RUNBOOK match),
+  and the now-redundant `LIBGL_ALWAYS_SOFTWARE=1 ` prefix is removed from
+  both Xvfb launch lines. Step counts unchanged (ubuntu-gate 14,
+  windows-nightly 12); no Dart/test files changed.
+  `docs/FUTURE_WORK.md` — header bumped only (no open item touched; per
+  the open-items-only rule no new completed-work section — §11.27 is not
+  an open item; the Windows/external items remain listed as blocked).
+  `automation-track.md` — header + this Run Log entry (no Roadmap row
+  exists for §11.27; per protocol the Run Log is the record).
+  Evidence: strict duplicate-key PyYAML re-parse clean with the §11.27
+  contract asserted programmatically (both steps contain
+  `export LIBGL_ALWAYS_SOFTWARE=1`; neither contains the legacy
+  `LIBGL_ALWAYS_SOFTWARE=1 Xvfb` prefix; the app-launch and
+  `flutter test integration_test/...` lines are intact; ubuntu-gate 14 +
+  windows-nightly 12 steps; 28 timeout-minutes keys = 26 steps + 2 jobs);
+  all 14 bash run blocks pass `bash -n` (the two "failures" are the
+  Windows-only §9.1/§9.2 PowerShell blocks, Windows-only by design per
+  the §11.12 precedent); `flutter analyze` → `No issues found! (ran in
+  2.2s)`; the FULL modified smoke block run verbatim (extracted from the
+  workflow, :77 → fresh :113 since the pre-existing leaked :77 server
+  still occupies the real display — itself a live §11.14 refusal demo on
+  the earlier probe) against the real Linux release bundle →
+  `smoke ok: release binary alive after 15s and window mapped (title
+  llm_chess_arena, 1278x720) under Xvfb + openbox`, exit 0, with NO :113
+  Xvfb and no release-app orphan left behind; the §11.11 headless suite
+  under the exported variable (fresh :117) → 12/12 pass (00:33, All
+  tests passed!), exit 0, no :117 orphan; full regression `flutter test`
+  → 651/651 pass (01:54, All tests passed! — no Dart changes, workflow
+  edit only). `git status --short` confirms only the workflow + the two
+  track docs changed.
+  Commit: (recorded in the follow-up track commit per the §13 precedent).
+  Push **BLOCKED** (same as every prior run since the credentials audit):
+  no GitHub credentials on this host (`git config --get credential.helper`
+  empty, no `gh`, no `~/.git-credentials`, no `~/.netrc`, no token in
+  env); `git ls-remote origin main` still shows e1749b3, so the local
+  queue (~70 commits through this run, including this §11.27 fix) remains
+  local-only. Re-run the push once credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials
+  exist; (b) trigger the §11.3 windows-nightly via `workflow_dispatch`
+  (or wait for the 06:00 UTC schedule) on the hosted `windows-latest`
+  runner per the §13 decision + §11.3 checklist — the ONLY remaining
+  functional gap (§14.1-§14.2); or (c) re-check §2.6 on the next Flutter
+  upgrade / when `flutter/flutter#190903` lands. Remaining
+  Linux-implementable audit candidates (none P0/P1): CI P3 #2 — the
+  `flutter test` + `flutter test test/ui --coverage` pair could merge
+  into one full-suite `flutter test --coverage` (halves test execution;
+  needs an explicit decision because it changes the §11.4 lcov coverage
+  semantics from test/ui-only to full-suite); docs nits — "22 test/ui
+  suites" → 23 (automation-track.md:122), §11.16 "24 steps/26 keys" →
+  26 steps/28 keys, FUTURE_WORK baseline "631/631" → "651/651"
+  (re-measured this run: the live "Verified baseline" block at
+  FUTURE_WORK.md:293-296 still says 631/631 while the suite is now
+  651/651), the dangling "docs/RUNBOOK.md 'Linux desktop'" heading ref in
+  FUTURE_WORK.md:443 + ci.yaml:106 (RUNBOOK's headless recipe lives under
+  "## Prereqs"), the missing `--direct` alias in download_stockfish
+  `--help` Options, and the `0xCAFABE` → `0xCAFEBABE` typo in the §9.2
+  track row (automation-track.md:332). The `dart format` gate
+  (102/127-file churn, needs an explicit owner decision) remains open;
+  coverage-artifact comparison still needs ≥2 CI runs.
