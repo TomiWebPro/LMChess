@@ -14,6 +14,15 @@ jobs:
   ubuntu-gate:
     name: Ubuntu Gate (analyze + test)
     runs-on: ubuntu-latest
+    # §11.23: the `schedule` event in `on:` also fires this job (no `if:`), so
+    # the nightly 06:00 UTC cron ran a REDUNDANT full Linux gate — analyze +
+    # test + build + smoke + integration + coverage, ~15-20 min — every night
+    # with zero code changes to exercise. That schedule exists for the §11.3
+    # windows-nightly gate only; ubuntu-gate already runs on every push/PR and
+    # on manual workflow_dispatch, so the nightly duplicate adds runner
+    # minutes and can produce confusing red runs from nothing. Skip this job
+    # on schedule; windows-nightly's own `if:` keeps it schedule-only.
+    if: github.event_name != 'schedule'
     # §11.16: bound the whole gate — GitHub's default job timeout is 360 min, so
     # a hung step would otherwise stall the gate for up to 6 h (and overlap with
     # the next scheduled run). 90 min is ~4x the observed green-run wall time

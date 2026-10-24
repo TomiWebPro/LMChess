@@ -1,7 +1,23 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-24 (UTC) — §11.22 run: the ci.yaml coverage artifact
+Last updated: 2026-10-24 (UTC) — §11.23: ubuntu-gate no longer runs on the
+nightly schedule. The `schedule` event in `on:` exists solely for the §11.3
+windows-nightly gate, but ubuntu-gate carried no job-level `if:`, so every
+nightly cron redundantly re-ran the FULL Linux gate (~15-20 min) with zero
+code changes to exercise — wasted runner minutes and confusing red runs
+from nothing. The job now carries `if: github.event_name != 'schedule'`
+(+ a §11.23 comment): it runs on every push/PR and on manual
+workflow_dispatch exactly as before and skips only the schedule event;
+windows-nightly's own `if:` keeps it schedule/dispatch-only. Step counts
+unchanged (ubuntu-gate 14, windows-nightly 12); no Dart/test files changed.
+Evidence: workflow re-parses clean via a strict duplicate-key PyYAML scan
+with the job if-contracts asserted; all bash run blocks pass `bash -n`;
+`flutter analyze` → `No issues found! (ran in 2.2s)`; full `flutter test`
+→ 642/642 pass (01:55, All tests passed!). Recorded in
+`automation-track.md` (Run Log); per the open-items-only rule this file
+gains no new completed-work section.
+Previously (2026-10-24) §11.22 run: the ci.yaml coverage artifact
 upload step could redden the gate. §11.4's documented contract is "coverage
 can never redden the gate" (and the coverage RUN step carries
 `continue-on-error: true`), but the `if: always()` "Upload coverage

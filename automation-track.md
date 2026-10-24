@@ -1,7 +1,27 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-24 (UTC) — §11.22 run: the ci.yaml coverage artifact
+Last updated: 2026-10-24 (UTC) — §11.23 run: the nightly cron no longer
+re-runs a redundant full ubuntu-gate. `on:` carries a `schedule` (06:00
+UTC) entry whose only purpose is the §11.3 windows-nightly gate, but
+ubuntu-gate carried no job-level `if:`, so every nightly cron fired BOTH
+jobs — a full Linux gate (analyze + test + build + smoke + integration +
+coverage, ~15-20 min) ran every night with zero code changes to exercise:
+wasted runner minutes and confusing red runs from nothing. The job now
+carries `if: github.event_name != 'schedule'` (+ a §11.23 comment), so it
+runs on every push/PR and on manual workflow_dispatch exactly as before
+and skips only the schedule event; windows-nightly's own `if:` keeps it
+schedule/dispatch-only. Job/step counts unchanged (ubuntu-gate 14,
+windows-nightly 12); no Dart/test files changed.
+Evidence: strict duplicate-key PyYAML re-parse clean with the job
+if-contracts asserted programmatically (ubuntu-gate 14 steps +
+`if: github.event_name != 'schedule'`; windows-nightly 12 steps +
+schedule/dispatch-only `if:`); all bash run blocks pass `bash -n` (the
+sole "failure" is the Windows-only §9.1 PowerShell block, per the §11.12
+precedent); `flutter analyze` → `No issues found! (ran in 2.2s)`;
+full `flutter test` → 642/642 pass (01:55, All tests passed! — no Dart
+changes).
+Previously (2026-10-24) §11.22 run: the ci.yaml coverage artifact
 upload step could redden the gate. §11.4's documented contract ("coverage
 can never redden the gate"; the coverage RUN step carries
 `continue-on-error: true`) was only half-implemented: the `if: always()`
@@ -2291,3 +2311,61 @@ suites referenced above now exist. Native Windows execution is tracked in
   typo in the §9.2 track row. The `dart format` gate (102/127-file churn,
   needs an explicit owner decision) remains open; coverage-artifact
   comparison still needs ≥2 CI runs.
+- 2026-10-24Z — CI-PROCESS §11.23: the nightly cron no longer re-runs the
+  redundant full ubuntu-gate. The audit log from the §11.22 run flagged this
+  as the top Linux-implementable candidate: `on:` in `.github/workflows/
+  ci.yaml` includes `schedule` (`0 6 * * *`) — an event created solely for
+  the §11.3 windows-nightly gate — but the ubuntu-gate job carried no
+  job-level `if:`, so GitHub fired BOTH jobs on every nightly cron: a full
+  Linux gate (analyze + test + build + smoke + integration + coverage,
+  ~15-20 min) re-ran every night with zero code changes to exercise,
+  wasting runner minutes and risking confusing red runs from nothing.
+  Fix: the job now carries `if: github.event_name != 'schedule'` (with a
+  §11.23 comment). ubuntu-gate still runs on every push to main, on every
+  PR, and on manual workflow_dispatch (event_name == 'workflow_dispatch' →
+  full CI, both jobs); only the schedule event is skipped, and
+  windows-nightly's own `if: github.event_name == 'schedule' || github.event_name
+  == 'workflow_dispatch'` is untouched, so the nightly Windows gate is
+  unchanged. Job/step counts unchanged (ubuntu-gate 14, windows-nightly
+  12); no Dart/test files changed.
+  Evidence: strict duplicate-key PyYAML re-parse clean via a node-level
+  duplicate-key scan (yaml.compose walk) with the job if-contracts asserted
+  in the same script (ubuntu-gate 14 steps + `if: github.event_name !=
+  'schedule'`, windows-nightly 12 steps + schedule/dispatch-only `if:`);
+  all 14 bash run blocks pass `bash -n` (the sole "failure" is the
+  Windows-only §9.1 PowerShell block, per the §11.12 precedent);
+  `flutter analyze` → `No issues found! (ran in 2.2s)`;
+  full `flutter test` → 642/642 pass (01:55, All tests passed! — no Dart
+  changes).
+  Push **BLOCKED** (same as every prior run since the credentials audit):
+  no GitHub credentials on this host (`git config --get credential.helper`
+  empty, no `gh`, no `~/.git-credentials`, no `~/.netrc`, no token in env);
+  `git ls-remote origin main` still shows e1749b3, so the local queue
+  (~61 commits through this run, including this §11.23 fix) remains
+  local-only. Re-run the push once credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials exist;
+  (b) trigger the §11.3 windows-nightly via `workflow_dispatch` (or wait for
+  the 06:00 UTC schedule) on the hosted `windows-latest` runner per the §13
+  decision + §11.3 checklist — the ONLY remaining functional gap
+  (§14.1-§14.2); or (c) re-check §2.6 on the next Flutter upgrade / when
+  `flutter/flutter#190903` lands. Remaining Linux-implementable audit
+  candidates (none P0/P1): CI P3 #2 — the `flutter test` +
+  `flutter test test/ui --coverage` pair could merge into one full-suite
+  `flutter test --coverage` (halves test execution; needs an explicit
+  decision because it changes the §11.4 lcov coverage semantics from
+  test/ui-only to full-suite); CI P3 #3 — `export LIBGL_ALWAYS_SOFTWARE=1`
+  next to `export DISPLAY=` at ci.yaml (the software-GL contract is
+  currently scoped to the Xvfb process only, not exported for the app under
+  test); code P2 trio — clock_seam_test.dart:29's absolute `year >= 2026`
+  wall-clock assertion (make deterministic), agent_config.dart:551
+  `resolveApiKey`'s silent `catch (_)` (log the secure-store read failure),
+  agent_setup_screen.dart:425-427 `_clearApiKey`'s silent `catch (_)`
+  (surface a SnackBar on delete failure, mirroring the write path at :392);
+  docs nits — "22 test/ui suites" → 23, §11.16 "24 steps/26 keys" →
+  26 steps/28 keys, FUTURE_WORK baseline "631/631" → "642/642" (or annotate
+  as historical), the dangling "docs/RUNBOOK.md 'Linux desktop'" heading ref
+  in FUTURE_WORK.md:346 + ci.yaml:97, the missing `--direct` alias in
+  download_stockfish `--help` Options, the `0xCAFABE` → `0xCAFEBABE` typo
+  in the §9.2 track row. The `dart format` gate (102/127-file churn, needs
+  an explicit owner decision) remains open; coverage-artifact comparison
+  still needs ≥2 CI runs.
