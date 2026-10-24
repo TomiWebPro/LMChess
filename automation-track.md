@@ -1,8 +1,28 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-24 (UTC) — §11.23 run: the nightly cron no longer
-re-runs a redundant full ubuntu-gate. `on:` carries a `schedule` (06:00
+Last updated: 2026-10-24 (UTC) — §11.24 run: the AgentSetupScreen "Clear
+stored key" action no longer silently swallows a secure-store delete
+failure (code-P2 #3 from the §11.22/§11.23 audit trail, the top
+Linux-implementable open candidate). `agent_setup_screen.dart`
+`_clearApiKey` cleared the UI state FIRST and let `catch (_)` swallow the
+delete error, so the screen switched to "No key stored" while the secret
+still existed in the store — the user is lied to, and a later Save with a
+new key orphans the old secret (overwritten under a NEW ref). The write
+path (`_save`) had always surfaced failures as a SnackBar, making Clear the
+lone silent swallow. The fix mirrors the save path: a failed `deleteApiKey`
+keeps the "stored" indicator + Clear action and shows `Could not clear the
+stored API key.`. A test-only seam was added — `AgentSetupScreen({...,
+keyStore})`, defaulting to the platform `SecureKeyStore` — so the failure
+path is exercised with a deterministic fake (no platform secure backend in
+widget tests); production default behavior is unchanged. The Clear path had
+ZERO coverage; three new tests pin it. Evidence: `flutter analyze` → `No
+issues found! (ran in 2.3s)`; `flutter test test/ui/agent_setup_test.dart`
+→ 32/32 pass (29 + 3 new); full `flutter test` → 645/645 pass (642 + 3
+new, 01:54, All tests passed!); the failure test was proven to FAIL against
+the old swallow logic (temporarily restored) and pass with the fix.
+Previously (2026-10-24) §11.23 run: the nightly cron no longer re-runs a
+redundant full ubuntu-gate. `on:` carries a `schedule` (06:00
 UTC) entry whose only purpose is the §11.3 windows-nightly gate, but
 ubuntu-gate carried no job-level `if:`, so every nightly cron fired BOTH
 jobs — a full Linux gate (analyze + test + build + smoke + integration +
@@ -2369,3 +2389,73 @@ suites referenced above now exist. Native Windows execution is tracked in
   in the §9.2 track row. The `dart format` gate (102/127-file churn, needs
   an explicit owner decision) remains open; coverage-artifact comparison
   still needs ≥2 CI runs.
+- 2026-10-24Z — CODE-P2 §11.24: AgentSetupScreen "Clear stored key" no longer
+  silently swallows a secure-store delete failure (closes code-P2 #3 from the
+  §11.22/§11.23 audit trail — the highest-value Linux-implementable open
+  candidate remaining; all FUTURE_WORK.md P0/P1 items are either DONE or
+  Windows/external-blocked per §9.1/§9.2/§11.3/§14/§2.6). `agent_setup_screen
+  .dart` `_clearApiKey` (was :414-428) cleared the UI state FIRST, then let
+  `catch (_)` swallow the `deleteApiKey` error: the screen flipped to "No key
+  stored" even when the secret was still in the store — a lie to the user,
+  and a later Save with a new key mints a NEW ref (writeApiKey under the new
+  ref), orphaning the old secret forever. The write path (`_save`, :389-400)
+  had always surfaced store failures as a SnackBar, so Clear was the lone
+  silent swallow in the key lifecycle. The fix mirrors the save path: the
+  delete runs first; on failure the stored indicator + Clear action are kept
+  and a SnackBar `Could not clear the stored API key.` is shown (empty
+  `catch (_)` removed — repo convention); on success (or when no ref exists,
+  i.e. only an unsaved typed key) the local state clears exactly as before.
+  Testability: the screen had a hard-coded `static const SecureKeyStore
+  _keyStore` with no seam, and the Clear path had ZERO tests (grep for
+  `delete_outline`/`Clear stored key` in the suite returned nothing). Added
+  `AgentSetupScreen({..., keyStore})` — an injectable secure-store seam
+  defaulting to the platform `SecureKeyStore` (production behavior unchanged;
+  the repo's §10.5/§10.6 constructor-seam convention) — and three new tests
+  in `test/ui/agent_setup_test.dart` using deterministic fake stores
+  (`_StoredKeyStore`, `_FailingDeleteKeyStore`) + an `agentListProvider`
+  override seeding an agent with `apiKeyRef`:
+  1. edit-mode stored key renders `lock_outline` + the Clear tooltip action;
+  2. successful Clear flips the indicator to `lock_open_outlined` and removes
+     the action (no SnackBar);
+  3. delete failure shows the SnackBar AND keeps `lock_outline` + the action
+     (the UI never claims "no key stored" while the secret exists).
+  Test-vs-fix correspondence proven empirically: with the OLD swallow logic
+  temporarily restored (seam kept), test 3 FAILS (no SnackBar, indicator
+  cleared); with the fix it passes.
+  Evidence: `flutter analyze` → `No issues found! (ran in 2.3s)` (zero
+  errors/warnings/infos); `flutter test test/ui/agent_setup_test.dart` →
+  32/32 pass (29 baseline + 3 new); full regression `flutter test` → 645/645
+  pass (642 baseline + 3 new, 01:54, All tests passed!). Files changed:
+  `lib/src/ui/screens/agent_setup_screen.dart`, `test/ui/agent_setup_test.dart`,
+  this track + `docs/FUTURE_WORK.md` (Last updated bumped; per the
+  open-items-only rule no new completed-work section).
+  Push **BLOCKED** (same as every prior run since the credentials audit):
+  no GitHub credentials on this host (`git config --get credential.helper`
+  empty, no `gh`, no `~/.git-credentials`, no `~/.netrc`, no token in env);
+  `git ls-remote origin main` still shows e1749b3, so the local queue (~62
+  commits through this run, including this §11.24 fix) remains local-only.
+  Re-run the push once credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials exist;
+  (b) trigger the §11.3 windows-nightly via `workflow_dispatch` (or wait for
+  the 06:00 UTC schedule) on the hosted `windows-latest` runner per the §13
+  decision + §11.3 checklist — the ONLY remaining functional gap
+  (§14.1-§14.2); or (c) re-check §2.6 on the next Flutter upgrade / when
+  `flutter/flutter#190903` lands. Remaining Linux-implementable audit
+  candidates (none P0/P1): code P2 #1 — clock_seam_test.dart:29's absolute
+  `now.year >= 2026` wall-clock assertion (make deterministic); code P2 #2 —
+  agent_config.dart:551 `resolveApiKey`'s silent `catch (_)` (log the
+  secure-store read failure so callers can distinguish "no key" from "store
+  failed"); CI P3 #2 — the `flutter test` + `flutter test test/ui --coverage`
+  pair could merge into one full-suite `flutter test --coverage` (halves test
+  execution; needs an explicit decision because it changes the §11.4 lcov
+  coverage semantics from test/ui-only to full-suite); CI P3 #3 — `export
+  LIBGL_ALWAYS_SOFTWARE=1` next to `export DISPLAY=` at ci.yaml (the
+  software-GL contract is currently scoped to the Xvfb process only, not
+  exported for the app under test); docs nits — "22 test/ui suites" → 23,
+  §11.16 "24 steps/26 keys" → 26 steps/28 keys, FUTURE_WORK baseline
+  "631/631" → "642/642" (or annotate as historical), the dangling
+  "docs/RUNBOOK.md 'Linux desktop'" heading ref in FUTURE_WORK.md:346 +
+  ci.yaml:97, the missing `--direct` alias in download_stockfish `--help`
+  Options, the `0xCAFABE` → `0xCAFEBABE` typo in the §9.2 track row. The
+  `dart format` gate (102/127-file churn, needs an explicit owner decision)
+  remains open; coverage-artifact comparison still needs ≥2 CI runs.

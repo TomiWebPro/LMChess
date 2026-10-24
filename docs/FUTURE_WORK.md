@@ -1,7 +1,31 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-24 (UTC) — §11.23: ubuntu-gate no longer runs on the
+Last updated: 2026-10-24 (UTC) — §11.24: the AgentSetupScreen "Clear stored
+key" action no longer silently swallows a secure-store delete failure. The
+repo convention (deterministic fakes, no empty catch) was broken at
+`agent_setup_screen.dart` `_clearApiKey`: on a secure-store delete error the
+old code cleared the UI state FIRST and let `catch (_)` swallow the failure,
+so the screen switched to "No key stored" while the secret still existed in
+the store — the user is lied to, and a later Save with a new key orphans the
+old secret (it is overwritten under a NEW ref). The write path (`_save`) had
+always surfaced the failure as a SnackBar, so Clear was the lone silent
+swallow. The fix mirrors the save path: a failed `deleteApiKey` keeps the
+"stored" indicator + Clear action and shows
+`Could not clear the stored API key.`; the UI can no longer claim the key is
+gone while the store still holds it. A test-only seam was added —
+`AgentSetupScreen({..., keyStore})` (defaults to the platform
+`SecureKeyStore`) — so the failure path is exercised with a deterministic
+fake (no platform secure backend in widget tests). The Clear path previously
+had ZERO test coverage; three new tests pin it (stored-key edit rendering,
+success clears + indicator flips, failure shows SnackBar + keeps the
+indicator; the failure test was proven to fail against the old swallow
+logic). Evidence: `flutter analyze` → `No issues found! (ran in 2.3s)`;
+`flutter test test/ui/agent_setup_test.dart` → 32/32 pass (29 + 3 new); full
+`flutter test` → 645/645 pass (642 + 3 new, 01:54, All tests passed!).
+Recorded in `automation-track.md` (Run Log); per the open-items-only rule
+this file gains no new completed-work section.
+Previously (2026-10-24) §11.23: ubuntu-gate no longer runs on the
 nightly schedule. The `schedule` event in `on:` exists solely for the §11.3
 windows-nightly gate, but ubuntu-gate carried no job-level `if:`, so every
 nightly cron redundantly re-ran the FULL Linux gate (~15-20 min) with zero

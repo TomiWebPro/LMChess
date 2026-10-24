@@ -11,12 +11,16 @@
 /// **API keys**: the secret is written to [SecureKeyStore] under an opaque
 /// [AgentConfig.apiKeyRef] and is never displayed again, logged, or stored in
 /// the catalog. A masked "stored" indicator + a Clear action call
-/// [SecureKeyStore.deleteApiKey]. **Test connection** resolves the key
-/// (including a just-typed, not-yet-saved one) and probes the real provider
-/// endpoint via [testAgentConnection] — no simulated latency.
+/// [SecureKeyStore.deleteApiKey]. A failed Clear (secure-store delete error)
+/// keeps the stored indicator and surfaces a SnackBar, mirroring the save
+/// path — the UI never claims "no key stored" while a secret still exists in
+/// the store. **Test connection** resolves the key (including a just-typed,
+/// not-yet-saved one) and probes the real provider endpoint via
+/// [testAgentConnection] — no simulated latency.
 ///
 /// Construct with [agentId] to edit, or `null` to create (a uuid is minted
-/// on save).
+/// on save). Pass [keyStore] to inject a deterministic store in tests
+/// (defaults to the platform-backed [SecureKeyStore]).
 library;
 
 import 'package:flutter/material.dart';
@@ -39,18 +43,24 @@ const List<String> kAgentProviders = <String>[
 /// Create/edit form for one agent configuration.
 class AgentSetupScreen extends ConsumerStatefulWidget {
   /// Creates the setup screen; [agentId] `null` means "create new".
-  const AgentSetupScreen({super.key, this.agentId});
+  const AgentSetupScreen({super.key, this.agentId, this.keyStore});
 
   /// Id of the agent to edit, or `null` to create one.
   final String? agentId;
+
+  /// Injectable secure-key-store seam. `null` resolves to the platform
+  /// [SecureKeyStore]; tests override it with a deterministic fake so a
+  /// store failure can be exercised without a platform secure backend.
+  final SecureKeyStore? keyStore;
 
   @override
   ConsumerState<AgentSetupScreen> createState() => _AgentSetupScreenState();
 }
 
 class _AgentSetupScreenState extends ConsumerState<AgentSetupScreen> {
-  /// Shared secure-storage handle (`const`-constructible).
-  static const SecureKeyStore _keyStore = SecureKeyStore();
+  /// Secure-storage handle: the injected seam, or the platform-backed
+  /// [SecureKeyStore] (`const`-constructible).
+  late final SecureKeyStore _keyStore;
 
   late final TextEditingController _name;
   late final TextEditingController _model;
@@ -91,6 +101,7 @@ class _AgentSetupScreenState extends ConsumerState<AgentSetupScreen> {
   @override
   void initState() {
     super.initState();
+    _keyStore = widget.keyStore ?? const SecureKeyStore();
     _tester = ref.read(connectionTesterProvider);
     final existing = ref.read(agentListProvider).byId(widget.agentId);
     _name = TextEditingController(text: existing?.name ?? '');
@@ -410,21 +421,41 @@ class _AgentSetupScreenState extends ConsumerState<AgentSetupScreen> {
     }
   }
 
-  /// Deletes the stored secret (immediately) and clears the local indicator.
+  /// Deletes the stored secret and clears the local indicator.
+  ///
+  /// On a secure-store delete failure the local state is NOT cleared: the
+  /// indicator keeps showing "stored" and a SnackBar mirrors the save path,
+  /// so the UI can never claim the key is gone while the secret still exists
+  /// in the store (which would also orphan it on a later save).
   Future<void> _clearApiKey() async {
     final ref0 = _apiKeyRef;
+    if (ref0 == null) {
+      setState(() {
+        _apiKey.clear();
+        _apiKeyRef = null;
+        _hasStoredKey = false;
+        _testResult = null;
+      });
+      return;
+    }
+    try {
+      await _keyStore.deleteApiKey(ref0);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not clear the stored API key.'),
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
     setState(() {
       _apiKey.clear();
       _apiKeyRef = null;
       _hasStoredKey = false;
       _testResult = null;
     });
-    if (ref0 == null) return;
-    try {
-      await _keyStore.deleteApiKey(ref0);
-    } catch (_) {
-      // Best-effort: the local state is already cleared.
-    }
   }
 
   /// Real connectivity probe: resolves the key and pings the provider

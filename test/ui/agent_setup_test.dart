@@ -9,10 +9,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:llm_chess_arena/src/storage/secure_key_store.dart'
+    show SecureKeyStore;
 import 'package:llm_chess_arena/src/ui/backend_bridge.dart'
     show connectionTesterProvider;
 import 'package:llm_chess_arena/src/ui/screens/agent_setup_screen.dart'
     show AgentSetupScreen, kAgentProviders;
+import 'package:llm_chess_arena/src/ui/ui_models.dart'
+    show AgentConfig, AgentListStore, agentListProvider;
 import '../support/arena_test_harness.dart' as harness;
 import '../support/semantics_invariants.dart'
     show expectSemanticsTreeInvariants;
@@ -29,11 +33,49 @@ List<Override> _defaultOverrides() => <Override>[
       ),
     ];
 
+/// Deterministic fake store: a secret exists for every ref and deletes
+/// succeed. Lets the screen render the "stored key" indicator (edit mode
+/// with [AgentConfig.apiKeyRef]) without a platform secure backend.
+class _StoredKeyStore extends SecureKeyStore {
+  const _StoredKeyStore();
+
+  @override
+  Future<String?> readApiKey(String ref) async => 'sk-deterministic';
+
+  @override
+  Future<void> deleteApiKey(String ref) async {}
+
+  @override
+  Future<void> writeApiKey(String ref, String secret) async {}
+}
+
+/// Deterministic fake store whose delete fails, pinning the Clear-action
+/// failure path (secure-store backend error, not a missing secret).
+class _FailingDeleteKeyStore extends _StoredKeyStore {
+  const _FailingDeleteKeyStore();
+
+  @override
+  Future<void> deleteApiKey(String ref) async {
+    throw Exception('simulated secure-store delete failure');
+  }
+}
+
+/// An [AgentListStore] with exactly one agent carrying an [apiKeyRef].
+AgentListStore _storeWithStoredKey() => AgentListStore(seedDemos: false)
+  ..upsertAgent(AgentConfig(
+    id: 'edit-id',
+    name: 'Edit Me',
+    provider: 'openai',
+    model: 'gpt-4o',
+    apiKeyRef: 'ref-1',
+  ));
+
 Future<void> _pumpSetup(
   WidgetTester tester, {
   Size? size,
   List<Override>? overrides,
   String? agentId, // null = create mode, non-null = edit mode
+  SecureKeyStore? keyStore, // injected secure-store seam (default: platform)
 }) async {
   final s = size ?? const Size(1400, 1000);
   tester.view.physicalSize = s;
@@ -44,7 +86,11 @@ Future<void> _pumpSetup(
       home: Scaffold(
         body: ProviderScope(
           overrides: overrides ?? _defaultOverrides(),
-          child: AgentSetupScreen(key: const ValueKey('agent-setup'), agentId: agentId),
+          child: AgentSetupScreen(
+            key: const ValueKey('agent-setup'),
+            agentId: agentId,
+            keyStore: keyStore,
+          ),
         ),
       ),
     ),
@@ -221,6 +267,92 @@ void main() {
       await _pumpSetup(tester, agentId: null);
       // With no pre-stored key, the indicator shows lock_open_outlined
       expect(find.byIcon(Icons.lock_open_outlined), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  // --- Clear stored key ----------------------------------------------------
+
+  group('clear stored key (§6.10)', () {
+    testWidgets(
+        'stored key in edit mode shows locked indicator + Clear action',
+        (tester) async {
+      await _pumpSetup(
+        tester,
+        agentId: 'edit-id',
+        overrides: <Override>[
+          ...harness.fakeOverrides(),
+          agentListProvider.overrideWith((ref) => _storeWithStoredKey()),
+          connectionTesterProvider.overrideWithValue(
+              (_, {inlineSecret}) async => true),
+        ],
+        keyStore: const _StoredKeyStore(),
+      );
+      await tester.pump();
+      expect(find.byIcon(Icons.lock_outline), findsOneWidget);
+      expect(find.byTooltip('Clear stored key'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets(
+        'Clear deletes the secret: success hides the stored indicator',
+        (tester) async {
+      await _pumpSetup(
+        tester,
+        agentId: 'edit-id',
+        overrides: <Override>[
+          ...harness.fakeOverrides(),
+          agentListProvider.overrideWith((ref) => _storeWithStoredKey()),
+          connectionTesterProvider.overrideWithValue(
+              (_, {inlineSecret}) async => true),
+        ],
+        keyStore: const _StoredKeyStore(),
+      );
+      await tester.pump();
+      expect(find.byIcon(Icons.lock_outline), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Clear stored key'));
+      await tester.pump();
+
+      // Delete succeeded -> indicator flips to "no key stored" and the
+      // Clear action disappears. No SnackBar is shown on the happy path.
+      expect(find.byIcon(Icons.lock_open_outlined), findsOneWidget);
+      expect(find.byTooltip('Clear stored key'), findsNothing);
+      expect(find.text('Could not clear the stored API key.'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets(
+        'Clear delete failure: SnackBar shown, stored indicator kept '
+        '(no silent swallow)', (tester) async {
+      await _pumpSetup(
+        tester,
+        agentId: 'edit-id',
+        overrides: <Override>[
+          ...harness.fakeOverrides(),
+          agentListProvider.overrideWith((ref) => _storeWithStoredKey()),
+          connectionTesterProvider.overrideWithValue(
+              (_, {inlineSecret}) async => true),
+        ],
+        keyStore: const _FailingDeleteKeyStore(),
+      );
+      await tester.pump();
+      expect(find.byIcon(Icons.lock_outline), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Clear stored key'));
+      await tester.pump();
+      await tester.pump();
+
+      // The failure is surfaced exactly like the save path, and the UI
+      // never claims the key is gone while the secret is still stored.
+      expect(find.text('Could not clear the stored API key.'),
+          findsOneWidget);
+      expect(find.byIcon(Icons.lock_outline), findsOneWidget);
+      expect(find.byTooltip('Clear stored key'), findsOneWidget);
+
+      // Drain the SnackBar's auto-dismiss timer before the test ends.
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pump();
       expect(tester.takeException(), isNull);
     });
   });
