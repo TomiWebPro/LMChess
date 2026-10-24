@@ -48,9 +48,9 @@ linux-x86-64` → `OK present`. Files changed: `tool/download_stockfish.dart`,
 `docs/FUTURE_WORK.md` (header recap + Last updated bumped; §11.39
 added + closed as DONE in the same run; per the open-items-only rule
 no new completed-work section — the open-item set is unchanged).
-Commit: <recorded in the follow-up track commit per the
+Commit: 6ad4826 (recorded in a follow-up track commit per the
 §11.38/§11.37 precedent — the run's own commit first, then a
-`docs(lmchess): record §11.39 commit hash in track` follow-up>. Push
+`docs(lmchess): record §11.39 commit hash in track` follow-up). Push
 **BLOCKED** (same as every prior run since the credentials audit): no
 GitHub credentials on this host — re-confirmed this run with `git
 config --get credential.helper` (empty), no `gh` CLI, no SSH keys for
@@ -3945,9 +3945,9 @@ suites referenced above now exist. Native Windows execution is tracked in
   `test/download_stockfish_test.dart`, `docs/FUTURE_WORK.md`,
   `automation-track.md` modified (the engine binary stays untracked/
   gitignored).
-  Commit: <recorded in the follow-up track commit per the
+  Commit: 6ad4826 (recorded in a follow-up track commit per the
   §11.38/§11.37 precedent — the run's own commit first, then a
-  `docs(lmchess): record §11.39 commit hash in track` follow-up>.
+  `docs(lmchess): record §11.39 commit hash in track` follow-up).
   Push **BLOCKED** (same as every prior run since the credentials
   audit): no GitHub credentials on this host — re-confirmed this run
   (`git config --get credential.helper` empty, no `gh`, no
