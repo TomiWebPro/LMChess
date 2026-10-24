@@ -1853,6 +1853,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   (re-downloaded: cached archive was corrupt)` with the full archive restored
   and size/sha256/file/uciok re-verified. `git status --short` confirms only
   the tool + new test + the two track docs changed.
+  Commit: 1a46713.
   Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
   host — re-audited this run (`git config --get credential.helper` empty, no
   `gh`, no SSH key, no `~/.git-credentials`, no `~/.netrc`, no token in env;
