@@ -2247,7 +2247,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   undocumented `--direct` alias in download_stockfish --help, and a
   `0xCAFABE` vs `0xCAFEBABE` seed typo in the §9.2 ps1 track row — logged
   below).
-  Commit: (recorded in a follow-up track commit per
+  Commit: ebcd184 (recorded in a follow-up track commit per
   the §13 precedent).
   Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
   host — re-audited this run (`git config --get credential.helper` empty,
