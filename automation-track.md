@@ -3624,7 +3624,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   coverage-artifact comparison still needs ≥2 real CI runs (and CI
   itself cannot run while push is blocked); the 92-commit local
   queue still cannot be pushed.
-  Commit: TBD (recorded in a follow-up track commit per precedent).
+  Commit: 09c3045 (recorded in a follow-up track commit per precedent).
   Push **BLOCKED** (same as every prior run since the credentials
   audit): no GitHub credentials on this host (`git config --get
   credential.helper` empty, no `gh`, no `~/.git-credentials`, no
