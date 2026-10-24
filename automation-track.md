@@ -1,7 +1,52 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-24 (UTC) — §11.37 (no-actionable-item
+Last updated: 2026-10-24 (UTC) — §11.38 (Windows-gate exit-code
+honesty fix). A fresh independent parallel subagent audit (full
+FUTURE_WORK.md open-item inventory incl. every "Done when" string; an
+end-to-end ci.yaml defect audit; a lib/test convention + marker audit)
+again confirms ZERO FUTURE_WORK.md open items are implementable-and-
+verifiable on this Linux host (§9.1/§9.2/§11.3/§14.1-§14.2 remain
+Windows-native-blocked; §2.6 remains upstream-external — live-checked
+this run via the GitHub API: flutter/flutter#190903 still `merged:
+false`, updated 2026-10-21; the `dart format` gate remains
+owner-decision-pending; coverage-artifact comparison still needs ≥2 real
+CI runs; the local queue is now 96 unpushed commits — no GitHub
+credentials on this host). The ci.yaml audit DID surface one new,
+Linux-verifiable P2 gate-honesty defect, closed as this run's ONE
+deliverable: both windows-nightly gate steps (the §9.1 integration step
+and the §9.2 UIA smoke step) ended `Exit $LASTEXITCODE`, and when the
+gated native command never launched, `$LASTEXITCODE` stayed `$null` —
+`$null -ne 0` is true so the `::error::` line printed, but `Exit $null`
+returns 0 in PowerShell 7: a silent false green exactly where the gate
+must be most honest (the integration step explicitly sets
+`$ErrorActionPreference = "Continue"`, so its never-launched case
+degraded to exit 0). Both steps now guard `if ($null -eq
+$LASTEXITCODE) { ... Exit 1 }` before the existing check — "no exit
+code recorded" is a hard gate failure; every healthy path is unchanged.
+Proven empirically under real PowerShell 7.6.8 (~/sdk/pwsh, the §11.32
+toolchain): OLD cmd-not-found → `::error::exit code ` + Exit $null → 0
+(false green); NEW cmd-not-found → `never launched (no exit code
+recorded)` + exit 1; child exit 7 → exit 7 byte-identical OLD/NEW; child
+exit 0 → green 0 byte-identical OLD/NEW; the FULL edited blocks run
+verbatim against the failure/success classes with the same results (the
+smoke block's own pre-flight Test-Path guard satisfied with a dummy exe;
+a run of the ACTUAL smoke block on Linux with `powershell` genuinely
+missing also hit the new guard → exit 1). Evidence: `flutter analyze` →
+`No issues found! (ran in 2.2s)`; full `flutter test` → 666/666 pass
+(01:55, All tests passed! — no Dart changes); strict duplicate-key
+PyYAML re-parse clean (ubuntu-gate 13 + windows-nightly 12 steps; 27
+timeout-minutes keys; both job if-contracts unchanged); all 7
+windows-nightly PowerShell blocks parse with 0 errors under real
+PowerShell 7.6.8 (Parser.ParseInput + scriptblock::Create), including
+both edited steps; all 13 bash run blocks pass `bash -n`. Files
+changed: `.github/workflows/ci.yaml`, this track +
+`docs/FUTURE_WORK.md` (header recap + Last updated bumped; per the
+open-items-only rule no new completed-work section — the open-item set
+is unchanged). Next: re-push the queued local commits once GitHub
+credentials exist; trigger the §11.3 windows-nightly on hosted
+`windows-latest`; or re-check §2.6 when `flutter/flutter#190903` lands.
+Previously (2026-10-24) — §11.37 run (no-actionable-item
 run, terminal branch). Independent parallel subagent audits (full
 FUTURE_WORK.md open-item inventory incl. every "Done when" string, plus a
 markers/unused-code/tool-reference audit across lib/, test/, tool/,

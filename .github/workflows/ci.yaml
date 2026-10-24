@@ -436,6 +436,15 @@ jobs:
           Write-Host $result
           # Fail the job on ANY non-zero exit — a red §9.1 integration test
           # must gate the release, not just the smoke crash path (§11.3).
+          # A $null $LASTEXITCODE means the native command never launched
+          # (e.g. command-not-found under the deliberately loose
+          # $ErrorActionPreference above): Exit $null returns 0 in
+          # PowerShell 7 — a silent false green — so treat "no exit code"
+          # as a hard gate failure (§11.38).
+          if ($null -eq $LASTEXITCODE) {
+            Write-Host "::error::Windows integration test never launched (no exit code recorded)"
+            Exit 1
+          }
           if ($LASTEXITCODE -ne 0) {
             Write-Host "::error::Windows integration test failed with exit code $LASTEXITCODE"
             Exit $LASTEXITCODE
@@ -500,7 +509,14 @@ jobs:
 
           # Fail the job on ANY non-zero exit — 0=pass, 1=exe/app failure,
           # 2=crash detected in Event Viewer (§9.2). A silent smoke step
-          # must never green-light a broken native gate (§11.3).
+          # must never green-light a broken native gate (§11.3). A $null
+          # $LASTEXITCODE means the child powershell never launched: Exit
+          # $null returns 0 in PowerShell 7 — a silent false green — so
+          # treat "no exit code" as a hard gate failure (§11.38).
+          if ($null -eq $LASTEXITCODE) {
+            Write-Host "::error::UIA smoke never launched (no exit code recorded)"
+            Exit 1
+          }
           if ($LASTEXITCODE -ne 0) {
             Write-Host "::error::UIA smoke failed with exit code $LASTEXITCODE"
             Exit $LASTEXITCODE

@@ -1,7 +1,43 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-24 (UTC) — §11.36 docs/baseline accuracy run on the
+Last updated: 2026-10-24 (UTC) — §11.38 (Windows-gate exit-code
+honesty fix). A fresh independent parallel subagent audit (full
+FUTURE_WORK.md open-item inventory incl. every "Done when" string; an
+end-to-end ci.yaml defect audit; a lib/test convention + marker audit)
+again confirmed ZERO FUTURE_WORK.md open items implementable-and-
+verifiable on this Linux host (§9.1/§9.2/§11.3/§14.1-§14.2 Windows-
+native-blocked, §2.6 upstream-external — live-checked this run via the
+GitHub API: flutter/flutter#190903 still `merged: false` — the `dart
+format` gate owner-decision-pending, coverage-artifact comparison still
+needing ≥2 real CI runs, and the ~96-commit local queue still unpushable
+— no GitHub credentials on this host) and NO P0 (crash) or P1
+(correctness) code or workflow-file defects. The ci.yaml audit DID
+surface one new, Linux-verifiable P2 gate-honesty defect, closed as this
+run's ONE deliverable: both windows-nightly gate steps (the §9.1
+integration step and the §9.2 UIA smoke step) ended `Exit
+$LASTEXITCODE`, and a never-launched gated command left `$LASTEXITCODE`
+at `$null` — `$null -ne 0` printed the `::error::` line but `Exit $null`
+returns 0 in PowerShell 7, a silent false green (the integration step
+explicitly sets `$ErrorActionPreference = "Continue"`, so its
+never-launched case degraded to exit 0). Both steps now guard
+`if ($null -eq $LASTEXITCODE) { ... Exit 1 }` before the existing
+check — "no exit code recorded" is a hard gate failure; healthy paths
+byte-identical (proven under real PowerShell 7.6.8: cmd-not-found →
+exit 1 [was 0]; child exit 7 → exit 7 OLD/NEW; child exit 0 → green 0
+OLD/NEW; full edited blocks run verbatim against both classes).
+Evidence: `flutter analyze` → `No issues found! (ran in 2.2s)`; full
+`flutter test` → 666/666 pass (01:55, All tests passed! — no Dart
+changes); strict duplicate-key PyYAML re-parse clean (ubuntu-gate 13 +
+windows-nightly 12 steps; 27 timeout-minutes keys); all 7
+windows-nightly PowerShell blocks parse with 0 errors under real
+PowerShell 7.6.8; all 13 bash blocks pass `bash -n`. Recorded in
+`automation-track.md` (Run Log); per the open-items-only rule this file
+gains no new completed-work section — no open FUTURE_WORK item was
+touched (§9.1/§9.2/§11.3/§14 remain Windows-blocked, §2.6
+upstream-external; the `dart format` gate and the coverage-artifact
+comparison still await their owner decisions / ≥2 real CI runs).
+Previously (2026-10-24) — §11.36 docs/baseline accuracy run on the
 terminal branch: an independent parallel subagent audit (full
 FUTURE_WORK.md open-item inventory + end-to-end ci.yaml defect audit)
 confirmed ZERO FUTURE_WORK.md open items implementable-and-verifiable on
