@@ -1,7 +1,26 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-24 (UTC) — §11.28 run: the remaining docs-nits
+Last updated: 2026-10-24 (UTC) — §11.29 run: NO ACTIONABLE ITEM —
+hourly terminal branch. An independent parallel subagent audit (full
+FUTURE_WORK.md section inventory, automation-track.md tail
+"Next:"/candidate clauses, marker grep across lib/test/tool/
+integration_test/.github, docs/ roadmap scan) CONFIRMS no open
+FUTURE_WORK.md item is implementable-and-verifiable on this Linux host:
+§9.1/§9.2/§11.3/§14.1-§14.2 are Windows-native; §2.6 is
+upstream-external (local SDK 3.47.6, flutter/flutter#190903 unmerged);
+CI P3 #2 (the `flutter test` + `test/ui --coverage` merge) stays open
+pending the explicit §11.4-owner decision the audit recorded; the
+`dart format` gate (102/127-file churn) stays open pending an explicit
+owner decision; coverage-artifact comparison needs ≥2 real CI runs
+(impossible without push); and the 75-commit local queue still cannot be
+pushed (no GitHub credentials on this host). Zero code/test/workflow
+changes this run — pure baseline re-verification: `flutter analyze` →
+`No issues found!`; full `flutter test` → 651/651 pass (02:06, All tests
+passed!); `git rev-list --count origin/main..HEAD` → 75. Recorded in the
+Run Log below; per the open-items-only rule no FUTURE_WORK item was
+touched (and no completed-work note was added).
+Previously (2026-10-24) §11.28 run: the remaining docs-nits
 batch from the §11.22/§11.23 audit trail is closed (CI P3 #2 — the
 `flutter test` + `test/ui --coverage` merge — stays open pending the
 explicit §11.4-owner decision the audit recorded; nothing left on this
@@ -2853,6 +2872,61 @@ suites referenced above now exist. Native Windows execution is tracked in
   env); `git ls-remote origin main` still shows e1749b3, so the local
   queue (~71 commits through this run, including this §11.28 pass)
   remains local-only. Re-run the push once credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials
+  exist; (b) trigger the §11.3 windows-nightly via `workflow_dispatch`
+  (or wait for the 06:00 UTC schedule) on the hosted `windows-latest`
+  runner per the §13 decision + §11.3 checklist — the ONLY remaining
+  functional gap (§14.1-§14.2); or (c) re-check §2.6 on the next Flutter
+  upgrade / when `flutter/flutter#190903` lands. CI P3 #2 (coverage
+  merge) stays open pending the §11.4-owner decision; the `dart format`
+  gate (102/127-file churn, needs an explicit owner decision) remains
+  open; coverage-artifact comparison still needs ≥2 CI runs.
+- 2026-10-24Z — NO-ACTIONABLE-ITEM §11.29: the hourly terminal branch —
+  no open `docs/FUTURE_WORK.md` item is implementable-and-verifiable on
+  this Linux host. Method: instead of guessing, an independent parallel
+  subagent audit ran a full FUTURE_WORK.md section inventory (`^#{1,4}`
+  grep, every section read), the automation-track.md tail (last 3
+  run-log entries' "Next:"/candidate clauses), a marker grep
+  (TODO/FIXME/HACK/XXX/`open`/`remaining` across lib/ test/ tool/
+  integration_test/ .github/ — zero real unfinished-work markers; the
+  only skips are the intentional e2e engine self-gate at
+  test/e2e_smoke_test.dart:126-137), and a docs/ roadmap scan (RUNBOOK,
+  ENGINE_RUNTIME, SERVER_ROADMAP, CHESS_ENGINE, VARIANT, ARCHITECTURE).
+  Verdict: (a) CONFIRMED — every open item falls in the already-logged
+  blocked/external/owner-decision set. §9.1/§9.2/§11.3/§14.1-§14.2 are
+  Windows-native (log as blocked); §2.6 is upstream-external (local SDK
+  Flutter 3.47.6, flutter/flutter#190903 still unmerged — the RUNBOOK
+  upgrade gate is the sanctioned re-check point); CI P3 #2 (the
+  `flutter test` + `test/ui --coverage` pair → one full-suite
+  `flutter test --coverage`, halves test execution) stays open pending
+  the explicit §11.4-owner decision the §11.22/§11.23 audit recorded
+  (it changes lcov coverage semantics from test/ui-only to full-suite);
+  the `dart format` gate (102/127-file churn) stays open pending an
+  explicit owner decision; coverage-artifact comparison needs ≥2 real CI
+  runs (no push creds → no runs); and the 75-commit local queue cannot
+  be pushed. The audit's only additional unchecked items were
+  ENGINE_RUNTIME.md:144-146/210-212 GPLv3 source-offer checkboxes
+  (release-gated, no release exists) and backend/SERVER_ROADMAP.md
+  (deferred by decision, ARCHITECTURE.md:49-52) — both correctly not
+  open items. Zero code/test/workflow changes this run.
+  Evidence: `flutter analyze` → `No issues found! (ran in 2.3s)` (zero
+  errors/warnings/infos); full regression `flutter test` → 651/651 pass
+  (02:06, All tests passed!); `git rev-list --count origin/main..HEAD` →
+  75; working tree clean before edits (`git status --short` empty).
+  Files changed: this track (header + this Run Log entry) and
+  `docs/FUTURE_WORK.md` (Last updated bumped; per the open-items-only
+  rule no new completed-work section — no open FUTURE_WORK item was
+  touched, §9.1/§9.2/§11.3/§14 remain Windows-blocked, §2.6
+  upstream-external).
+  Commit: <hash> (recorded in a follow-up track commit per the §13
+  precedent).
+  Push **BLOCKED** (same as every prior run since the credentials audit):
+  no GitHub credentials on this host (`git config --get credential.helper`
+  empty, no `gh`, no `~/.git-credentials`, no `~/.netrc`, no token in
+  env; `git push origin main` → `fatal: could not read Username for
+  'https://github.com'`); `git ls-remote origin main` still shows
+  e1749b3, so the local queue (76 commits through this run) remains
+  local-only. Re-run the push once credentials are provisioned.
   Next: (a) re-push the queued local commits once GitHub credentials
   exist; (b) trigger the §11.3 windows-nightly via `workflow_dispatch`
   (or wait for the 06:00 UTC schedule) on the hosted `windows-latest`

@@ -1,7 +1,28 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-24 (UTC) — §11.28: the remaining docs-nits
+Last updated: 2026-10-24 (UTC) — §11.29: hourly NO-ACTIONABLE-ITEM
+run (terminal branch). An independent parallel subagent audit (full
+section inventory, track "Next:" clauses, marker grep across
+lib/test/tool/integration_test/.github, docs/ roadmap scan) confirms
+no open item here is implementable-and-verifiable on this Linux host:
+§9.1/§9.2/§11.3/§14.1-§14.2 are Windows-native; §2.6 is
+upstream-external (local SDK 3.47.6, flutter/flutter#190903 unmerged);
+CI P3 #2 (coverage merge) stays open pending the explicit §11.4-owner
+decision; the `dart format` gate stays open pending an explicit owner
+decision; coverage-artifact comparison needs ≥2 real CI runs; the
+75-commit local queue cannot be pushed (no GitHub credentials on this
+host). Zero code/test/workflow changes — baseline re-verified only:
+`flutter analyze` → `No issues found!`; full `flutter test` → 651/651
+pass (02:06). No open item was touched, so per the open-items-only rule
+this file gains no new completed-work section. Recorded in
+`automation-track.md` (Run Log). Next: re-push once credentials exist;
+trigger the §11.3 windows-nightly (`workflow_dispatch` or the 06:00 UTC
+schedule) on hosted `windows-latest` per the §13 decision + §11.3
+checklist — the ONLY remaining functional gap (§14.1-§14.2); or
+re-check §2.6 on the next Flutter upgrade / when `flutter/flutter#190903`
+lands.
+Previously (2026-10-24) §11.28: the remaining docs-nits
 batch from the §11.22/§11.23 audit trail is closed (CI P3 #2 — the
 `flutter test` + `test/ui --coverage` merge — stays open pending the
 explicit §11.4-owner decision the audit recorded; nothing left on this
