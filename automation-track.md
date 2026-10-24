@@ -3024,7 +3024,8 @@ suites referenced above now exist. Native Windows execution is tracked in
   bumped; §11.3's in-progress "Process fixes shipped" list gained the
   §11.30 bullet in place; per the open-items-only rule no new
   completed-work section — §11.3 itself stays open as Windows-awaiting).
-  Commit: recorded in a follow-up track commit per the §13 precedent.
+  Commit: e9886c8 (recorded in a follow-up track commit per the §13
+  precedent).
   Push **BLOCKED** (same as every prior run since the credentials audit):
   no GitHub credentials on this host (`git config --get credential.helper`
   empty, no `gh`, no `~/.git-credentials`, no `~/.netrc`, no token in
