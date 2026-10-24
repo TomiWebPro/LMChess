@@ -1,7 +1,51 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-24 (UTC) — §11.32 run: the §9.2 UIA-smoke step's
+Last updated: 2026-10-24 (UTC) — §11.33 run: §11.16's
+maintained-in-place timeout-minutes contract is reconciled with the
+current workflow after the §11.31 CI P3 #2 merge. A fresh four-way
+parallel subagent audit (full FUTURE_WORK.md open-item inventory;
+end-to-end ci.yaml defect audit; lib/+test/ convention audit; §15
+completeness verification) found ZERO open FUTURE_WORK.md items
+implementable-and-verifiable on this Linux host (§9.1/§9.2/§11.3/§14
+Windows-native-blocked, §2.6 upstream-external, `dart format` gate
+needs-owner-decision, coverage comparison needs-CI-runs, push queue
+needs-credentials) and NO P0 (crash) or P1 (correctness) code or
+workflow defects — §15 chessboard is genuinely shipped (81 tests across
+4 suites: chessboard_drag 15, board_motion 16, scrub_shortcuts 20,
+premove 30). The one real P1 finding was doc-contract drift: the live
+§11.16 section still asserted the pre-merge state — "all 26 steps", "all
+28 `timeout-minutes` keys (26 steps + 2 jobs)", a separate "coverage 30"
+bound, and a bullet promising "the coverage step keeps
+`continue-on-error: true`" about a step that no longer exists — while
+the §11.31 merge absorbed the coverage RUN step into the gating Test
+step (ubuntu-gate 14 → 13), and the §11.17 header recap's "26 steps (…
+coverage 30 …)" parenthetical carried the same stale count. The workflow
+now has ubuntu-gate 13 + windows-nightly 12 = 25 steps and 25 + 2 jobs
+= 27 timeout-minutes keys, re-measured this run with the strict
+duplicate-key PyYAML loader (25/25 steps carry exactly one
+`timeout-minutes:` key). §11.16 and the §11.17 recap are fixed in place
+(per the §11.28 precedent for maintained counts): the step list drops
+the phantom "coverage 30" entry (coverage collection is bounded by the
+merged Test step's `timeout-minutes: 30`), the continue-on-error bullet
+now states the true post-merge contract (the §11.4 "coverage never
+reddens the gate" property holds at the ARTIFACT level only via the
+§11.22 upload step's `continue-on-error: true` + `if-no-files-found:
+warn`; a coverage-collection failure with all tests green is the
+documented accepted residual of the merge), and the evidence block and
+the §11.17 recap parenthetical are updated (25 steps; the two `bash -n`
+"failures" are the Windows-only §9.1/§9.2 PowerShell blocks, per the
+§11.12 precedent). Pure docs-contract correction — zero Dart, test, or
+workflow-file changes. Evidence: `flutter analyze` → `No issues found!
+(ran in 2.1s)`; full `flutter test` → 651/651 pass (01:54, All tests
+passed!); strict duplicate-key PyYAML re-parse clean (ubuntu-gate 13 +
+windows-nightly 12 steps; 27 timeout-minutes keys = 25 steps + 2 job
+bounds, exactly one per step/job); all 3 bash run blocks pass `bash -n`
+(the 2 "failures" are the Windows-only §9.1/§9.2 PowerShell blocks, per
+the §11.12 precedent). Recorded in the Run Log below; FUTURE_WORK.md's
+header recap + Last updated bumped (§11.33), per the open-items-only
+rule no new completed-work section.
+Previously (2026-10-24) — §11.32 run: the §9.2 UIA-smoke step's
 Event Viewer excerpt export no longer aborts on the no-matching-events
 failure class. On the §9.2 NON-crash failure class (e.g. control count
 < 40, uninvocable controls — no 0xC0000005) no fresh Application-log
@@ -3252,3 +3296,75 @@ suites referenced above now exist. Native Windows execution is tracked in
   owner decision) remains open; coverage-artifact comparison still
   needs ≥2 real CI runs; the ~80-commit local queue still cannot be
   pushed.
+
+- 2026-10-24Z — §11.33 run: §11.16 timeout-minutes doc-contract
+  reconciled with the post-§11.31 workflow (docs-accuracy / process fix;
+  zero Dart, test, or workflow-file changes). A fresh four-way parallel
+  subagent audit (full FUTURE_WORK.md open-item inventory + track
+  "Next:" clauses; end-to-end ci.yaml defect audit with `bash -n` on
+  every run block; lib/+test/ convention audit of every catch/timer/
+  DateTime.now/Random/network path; §15 chessboard completeness
+  verification) concluded: **zero open items are
+  implementable-and-verifiable on this Linux host** (§9.1/§9.2/§11.3/§14
+  Windows-native-blocked; §2.6 upstream-external — flutter/flutter
+  #190903 still unmerged; `dart format` gate needs the explicit owner
+  decision; coverage-artifact comparison needs ≥2 real CI runs; the
+  85-commit local queue needs GitHub credentials), and **no P0 (crash)
+  or P1 (correctness) code or workflow defects remain** — §15 is
+  genuinely shipped (81 tests: chessboard_drag 15, board_motion 16,
+  scrub_shortcuts 20, premove 30; premove wired in PlayScreen per
+  design docs, scrub in 4 screens, no documented-but-missing feature).
+  The one actionable P1 finding was **doc-contract drift**: the §11.31
+  CI P3 #2 merge absorbed the separate coverage RUN step into the
+  gating Test step (ubuntu-gate 14 → 13 steps), but the maintained-in-
+  place §11.16 section still asserted the pre-merge state — "all 26
+  steps", "all 28 `timeout-minutes` keys (26 steps + 2 jobs)", a
+  phantom "coverage 30" step bound, and a bullet promising "the
+  coverage step keeps `continue-on-error: true`" about a step that no
+  longer exists — and the §11.17 header recap parenthetical carried the
+  same stale 26/coverage-30 count. Re-measured this run: ubuntu-gate 13
+  + windows-nightly 12 = **25 steps**, 25 + 2 = **27 timeout-minutes
+  keys** (strict duplicate-key PyYAML loader: all 25 steps carry exactly
+  one key; job bounds 90/180 present). Fixed in place (the §11.28
+  precedent for maintained counts): §11.16 step list drops "coverage
+  30" (coverage bound by the merged Test step's `timeout-minutes: 30`);
+  the continue-on-error bullet now states the true post-merge contract
+  — the §11.4 "coverage never reddens the gate" property holds at the
+  ARTIFACT level only, via the §11.22 upload step's `continue-on-error:
+  true` + `if-no-files-found: warn`, with a coverage-collection failure
+  with all tests green being the documented accepted residual of the
+  merge (ci.yaml step comment §11.31); evidence block + §11.17 recap
+  parenthetical updated (25 steps; two `bash -n` "failures" = the
+  Windows-only §9.1/§9.2 PowerShell blocks, per the §11.12 precedent).
+  §11.4 was already accurate (updated in §11.31); §11.22 stays as the
+  historical DONE record. Evidence: `flutter analyze` → `No issues
+  found! (ran in 2.1s)`; full `flutter test` → 651/651 pass (01:54, All
+  tests passed! — no Dart changes); strict duplicate-key PyYAML
+  re-parse clean (ubuntu-gate 13 + windows-nightly 12 steps; 27
+  timeout-minutes keys = 25 steps + 2 job bounds, exactly one per
+  step/job); all 3 bash run blocks pass `bash -n` (the 2 "failures" are
+  the Windows-only §9.1/§9.2 PowerShell blocks, per the §11.12
+  precedent). Files changed: `docs/FUTURE_WORK.md` (header recap +
+  Last updated bumped to §11.33; §11.16 section + §11.17 recap
+  corrected in place — per the open-items-only rule no new
+  completed-work section; open-item set unchanged), this track (header
+  + this Run Log entry).
+  Commit: to be recorded in a follow-up track commit (per the §13
+  precedent).
+  Push **BLOCKED** (same as every prior run since the credentials
+  audit): no GitHub credentials on this host (`git config --get
+  credential.helper` empty, no `gh`, no `~/.git-credentials`, no
+  `~/.netrc`, no token in env); `git push origin main` → `fatal: could
+  not read Username for 'https://github.com'`; `git ls-remote origin
+  main` still shows e1749b3, so the local queue (85 commits through
+  this run's final commit, per `git rev-list --count origin/main..HEAD`)
+  remains local-only. Re-run the push once credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials
+  exist; (b) trigger the §11.3 windows-nightly via `workflow_dispatch`
+  (or wait for the 06:00 UTC schedule) on the hosted `windows-latest`
+  runner per the §13 decision + §11.3 checklist — the ONLY remaining
+  functional gap (§14.1-§14.2); or (c) re-check §2.6 on the next
+  Flutter upgrade / when `flutter/flutter#190903` lands. The `dart
+  format` gate (102/127-file churn, needs an explicit owner decision)
+  remains open; coverage-artifact comparison still needs ≥2 real CI
+  runs; the ~85-commit local queue still cannot be pushed.
