@@ -2063,7 +2063,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   pass (01:52, All tests passed! — no Dart changes). `git status --short`
   confirms only the workflow + the two track docs changed (release bundle
   build/ stays untracked).
-  Commit: recorded in a follow-up track commit per the §13 precedent.
+  Commit: ba6fc57 (recorded in a follow-up track commit per the §13 precedent).
   Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
   host — re-audited this run (`git config --get credential.helper` empty, no
   `gh`, no `~/.git-credentials`, no `~/.netrc`, no token in env);
