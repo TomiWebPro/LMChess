@@ -210,4 +210,40 @@ void main() {
     // The valid archive is NOT discarded.
     expect(archive.existsSync(), isTrue);
   }, timeout: const Timeout(Duration(minutes: 1)));
+
+  test(
+      'binary failing post-extraction verification is discarded and reported '
+      'as a bounded failure (§11.39)', () async {
+    // A VALID tar.gz holding the WRONG binary (one byte flipped → SHA-256
+    // mismatch with what the platform pins). Both the cached copy and the
+    // server-served copy are this wrong archive, so even the single
+    // re-download fails verification: the tool must NOT false-green
+    // (`extractAndVerify` used to return normally after the failed
+    // `verifyBinary`, leaving the bad binary in place and keeping the
+    // "corrupt" archive), must not leave the bad binary in the engines dir,
+    // and must discard the unusable archive exactly like the §11.19
+    // corrupt-cache paths do.
+    final good = fakePayload();
+    final wrong = List<int>.from(good)..[12345] ^= 0xff;
+    final platform = fakePlatform(good);
+    final wrongArchiveBytes = await fakeArchiveBytes(wrong);
+    final hits = <int>[0];
+    final server = await startServer(wrongArchiveBytes, hits);
+    addTearDown(() => server.close(force: true));
+    // The cached archive is the same wrong-but-valid archive.
+    File('${archiveDir.path}/$fakeAsset').writeAsBytesSync(wrongArchiveBytes);
+
+    final result =
+        await fetchPlatform(platform, optionsFor('http://127.0.0.1:${server.port}'));
+
+    expect(result.ok, isFalse, reason: 'bad binary must fail, not false-green');
+    expect(hits[0], 1, reason: 'bounded: one re-download after the discard');
+    // The unusable archive and any partial/wrong binary are gone, so a later
+    // run starts from a clean cache.
+    expect(File('${archiveDir.path}/$fakeAsset').existsSync(), isFalse);
+    expect(
+      File('${enginesDir.path}/${platform.dir}/${platform.binary}').existsSync(),
+      isFalse,
+    );
+  }, timeout: const Timeout(Duration(minutes: 2)));
 }

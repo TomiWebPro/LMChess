@@ -1,7 +1,52 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-24 (UTC) — §11.38 (Windows-gate exit-code
+Last updated: 2026-10-24 (UTC) — §11.39 (download-tool verification
+honesty fix). A fresh independent parallel subagent audit (full
+FUTURE_WORK.md open-item inventory incl. every "Done when" string; an
+end-to-end ci.yaml defect audit; a lib/test convention + marker audit)
+again confirmed ZERO FUTURE_WORK.md open items implementable-and-
+verifiable on this Linux host (§9.1/§9.2/§11.3/§14.1-§14.2 Windows-
+native-blocked, §2.6 upstream-external — live-checked this run via the
+GitHub API: flutter/flutter#190903 still `merged: false` — the `dart
+format` gate owner-decision-pending, coverage-artifact comparison still
+needing ≥2 real CI runs, and the ~98-commit local queue still unpushable
+— no GitHub credentials on this host), NO P0 (crash) or P1 (correctness)
+code or workflow-file defects, and the ci.yaml workflow itself clean
+(end-to-end fresh-eyes audit: no Linux-fixable defect found this run).
+The lib/test/tool audit DID surface one genuine P1 correctness defect,
+closed as this run's ONE deliverable: `tool/download_stockfish.dart`
+`extractAndVerify` — the linchpin of the §11.7/§11.17 real-engine CI
+gates — promised (its own doc comment, §11.19) that a binary failing
+size/SHA-256/`file` verification after extraction is discarded + thrown,
+but the code path after `verifyBinary` returned `false` printed
+"verification failed after extraction; treating the archive as corrupt"
+and then fell off the end of the `try` block **normally**: no
+`_discardArchive`, no rethrow, so `fetchPlatform` reported
+`FetchResult(ok: true, 'fetched')` and `main` exited 0 — the CI engine
+download step stayed green with a wrongly-sized/hashed binary left in
+`assets/engines/` and the unusable archive kept in the cache (the §11.19
+self-heal re-download never ran). Fix: that branch now throws
+`StateError('binary failed verification after extraction')`, so the
+existing `on Object` handler discards archive + partial binary and the
+bounded two-attempt loop performs the clean re-download, failing the
+fetch honestly if the re-download is also bad. New deterministic offline
+test (valid-archive-wrong-binary, loopback server) was proven to FAIL as
+a false-green against the pre-fix code, then passes with the fix:
+`ok: false`, exactly one re-download, archive + binary both gone; the 5
+existing §11.19 tests and the real CLI happy path (`OK present`, uciok
+handshake) are unchanged. Evidence: `flutter analyze` → `No issues
+found! (ran in 2.4s)` (Flutter 3.47.6 stable, Dart 3.13.5); `flutter
+test test/download_stockfish_test.dart` → 6/6 pass (5 existing + 1
+new); full `flutter test` → 667/667 pass (All tests passed! — 666
+baseline + 1 new); `dart run tool/download_stockfish.dart linux-x86-64`
+→ `OK present` with size/sha256/file/uciok re-verified. Recorded in
+`automation-track.md` (Run Log); per the open-items-only rule this file
+gains no new completed-work section — no open FUTURE_WORK item was
+touched (§9.1/§9.2/§11.3/§14 remain Windows-blocked, §2.6
+upstream-external; the `dart format` gate and the coverage-artifact
+comparison still await their owner decisions / ≥2 real CI runs).
+Previously (2026-10-24) — §11.38 (Windows-gate exit-code
 honesty fix). A fresh independent parallel subagent audit (full
 FUTURE_WORK.md open-item inventory incl. every "Done when" string; an
 end-to-end ci.yaml defect audit; a lib/test convention + marker audit)
@@ -1396,6 +1441,52 @@ per §11.12); `flutter analyze` → `No issues found!`; full regression
 mode is documented in §11.4's own step comment (never gates the build) and
 this section; the fix makes the two coverage steps behaviorally symmetric.
 See `automation-track.md` for the run log.
+
+---
+
+### 11.39 Download tool: post-extraction verification failure no longer false-greens (P1 — DONE)
+
+`tool/download_stockfish.dart` `extractAndVerify` is the linchpin of the
+§11.7/§11.17 real-engine CI gates (size/SHA-256/`file`/UCI verification
+before the E2E engine tests run), and its own doc comment (§11.19) promises
+that "on ANY failure … a binary that fails verification after extraction"
+is discarded and thrown so a later attempt re-downloads cleanly. The actual
+code path after `verifyBinary` returned `false` printed
+`verification failed after extraction; treating the archive as corrupt`
+and then **fell off the end of the `try` block normally** — no
+`_discardArchive`, no rethrow, so the adjacent `on Object` handler never
+fired. `extractAndVerify` returned to `fetchPlatform`, which reported
+`FetchResult(ok: true, 'fetched')` and `main` exited **0**: the CI engine
+download step ("exit 1 on any failure so a broken fetch cannot silently
+skip the E2E test") stayed green exactly when the downloaded binary was
+wrong, the bad binary was left in `assets/engines/`, and the unusable
+archive stayed in the cache — so the §11.19 self-heal re-download could
+never run. Found by this run's parallel lib/test/tool convention audit and
+confirmed empirically (a valid tar.gz holding a one-byte-flipped payload:
+the old code printed the message, then `ok: true`, no discard, no
+re-download; the new pinning test FAILED against that code exactly as a
+false-green). Fix: the verification-failure branch now
+`throw StateError('binary failed verification after extraction')`, so the
+existing `on Object` handler discards the archive and any partial binary
+and `fetchPlatform`'s bounded two-attempt loop (§11.19) performs the clean
+re-download — reporting the fetch honestly (`ok: false`, exit 1) when the
+re-download is also bad. New deterministic offline test 6
+(`binary failing post-extraction verification is discarded and reported as
+a bounded failure (§11.39)`, valid-archive-wrong-binary served by the
+existing loopback server; cached copy = same wrong archive): `result.ok`
+is false, exactly one re-download, the unusable archive and the partially
+extracted/wrong binary are both deleted. The 5 existing §11.19 tests are
+byte-unchanged and still pass; the real CLI happy path is unchanged
+(`dart run tool/download_stockfish.dart linux-x86-64` → `OK present` with
+size/sha256/file/uciok re-verified).
+
+Evidence: `flutter analyze` → `No issues found! (ran in 2.4s)` (Flutter
+3.47.6 stable, Dart 3.13.5 — matches the §11.8 CI pin); `flutter test
+test/download_stockfish_test.dart` → 6/6 pass (5 existing + 1 new); full
+regression `flutter test` → 667/667 pass (All tests passed! — 666
+baseline + 1 new); new test proven RED against the pre-fix code (`Expected:
+false, Actual: <true> — bad binary must fail, not false-green`) and GREEN
+with the fix. See `automation-track.md` for the run log.
 
 ---
 

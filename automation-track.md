@@ -1,7 +1,67 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-24 (UTC) — §11.38 (Windows-gate exit-code
+Last updated: 2026-10-24 (UTC) — §11.39 (download-tool verification
+honesty fix). A fresh independent parallel subagent audit (full
+FUTURE_WORK.md open-item inventory incl. every "Done when" string; an
+end-to-end ci.yaml defect audit; a lib/test convention + marker audit)
+again confirms ZERO FUTURE_WORK.md open items are implementable-and-
+verifiable on this Linux host (§9.1/§9.2/§11.3/§14.1-§14.2 remain
+Windows-native-blocked, §2.6 remains upstream-external — live-checked
+this run via the GitHub API: flutter/flutter#190903 still `merged:
+false` — the `dart format` gate remains owner-decision-pending,
+coverage-artifact comparison still needs ≥2 real CI runs, the ~98-
+commit local queue still can't be pushed — no GitHub credentials on
+this host), NO P0 (crash) or P1 (correctness) code or workflow-file
+defects, and the ci.yaml workflow clean end-to-end (fresh-eyes audit:
+no Linux-fixable defect found this run). The lib/test/tool audit DID
+surface one genuine P1 correctness defect, closed as this run's ONE
+deliverable: `tool/download_stockfish.dart` `extractAndVerify` — the
+verification core of the §11.7/§11.17 real-engine CI gates — promised
+in its own doc comment (§11.19) that a binary failing size/SHA-256/
+`file` verification after extraction is discarded + thrown, but the
+code path after `verifyBinary` returned `false` printed
+`verification failed after extraction; treating the archive as corrupt`
+and then fell off the end of the `try` block NORMALLY — no
+`_discardArchive`, no rethrow — so `fetchPlatform` reported
+`FetchResult(ok: true, 'fetched')` and `main` exited 0: the CI engine
+download step stayed green with a wrongly-sized/hashed binary left in
+`assets/engines/` and the unusable archive kept in the cache (the
+§11.19 self-heal re-download never ran). The branch now
+`throw StateError('binary failed verification after extraction')`, so
+the existing `on Object` handler discards the archive + any partial
+binary and the bounded two-attempt loop performs the clean re-download,
+failing the fetch honestly (`ok: false`, exit 1) when the re-download
+is also bad. New deterministic offline test (valid-archive-wrong-
+binary served by the existing loopback server; cached copy = same
+wrong archive) was proven RED against the pre-fix code — `Expected:
+false, Actual: <true> — bad binary must fail, not false-green` — and
+GREEN with the fix: `result.ok` false, exactly one re-download,
+archive + binary both gone. The 5 existing §11.19 tests are
+byte-unchanged and pass; the real CLI happy path is unchanged (`OK
+present`, uciok handshake). Evidence: `flutter analyze` → `No issues
+found! (ran in 2.4s)`; `flutter test test/download_stockfish_test.dart`
+→ 6/6 pass; full `flutter test` → 667/667 pass (All tests passed! —
+666 baseline + 1 new); `dart run tool/download_stockfish.dart
+linux-x86-64` → `OK present`. Files changed: `tool/download_stockfish.dart`,
+`test/download_stockfish_test.dart`, this track +
+`docs/FUTURE_WORK.md` (header recap + Last updated bumped; §11.39
+added + closed as DONE in the same run; per the open-items-only rule
+no new completed-work section — the open-item set is unchanged).
+Commit: <recorded in the follow-up track commit per the
+§11.38/§11.37 precedent — the run's own commit first, then a
+`docs(lmchess): record §11.39 commit hash in track` follow-up>. Push
+**BLOCKED** (same as every prior run since the credentials audit): no
+GitHub credentials on this host — re-confirmed this run with `git
+config --get credential.helper` (empty), no `gh` CLI, no SSH keys for
+github.com, and `git push origin main` → `fatal: could not read
+Username for 'https://github.com'`; `git rev-list --count
+origin/main..HEAD` → 98 before this run's commits. Re-run the push
+once credentials are provisioned.
+Next: re-push the queued local commits once GitHub
+credentials exist; trigger the §11.3 windows-nightly on hosted
+`windows-latest`; or re-check §2.6 when `flutter/flutter#190903` lands.
+Previously (2026-10-24) — §11.38 (Windows-gate exit-code
 honesty fix). A fresh independent parallel subagent audit (full
 FUTURE_WORK.md open-item inventory incl. every "Done when" string; an
 end-to-end ci.yaml defect audit; a lib/test convention + marker audit)
@@ -3806,3 +3866,106 @@ suites referenced above now exist. Native Windows execution is tracked in
   Flutter upgrade / when `flutter/flutter#190903` lands. The
   `dart format` gate and the coverage-artifact comparison remain
   open pending their owner decisions / ≥2 real CI runs.
+- 2026-10-24Z — CODE-P1 §11.39: `tool/download_stockfish.dart`
+  post-extraction verification failure no longer false-greens. A fresh
+  independent THREE-way parallel subagent audit (full FUTURE_WORK.md
+  open-item inventory incl. every "Done when" string; end-to-end
+  fresh-eyes ci.yaml defect audit; lib/test/tool convention + marker
+  audit) confirmed ZERO FUTURE_WORK.md open items are implementable-and-
+  verifiable on this Linux host (§9.1/§9.2/§11.3/§14.1-§14.2 remain
+  Windows-native-blocked, §2.6 upstream-external — live-checked this run
+  via the GitHub API: flutter/flutter#190903 still `merged: false` — the
+  `dart format` gate owner-decision-pending, coverage-artifact
+  comparison needs ≥2 real CI runs, the 98-commit local queue still
+  unpushable — no GitHub credentials on this host) and the ci.yaml
+  workflow clean end-to-end (the audit found NO Linux-fixable defect;
+  all 13 bash blocks pass `bash -n`, strict duplicate-key PyYAML
+  re-parse clean, step/timeout/continue-on-error/if-contract assertions
+  all hold). The lib/test/tool audit DID surface one genuine P1
+  correctness defect nobody had logged, promoted as §11.39 per the
+  §11.4–§11.38 precedent and closed in the same run:
+  `extractAndVerify` in `tool/download_stockfish.dart` (lines 663-678)
+  — the verification core of the §11.7/§11.17 real-engine CI gates —
+  promises in its own doc comment (§11.19) that "a binary that fails
+  verification after extraction" is deleted + thrown so a later attempt
+  re-downloads cleanly, but the code path after `verifyBinary` returned
+  `false` printed `verification failed after extraction; treating the
+  archive as corrupt` and then fell off the end of the `try` block
+  **normally**: no `_discardArchive`, no rethrow, so the adjacent
+  `on Object` handler never fired. `extractAndVerify` returned to
+  `fetchPlatform`, which reported `FetchResult(ok: true, 'fetched')`
+  and `main` exited **0** — the CI engine download step ("exit 1 on any
+  failure so a broken fetch cannot silently skip the E2E test", §11.7/
+  §11.17) stayed green exactly when the downloaded binary was wrong
+  (size/SHA-256/`file` mismatch — the exact class the tool exists to
+  catch), the bad binary was left in `assets/engines/`, and the
+  unusable archive stayed in the cache, so the §11.19 self-heal
+  re-download could never run. (Also noted by the audit: the §11.19
+  _bounded two-attempt_ design makes the fix behavior-preserving on all
+  existing success + corrupt-archive-failure paths — only the
+  verify-fails-after-extraction path changes, from silent green to
+  discard + bounded re-download + honest failure.) Files changed:
+  `tool/download_stockfish.dart` — the verification-failure branch now
+  `throw StateError('binary failed verification after extraction')`
+  (+ a §11.39 comment explaining the false-green it fixes), so the
+  existing `on Object` handler discards the archive + any partial
+  binary and `fetchPlatform`'s bounded two-attempt loop performs the
+  clean re-download;
+  `test/download_stockfish_test.dart` — new 6th test
+  (`binary failing post-extraction verification is discarded and
+  reported as a bounded failure (§11.39)`): a VALID tar.gz holding a
+  one-byte-flipped payload (different SHA-256 than the platform pins),
+  with the cached copy = the same wrong archive and the loopback server
+  serving the same wrong archive, so even the single re-download fails
+  verification — asserts `result.ok` is false (no false-green), exactly
+  one re-download, and both the unusable archive and the extracted
+  wrong binary are deleted. Proven RED against the pre-fix code first:
+  `Expected: false, Actual: <true> — bad binary must fail, not
+  false-green` (the log showed `verification failed after extraction;
+  treating the archive as corrupt` followed by NO discard and NO
+  re-download), then GREEN with the fix (log shows `discarding
+  unusable archive and any partial binary` before the re-download).
+  The 5 existing §11.19 tests are byte-unchanged and still pass (their
+  paths never hit the changed branch — valid-verify success,
+  unlistable-archive throw, download-failure, baseOverride, happy
+  path); the real CLI happy path is unchanged — `dart run
+  tool/download_stockfish.dart linux-x86-64` → `OK present` (size ok /
+  sha256 ok / file ok / uciok handshake).
+  Docs: `docs/FUTURE_WORK.md` — §11.39 added + closed as DONE in the
+  same run per the §11.4–§11.38 precedent (open list unchanged: §11.39
+  not an open item), header recap + Last updated bumped;
+  `automation-track.md` — header + this Run Log entry (no Roadmap row
+  exists for §11.39; per protocol the Run Log is the record).
+  Evidence: `flutter analyze` → `No issues found! (ran in 2.4s)` (zero
+  errors/warnings/infos; Flutter 3.47.6 stable, Dart 3.13.5 — matches
+  the §11.8 CI pin); `flutter test test/download_stockfish_test.dart`
+  → 6/6 pass (All tests passed!); full regression `flutter test` →
+  667/667 pass (01:58, All tests passed! — 666 baseline + 1 new);
+  `git status --short` before commit: only `tool/download_stockfish.dart`,
+  `test/download_stockfish_test.dart`, `docs/FUTURE_WORK.md`,
+  `automation-track.md` modified (the engine binary stays untracked/
+  gitignored).
+  Commit: <recorded in the follow-up track commit per the
+  §11.38/§11.37 precedent — the run's own commit first, then a
+  `docs(lmchess): record §11.39 commit hash in track` follow-up>.
+  Push **BLOCKED** (same as every prior run since the credentials
+  audit): no GitHub credentials on this host — re-confirmed this run
+  (`git config --get credential.helper` empty, no `gh`, no
+  `~/.git-credentials`, no `~/.netrc`, no token in env);
+  `git ls-remote origin main` still shows e1749b3, so the local queue
+  (~98 commits before this run's commits + this run's 2) remains
+  local-only. Re-run the push once credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials
+  exist; (b) trigger the §11.3 windows-nightly via `workflow_dispatch`
+  on the hosted `windows-latest` runner per the §13 decision + §11.3
+  checklist — the ONLY remaining functional gap (§14.1-§14.2); or (c)
+  re-check §2.6 on the next Flutter upgrade / when
+  `flutter/flutter#190903` lands. Remaining Linux-implementable audit
+  candidates (none P0/P1): the `dart format` gate (107/131-file churn,
+  needs an explicit owner decision); coverage-artifact comparison
+  (needs ≥2 real CI runs); a P2 doc/behavior nit logged by this run's
+  audit — `tool/download_stockfish.dart` `pickBinaryMember`'s doc
+  comment says "largest doc-excluded entry" but the code returns the
+  first filtered member (official archives hold exactly one binary so
+  it never bites in practice; correct the comment or the pick in a
+  future run if desired).

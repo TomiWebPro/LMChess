@@ -672,6 +672,13 @@ Future<void> extractAndVerify(
       return;
     }
     stdout.writeln('  verification failed after extraction; treating the archive as corrupt');
+    // §11.39: without this throw the failed verification fell off the end of
+    // the try block normally — no discard, no rethrow — and the caller
+    // reported a false-green `ok: true`, leaving the bad binary in place and
+    // keeping the unusable archive in the cache. Throwing makes the adjacent
+    // `on Object` handler discard both and the caller's bounded re-download
+    // run (§11.19) attempt a clean fetch instead.
+    throw StateError('binary failed verification after extraction');
   } on Object {
     _discardArchive(archive, dest);
     rethrow;
