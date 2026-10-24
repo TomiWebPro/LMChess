@@ -1,7 +1,46 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-24 (UTC) — §11.31 run: CI P3 #2 closed — the
+Last updated: 2026-10-24 (UTC) — §11.32 run: the §9.2 UIA-smoke step's
+Event Viewer excerpt export no longer aborts on the no-matching-events
+failure class. On the §9.2 NON-crash failure class (e.g. control count
+< 40, uninvocable controls — no 0xC0000005) no fresh Application-log
+event exists, so `Get-WinEvent` writes a `NoMatchingEventsFound` error
+— and the "Run UIA smoke (§9.2)" run block never overrode
+`$ErrorActionPreference`, so under the runner wrapper's prepended
+`'stop'` the error aborted the script BEFORE the `::error::` line and
+before `Exit $LASTEXITCODE`: the smoke's documented exit-code semantics
+(0/1/2 per §9.2 — "2=crash detected in Event Viewer") degraded to 1 at
+the step level, and the excerpt carried no Event Viewer data exactly
+when the §11.30 diagnostics are needed. The command now ends
+`-ErrorAction SilentlyContinue`: the expected no-match case respects
+the pipeline (empty excerpt, still uploaded via the §11.30 step's
+`if-no-files-found: warn`), while the block's strictness everywhere
+else is unchanged — on the crash class (events exist) the fix is inert
+and the export is byte-identical to before. Windows-only execution
+path, no Linux gate impact. Evidence: `flutter analyze` → `No issues
+found!`; full `flutter test` → 651/651 pass (01:52, All tests passed!
+— no Dart changes); strict duplicate-key PyYAML re-parse clean
+(ubuntu-gate 13 + windows-nightly 12 steps; 27 timeout-minutes keys;
+continue-on-error 1+1); all bash run blocks pass `bash -n` (the 2
+"failures" are the Windows-only §9.1/§9.2 PowerShell blocks, per the
+§11.12 precedent); the ACTUAL edited block parses with 0 errors under
+real PowerShell 7.6.8 (installed user-local to ~/sdk/pwsh for this
+run's proof; Parser.ParseInput + scriptblock::Create); and the
+abort-vs-survive semantics are proven empirically with verbatim
+OLD/HEAD vs NEW failure branches under a `Write-Error` stub of the
+exact non-terminating error class — OLD: abort, exit 1, no `::error::`,
+0-byte excerpt; NEW: `::error::` printed, exit 2 preserved, empty
+excerpt; crash class: OLD and NEW byte-identical (exit 2, real 148-byte
+excerpt). Recorded in the Run Log below; per the open-items-only rule
+FUTURE_WORK.md gains no new completed-work section (header recap + Last
+updated bumped). Open-item set unchanged: §9.1/§9.2/§11.3/§14.1-§14.2
+remain Windows-native; §2.6 upstream-external (flutter/flutter#190903
+still unmerged); the `dart format` gate (102/127-file churn) remains
+pending its explicit owner decision; coverage-artifact comparison still
+needs ≥2 real CI runs; the ~80-commit local queue still cannot be
+pushed (no GitHub credentials on this host).
+Previously (2026-10-24) §11.31 run: CI P3 #2 closed — the
 ubuntu-gate's `flutter test` + `flutter test test/ui --coverage` pair is
 merged into ONE full-suite `flutter test --coverage` step. The
 §11.4-owner decision the §11.29/§11.30 audits recorded as pending was
@@ -3130,3 +3169,83 @@ suites referenced above now exist. Native Windows execution is tracked in
   §13/§11.30 precedent, and the local queue count is corrected to ~80
   commits through that commit (`git rev-list --count origin/main..HEAD`
   → 80). No functional changes — pure track accuracy.
+- 2026-10-24Z — CI §11.32 (UIA-smoke Event Viewer excerpt abort on the
+  no-matching-events failure class). A fresh three-way subagent audit
+  (CI workflow, code/test markers, docs cross-references) confirmed the
+  workflow's hardening is real — this was the ONE remaining defect it
+  produced, and it is on the §11.3 P0 gate's diagnostics path. The
+  "Run UIA smoke (§9.2)" failure branch exports the Event Viewer
+  excerpt with `Get-WinEvent -FilterHashtable @{LogName='Application';
+  StartTime=...}`. On the §9.2 NON-crash failure class (control count
+  < 40, uninvocable controls — everything except the 0xC0000005 crash
+  path) no fresh Application-log event exists, so Get-WinEvent writes
+  a `NoMatchingEventsFound` NON-terminating error. This run block does
+  NOT override `$ErrorActionPreference` (the §9.1 integration block
+  sets `"Continue"` at its top; the UIA block deliberately stays
+  strict), so the runner wrapper's prepended `'stop'` escalated that
+  error to terminating and ABORTED the script before the `::error::`
+  line and before `Exit $LASTEXITCODE` — the smoke's documented §9.2
+  exit-code semantics (0/1/2, "2=crash detected in Event Viewer") were
+  lost at the step level (degraded to 1 from the terminating error)
+  and the excerpt carried no Event Viewer data exactly when the §11.30
+  diagnostic artifacts are needed. Fix: the command now ends
+  `-ErrorAction SilentlyContinue` so the expected no-match case
+  respects the pipeline (empty excerpt, still uploaded via the §11.30
+  step's `if-no-files-found: warn`); strictness elsewhere is
+  unchanged, and on the crash class the fix is inert (identical
+  export). Windows-only execution path — no Linux gate impact; no
+  Dart/test files changed.
+  Method: baseline re-verified first (`flutter analyze` → `No issues
+  found!`; full `flutter test` → 651/651 pass, 01:52, All tests
+  passed!), then — because this changes a Windows-only PowerShell
+  block whose syntax `bash -n` cannot check — real PowerShell 7.6.8
+  was installed user-local (`~/sdk/pwsh`, from the official GitHub
+  tarball, reversible; kept for future nightly-workflow runs) and the
+  ACTUAL edited block (extracted from the working-tree ci.yaml) was
+  syntax-verified via `[System.Management.Automation.Language.Parser]::
+  ParseInput` (0 parse errors) and `[scriptblock]::Create`. The
+  abort-vs-survive semantics were then proven empirically: verbatim
+  failure branches from `git show HEAD:...` (OLD) vs the working tree
+  (NEW), each run under the runner wrapper's prepended
+  `$ErrorActionPreference='stop'` with a `[CmdletBinding()]`
+  `Write-Error` stub reproducing the exact non-terminating
+  NoMatchingEventsFound error class. No-match class — OLD: abort, exit
+  code 1 (smoke's 2 degraded), `::error::` never printed, 0-byte
+  excerpt; NEW: `::error::` printed, exit 2 preserved, empty excerpt
+  file. Crash class (stub emits matching events) — OLD and NEW
+  byte-identical: exit 2, `::error::` printed, 148-byte excerpt with
+  the flutter_windows.dll 0xC0000005 message, proving the fix is inert
+  exactly where the export already worked.
+  Evidence: `flutter analyze` → `No issues found!`; full `flutter
+  test` → 651/651 pass (All tests passed!, no Dart changes); strict
+  duplicate-key PyYAML re-parse clean (ubuntu-gate 13 steps +
+  windows-nightly 12; 27 timeout-minutes keys; continue-on-error now
+  1+1, unchanged); all 11 bash run blocks pass `bash -n` (the 2
+  "failures" are the Windows-only §9.1/§9.2 PowerShell blocks, per the
+  §11.12 precedent); PowerShell 7.6.8 parse of the final edited block:
+  0 errors; behavioral harness: OLD exit 1 / NEW exit 2, OLD no
+  `::error::` / NEW `::error::` printed, crash class byte-identical
+  (148-byte excerpt). Files changed: `.github/workflows/ci.yaml` (one
+  `Get-WinEvent` line gained `-ErrorAction SilentlyContinue` + a
+  comment documenting the failure class), this track (header + this
+  Run Log entry), `docs/FUTURE_WORK.md` (Last updated bumped; header
+  recap updated — per the open-items-only rule no new completed-work
+  section; open-item set unchanged).
+  Commit: <hash-inserted-here>.
+  Push **BLOCKED** (same as every prior run since the credentials
+  audit): no GitHub credentials on this host (`git config --get
+  credential.helper` empty, no `gh`, no `~/.git-credentials`, no
+  `~/.netrc`, no token in env); `git ls-remote origin main` still
+  shows e1749b3, so the local queue (~81 commits through this run)
+  remains local-only. Re-run the push once credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials
+  exist; (b) trigger the §11.3 windows-nightly via `workflow_dispatch`
+  (or wait for the 06:00 UTC schedule) on the hosted `windows-latest`
+  runner per the §13 decision + §11.3 checklist — the ONLY remaining
+  functional gap (§14.1-§14.2) — and this run's fix will be exercised
+  for the first time on the no-match failure path; or (c) re-check
+  §2.6 on the next Flutter upgrade / when `flutter/flutter#190903`
+  lands. The `dart format` gate (102/127-file churn, needs an explicit
+  owner decision) remains open; coverage-artifact comparison still
+  needs ≥2 real CI runs; the ~80-commit local queue still cannot be
+  pushed.

@@ -1,7 +1,45 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-24 (UTC) — §11.31: CI P3 #2 CLOSED — the
+Last updated: 2026-10-24 (UTC) — §11.32: the §9.2 UIA-smoke step's
+Event Viewer excerpt export no longer aborts on the no-matching-events
+failure class (details in `automation-track.md` Run Log). On the §9.2
+NON-crash failure class (control count < 40, uninvocable controls — no
+0xC0000005) no fresh Application-log event exists, so `Get-WinEvent`
+writes a `NoMatchingEventsFound` error; the "Run UIA smoke (§9.2)" run
+block never overrode `$ErrorActionPreference` (the §9.1 block sets
+`"Continue"`, this one deliberately stays strict), so under the runner
+wrapper's prepended `'stop'` the error aborted the script BEFORE the
+`::error::` line and before `Exit $LASTEXITCODE` — the smoke's §9.2
+exit-code semantics (0/1/2, "2=crash detected in Event Viewer")
+degraded to 1 at the step level and the excerpt carried no Event
+Viewer data exactly when the §11.30 diagnostics are needed. The
+command now ends `-ErrorAction SilentlyContinue`: the expected no-match
+case respects the pipeline (empty excerpt, still uploaded via the
+§11.30 step's `if-no-files-found: warn`), strictness elsewhere
+unchanged, and on the crash class the fix is inert (byte-identical
+export, proven). Windows-only execution path — no Linux gate impact;
+no Dart/test files changed. Evidence: `flutter analyze` → `No issues
+found!`; full `flutter test` → 651/651 pass (01:52, no Dart changes);
+strict duplicate-key PyYAML re-parse clean (ubuntu-gate 13 +
+windows-nightly 12 steps; 27 timeout-minutes keys); all bash run
+blocks pass `bash -n` (the 2 "failures" are the Windows-only §9.1/§9.2
+PowerShell blocks, per the §11.12 precedent); the actual edited block
+parses with 0 errors under real PowerShell 7.6.8 (user-local
+`~/sdk/pwsh`, Parser.ParseInput + scriptblock::Create); and the
+abort-vs-survive semantics are proven empirically with verbatim
+OLD/HEAD vs NEW failure branches under a `Write-Error` stub of the
+exact non-terminating error class — OLD: abort, exit 1, no `::error::`,
+0-byte excerpt; NEW: `::error::` printed, exit 2 preserved, empty
+excerpt; crash class: OLD and NEW byte-identical (exit 2, real 148-byte
+excerpt). The open-item set is otherwise unchanged: §9.1/§9.2/§11.3/
+§14.1-§14.2 remain Windows-native; §2.6 remains upstream-external
+(flutter/flutter#190903 still `merged: false` per the §11.31 live
+check); the `dart format` gate (102/127-file churn) remains
+pending its explicit owner decision; coverage-artifact comparison still
+needs ≥2 real CI runs; and the ~80-commit local queue still cannot be
+pushed (no GitHub credentials on this host).
+Previously (2026-10-24) §11.31: CI P3 #2 CLOSED — the
 ubuntu-gate's `flutter test` + `flutter test test/ui --coverage` pair
 is merged into ONE full-suite `flutter test --coverage` step (details
 in `automation-track.md` Run Log). This run made the §11.4-owner

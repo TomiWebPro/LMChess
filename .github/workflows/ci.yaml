@@ -478,8 +478,21 @@ jobs:
 
           if ($LASTEXITCODE -ne 0) {
             Write-Host "Smoke test failed (exit code $LASTEXITCODE) — exporting Event Viewer excerpt for debugging"
-            # Export recent application error entries for debugging
-            Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-5)} |
+            # Export recent application error entries for debugging. On the
+            # §9.2 NON-crash failure class (control count < 40, uninvocable
+            # controls — no 0xC0000005) no fresh Application-log event exists,
+            # so Get-WinEvent writes a NoMatchingEventsFound error; this block
+            # does not override $ErrorActionPreference (it stays at the runner
+            # wrapper's prepended 'stop'), so the error used to abort the
+            # script BEFORE the ::error:: line and before Exit $LASTEXITCODE
+            # below — the smoke's exit code 2 degraded to 1 (the §9.2 0/1/2
+            # semantics were lost at the step level) and the excerpt carried
+            # no Event Viewer data exactly when the §11.30 diagnostics are
+            # needed. -ErrorAction SilentlyContinue makes the expected
+            # no-match case respect the pipeline (empty excerpt; upload step:
+            # if-no-files-found: warn), keeping the block's strictness
+            # everywhere else.
+            Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-5)} -ErrorAction SilentlyContinue |
               Select-Object TimeCreated, ProviderName, Message |
               Format-List |
               Out-File -FilePath $eventViewerFile -Force
