@@ -1,7 +1,33 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-24 (UTC) — §11.36 (docs/baseline
+Last updated: 2026-10-24 (UTC) — §11.37 (no-actionable-item
+run, terminal branch). Independent parallel subagent audits (full
+FUTURE_WORK.md open-item inventory incl. every "Done when" string, plus a
+markers/unused-code/tool-reference audit across lib/, test/, tool/,
+integration_test/) confirm ZERO FUTURE_WORK.md open items are
+implementable-and-verifiable on this Linux host: §9.1/§9.2/§11.3/§14.1-
+§14.2 remain Windows-native-blocked, §2.6 remains upstream-external
+(flutter/flutter#190903 unmerged), the `dart format` gate remains
+owner-decision-pending (dart format would churn 107/131 files; repo-wide
+reformat stays rejected as an unfocused diff per §11.7), the
+coverage-artifact comparison still needs ≥2 real CI runs (and CI cannot
+run while push is blocked), and the local queue is now 94 unpushed
+commits (no GitHub credentials on this host). The audit's two remaining
+silent-swallow candidates in lib/ — `backend_bridge.dart`
+`squaresOfFen`/`squaresOfPayload`'s `catch (_) → empty map`
+(lines 489/515) — were read in full and validated as DOCUMENTED
+degradation contracts ("never throws" + "empty board instead of
+crashing", lines 460-461/498-500): malformed snapshots degrading to an
+empty board is the designed seek/replay UX, not a silent failure, so the
+§11.33-§11.35 audit trail stays closed with zero code changes (the
+`engine_adapter.dart` dispose()/`_send` comment-only catches are likewise
+documented teardown paths). Baseline re-verified: `flutter analyze` →
+`No issues found! (ran in 2.1s)`; full `flutter test` → 666/666 pass
+(01:53, All tests passed!). Zero code/test/workflow changes. Recorded in
+the Run Log below; per the open-items-only rule FUTURE_WORK.md untouched
+(no new completed-work section; open-item set unchanged).
+Previously (2026-10-24) — §11.36 run (docs/baseline
 accuracy run, terminal branch). An independent parallel subagent audit
 (full FUTURE_WORK.md open-item inventory + an end-to-end ci.yaml defect
 audit) confirmed ZERO open items implementable-and-verifiable on this
@@ -12,11 +38,12 @@ owner-decision-pending (dart format would churn 107/131 files; repo-wide
 reformat stays rejected as an unfocused diff per §11.7), the
 coverage-artifact comparison still needs ≥2 real CI runs, and the local
 commit queue still cannot be pushed (no GitHub credentials on this host;
-`git rev-list --count origin/main..HEAD` → 92). The one real finding was
-a stale fact in the source of truth: FUTURE_WORK.md's "Verified baseline"
-block still asserted 651/651 @ 2026-10-22 while the suite has been 666/666
-since §11.35. This run re-verified every baseline claim itself and fixed
-the block in place: `flutter analyze` → `No issues found! (ran in 2.2s)`;
+`git rev-list --count origin/main..HEAD` → 92 at that run). The one real
+finding was a stale fact in the source of truth: FUTURE_WORK.md's
+"Verified baseline" block still asserted 651/651 @ 2026-10-22 while the
+suite has been 666/666 since §11.35. That run re-verified every baseline
+claim itself and fixed the block in place: `flutter analyze` → `No
+issues found! (ran in 2.2s)`;
 full `flutter test` → 666/666 pass (01:55, All tests passed!); `flutter
 build linux --release` → `✓ Built
 build/linux/x64/release/bundle/llm_chess_arena`; release binary alive
@@ -3638,3 +3665,89 @@ suites referenced above now exist. Native Windows execution is tracked in
   §13 decision + §11.3 checklist — the ONLY remaining functional
   gap (§14.1-§14.2); or (c) re-check §2.6 on the next Flutter
   upgrade / when `flutter/flutter#190903` lands.
+- 2026-10-24Z — NO-ACTIONABLE-ITEM §11.37 (terminal branch).
+  Independent parallel subagent audits, per the protocol's
+  cognitive-offload rule (main context kept lean; each scoped to
+  one question):
+  - Audit #1 (`explore`, full FUTURE_WORK.md open-item inventory
+    incl. every "Done when" string): ZERO open items are
+    implementable-and-verifiable on this Linux host. The 8 open
+    inventory rows reduce to 5 unique tasks, all blocked:
+    §9.1/§9.2 (§9 Windows-native — "It still needs a real Windows
+    desktop run", FUTURE_WORK.md:553-569/571-593; required run +
+    §9.2 "Done when" = §14.1-§14.2 acceptance), §11.3 (awaiting
+    first Windows run — job never completed; "Done when: a green
+    scheduled Windows run is linked from the repository",
+    FUTURE_WORK.md:649-650), §2.6 (upstream-external — P1, no fix
+    in any stable release; "Done when: a Flutter revision
+    containing the fix is validated on Windows or the upstream
+    issue is closed", FUTURE_WORK.md:1404-1405), §14.1-§14.2
+    (Windows UIA smoke + Event Viewer; the two unchecked
+    acceptance criteria). Plus three track-only open items,
+    none Linux-implementable: the `dart format` gate
+    (process/owner-decision; dart format would now churn 107/131
+    files — repo-wide reformat stays rejected as an unfocused diff
+    per the §11.7 rationale), the coverage-artifact comparison
+    (needs ≥2 real CI runs; CI itself cannot run while push is
+    blocked), and the push queue (no GitHub credentials).
+  - Audit #2 (`explore`, markers + unused-code + tool-reference):
+    zero TODO/FIXME/HACK/XXX/unimplemented markers in lib/ or
+    tool/ (only benign "no-op" doc-comment mentions); zero
+    genuinely empty/comment-only catch bodies except two DOCUMENTED
+    teardown sites (`engine_adapter.dart` `dispose()` line 582 +
+    `_send`, whose comments state the exitCode watcher owns
+    teardown); no dead files in lib/src/{review,chess,variant}
+    (every file referenced); all 4 tool/ scripts referenced
+    (download_stockfish.dart + windows_accessibility_smoke.ps1 in
+    README/RUNBOOK/ci.yaml, refresh_stockfish.dart in
+    ENGINE_RUNTIME.md — dev upgrade workflow, intentionally
+    manual). The one actionable-looking finding — the two
+    `backend_bridge.dart` silent-swallow candidates
+    `squaresOfFen`/`squaresOfPayload` `catch (_) → empty map`
+    (lines 489/515) — was closed by reading the full functions:
+    both carry explicit "never throws"/"empty board instead of
+    crashing" doc contracts (lines 460-461/498-500), and the
+    empty-board degradation for malformed stored snapshots IS the
+    designed seek/replay UX, not a hidden failure (a log would
+    fire on every legitimate legacy-snapshot load). The
+    §11.33-§11.35 audit-trail code-P2 list therefore stays FULLY
+    closed with no new site added; zero code/test/workflow changes
+    this run.
+  Baseline re-verified myself this run: `flutter analyze` → `No
+  issues found! (ran in 2.1s)` (Flutter 3.47.6 stable, Dart
+  3.13.5 — matches the §11.8 CI pin); full `flutter test` →
+  666/666 pass (01:53, All tests passed!). Evidence commands:
+  `export PATH="$PATH:/home/tomi/flutter/bin"` then the two
+  commands above. No `flutter build`/smoke re-run: §11.36
+  re-verified the release-build+Xvfb baseline 2 entries ago and
+  nothing in lib/tool/ci changed since; the two leaked Xvfb
+  servers observed on the host (:77/:79) are pre-existing and
+  were left untouched per the §11.12/§11.14 precedent.
+  Files changed: this track (header + this entry) only —
+  `docs/FUTURE_WORK.md` untouched per the open-items-only rule
+  (no open item was worked, so no completed-work section and no
+  in-place edit; the "Last updated" line already carries §11.36
+  and the open-items-only rule forbids append-only notes for
+  no-op runs).
+  Commit: <hash-to-fill> (recorded in a follow-up track commit per
+  the §11.36/§11.35 precedent — the run's own commit first, then a
+  `docs(lmchess): record §11.37 commit hash in track` follow-up).
+  Push **BLOCKED** (same as every prior run since the credentials
+  audit): no GitHub credentials on this host — re-confirmed this
+  run with `git config --get credential.helper` (empty), `ls
+  ~/.git-credentials` (absent), `~/.netrc` (absent), no `gh`
+  CLI, no proxy env, and `GIT_TERMINAL_PROMPT=0 git push --dry-run
+  origin main` → `fatal: could not read Username for
+  'https://github.com'` (remote HEAD `e1749b3`, local origin/main
+  behind by 94 commits: `git rev-list --count origin/main..HEAD`
+  → 94). The push queue grew 92 → 94 (2 docs commits from §11.36
+  recorded in follow-up track commits). Re-run the push once
+  credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub
+  credentials exist; (b) trigger the §11.3 windows-nightly via
+  `workflow_dispatch` on the hosted `windows-latest` runner per
+  the §13 decision + §11.3 checklist — the ONLY remaining
+  functional gap (§14.1-§14.2); or (c) re-check §2.6 on the next
+  Flutter upgrade / when `flutter/flutter#190903` lands. The
+  `dart format` gate and the coverage-artifact comparison remain
+  open pending their owner decisions / ≥2 real CI runs.
