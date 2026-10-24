@@ -95,9 +95,31 @@ jobs:
         timeout-minutes: 15
         run: dart run tool/download_stockfish.dart linux-x86-64
 
-      - name: Test
+      - name: Test (full suite + coverage, §11.4 CI-P3#2 merge)
+        # §11.4: coverage is explicitly NOT the success metric — the goal is
+        # that every interaction-matrix control is exercised and every
+        # transition asserts the semantics invariants, not a line-coverage
+        # number. This step therefore gates on the TEST RESULTS; lcov.info is
+        # produced as a byproduct of the same run and consumed by the
+        # non-gating §11.22 upload step below.
+        #
+        # CI P3 #2 (§11.4-owner decision made 2026-10-24 — the only remaining
+        # Linux-implementable open process item per the §11.29/§11.30 audits):
+        # the separate non-gating "Test coverage" step (`flutter test
+        # test/ui --coverage`, continue-on-error: true) is merged into the
+        # gating test run. Previously the interaction-matrix suite ran TWICE
+        # per push — once inside the hard-gating `flutter test`, once again
+        # in the coverage step; one full-suite `flutter test --coverage`
+        # eliminates that duplicate execution and widens the lcov semantics
+        # from test/ui-only to the full suite (a superset of coverage data
+        # for the trend artifact). Accepted residual: a coverage-collection
+        # failure with all tests green now fails the same step that runs the
+        # tests (the old run step's continue-on-error is absorbed), a class
+        # unobserved in practice with standard flutter tooling that surfaces
+        # as a visible step error; every ARTIFACT-level failure (missing
+        # lcov, upload backend) stays non-gating per §11.22.
         timeout-minutes: 30
-        run: flutter test
+        run: flutter test --coverage
 
       - name: Install Linux desktop build deps
         # analyze + test cannot catch runner/plugin/CMake regressions — the
@@ -297,26 +319,19 @@ jobs:
           kill -9 "$XVFB_PID" 2>/dev/null || true
           exit ${EXIT:-0}
 
-      - name: Test coverage (§11.4)
-        # Coverage is explicitly NOT the success metric (§11.4): the goal is
-        # that every interaction-matrix control is exercised and every
-        # transition asserts the semantics invariants — not a line-coverage
-        # number. This step only generates the lcov.info artifact so coverage
-        # trends CAN be reported; it never gates the build.
-        continue-on-error: true
-        timeout-minutes: 30
-        run: flutter test test/ui --coverage
-
       - name: Upload coverage artifact (§11.22)
         # §11.22: coverage is explicitly NOT the success metric (§11.4) and
-        # "can never redden the gate" — but only the coverage RUN step above
-        # carried continue-on-error; this if: always() upload step did not, so
+        # "can never redden the gate" — the gating "Test" step runs the full
+        # suite and produces coverage/lcov.info as a byproduct (CI P3 #2
+        # merge), so ARTIFACT-level failures must not redden the gate either:
         # a transient actions/upload-artifact backend failure (a documented
-        # Actions failure mode) would have failed the whole ubuntu-gate job on
-        # a non-gating concern even though every real gate passed. Continue on
-        # error here too: a failed artifact push degrades to a warning, exactly
-        # like a failed coverage run (if-no-files-found: warn handles the
-        # missing-lcov case the same way).
+        # Actions failure mode) or a missing lcov.info (a red/aborted Test
+        # run) would otherwise fail the whole ubuntu-gate job on a
+        # non-gating concern even though every real gate result is already
+        # determined. Continue on error here: a failed artifact push (or a
+        # missing file — if-no-files-found: warn) degrades to a warning,
+        # exactly like a failed coverage collection did on the old
+        # non-gating coverage run step.
         if: always()
         continue-on-error: true
         uses: actions/upload-artifact@v4

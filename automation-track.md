@@ -1,34 +1,45 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-24 (UTC) — §11.30 run: the windows-nightly
-"Upload smoke artifacts" step now carries `continue-on-error: true`
-(CI process fix — §11.22's defect class finally fixed on its twin).
-An independent three-pronged subagent audit this run (FUTURE_WORK.md
-section inventory, full-repo unfinished-marker scan, ci.yaml workflow
-audit) re-confirmed the §11.29 terminal verdict on open FUTURE_WORK.md
-items (§9.1/§9.2/§11.3/§14.1-§14.2 Windows-native; §2.6
-upstream-external — flutter/flutter#190903 live-checked `merged: false`;
-CI P3 #2 coverage merge + `dart format` gate await explicit owner
-decisions) — BUT the workflow audit also caught a real un-fixed defect
-every prior run missed: `ci.yaml:481-490`, the windows-nightly "Upload
-smoke artifacts" step, was `if: always()` + `actions/upload-artifact@v4`
-with NO `continue-on-error` — the byte-for-byte defect class §11.22
-fixed for the ubuntu-gate coverage upload. The nightly would redden on
-a transient artifact-upload backend failure (a documented Actions
-failure mode) over a purely diagnostic upload (uia_smoke_output.txt,
-event_viewer_excerpt.txt) even though every real gate passed. Fixed:
-the step now carries `continue-on-error: true` + `if-no-files-found:
-warn`, mirroring the §11.22 contract exactly (a §11.30 comment
-cross-references both markers). No Dart/test changes: `flutter analyze`
-→ `No issues found! (ran in 2.4s)`; full `flutter test` → 651/651 pass
-(02:27, All tests passed!); workflow re-parses clean via a strict
-duplicate-key PyYAML loader (ubuntu-gate 14 + windows-nightly 12 steps
-unchanged; 28 timeout-minutes keys; the 2 `bash -n` "failures" are the
-Windows-only §9.1/§9.2 PowerShell blocks, per the §11.12 precedent).
-Recorded in the Run Log below; per the open-items-only rule
-FUTURE_WORK.md gains no new completed-work section (§11.3's process-fix
-list gained the §11.30 bullet in place; Last updated bumped).
+Last updated: 2026-10-24 (UTC) — §11.31 run: CI P3 #2 closed — the
+ubuntu-gate's `flutter test` + `flutter test test/ui --coverage` pair is
+merged into ONE full-suite `flutter test --coverage` step. The
+§11.4-owner decision the §11.29/§11.30 audits recorded as pending was
+made explicitly this run: the interaction-matrix suite previously ran
+TWICE per push — once inside the hard-gating `flutter test` (~1m53s)
+and once again in the separate non-gating "Test coverage" step
+(`flutter test test/ui --coverage`, `continue-on-error: true`,
+~1m45s) — and the §11.4 lcov artifact covered only test/ui. The merged
+step gates on the TEST results and produces `coverage/lcov.info` as a
+byproduct of the same run (lcov SF entries widen 66 → 70:
+`lib/src/chess/san.dart` + the storage layer — files exercised only by
+non-test/ui unit suites); the §11.22 upload keeps `if: always()` +
+`continue-on-error: true` + `if-no-files-found: warn`, so every
+artifact-level failure (missing lcov, upload backend) still can never
+redden the gate. Accepted residual (documented in the step comment): a
+coverage-collection failure with all tests green now fails the same
+step that runs the tests — a class unobserved in practice with standard
+flutter tooling. Measured on this host: merged `flutter test
+--coverage` → 651/651 pass in 02:04 vs ~3m38s for the old pair
+(01:53 + 01:45) — ~48% less test-execution wall time per push. The
+open-item set is otherwise unchanged: §9.1/§9.2/§11.3/§14.1-§14.2
+remain Windows-native; §2.6 upstream-external (flutter/flutter#190903
+live-checked this run: still `merged: false`); the `dart format` gate
+(102/127-file churn) remains pending its explicit owner decision;
+coverage-artifact comparison still needs ≥2 real CI runs; the ~80-commit
+local queue still cannot be pushed (no GitHub credentials on this host).
+Evidence: `flutter analyze` → `No issues found! (ran in 2.3s)`; full
+`flutter test` → 651/651 pass (01:53, All tests passed!); merged
+`flutter test --coverage` → 651/651 pass (02:04, coverage/lcov.info
+10,774 lines / 70 SF); workflow re-parses clean via a strict
+duplicate-key PyYAML loader (ubuntu-gate 13 + windows-nightly 12 steps;
+continue-on-error now ubuntu-gate 1 + windows-nightly 1; 27
+timeout-minutes keys; all 13 bash run blocks pass `bash -n` — the 2
+"failures" are the Windows-only §9.1/§9.2 PowerShell blocks, per the
+§11.12 precedent). Recorded in the Run Log below; FUTURE_WORK.md's
+§11.4 mechanism description was updated in place (per the
+open-items-only rule, no new completed-work section; Last updated
+bumped).
 Previously (2026-10-24) §11.29 run: NO ACTIONABLE ITEM —
 hourly terminal branch. An independent parallel subagent audit (full
 FUTURE_WORK.md section inventory, automation-track.md tail
@@ -3041,3 +3052,74 @@ suites referenced above now exist. Native Windows execution is tracked in
   merge) stays open pending the §11.4-owner decision; the `dart format`
   gate (102/127-file churn, needs an explicit owner decision) remains
   open; coverage-artifact comparison still needs ≥2 CI runs.
+- 2026-10-24Z — CI §11.31: CI P3 #2 CLOSED — the ubuntu-gate's
+  `flutter test` + `flutter test test/ui --coverage` pair is merged into
+  ONE full-suite `flutter test --coverage` step, making the §11.4-owner
+  decision the §11.29/§11.30 audits recorded as pending. Before: the
+  interaction-matrix suite ran TWICE per push (once in the hard-gating
+  `flutter test`, once again in the non-gating "Test coverage" step with
+  `continue-on-error: true`), and the §11.4 lcov artifact covered only
+  test/ui. After: one gating step "Test (full suite + coverage, §11.4
+  CI-P3#2 merge)" runs `flutter test --coverage` — it gates on the TEST
+  results and produces `coverage/lcov.info` as a byproduct, consumed by
+  the unchanged §11.22 upload step (`if: always()` +
+  `continue-on-error: true` + `if-no-files-found: warn`), so every
+  artifact-level failure (missing lcov on a red/aborted Test run, upload
+  backend) still can never redden the gate. The lcov semantics widen
+  from test/ui-only to full-suite, measured on this host: the old
+  test/ui-only lcov had 66 SF entries, the merged full-suite lcov has 70
+  — the delta is `lib/src/chess/san.dart`, `lib/src/storage/
+  local_store.dart`, `lib/src/storage/redaction.dart`,
+  `lib/src/storage/storage_reports.dart`, files exercised only by
+  non-test/ui unit suites. Execution-time saving measured on this host:
+  old pair 01:53 (`flutter test`) + 01:45 (`flutter test test/ui
+  --coverage`) ≈ 3m38s; merged `flutter test --coverage` → 02:04
+  (~48% less test-execution wall time per push). Accepted residual,
+  documented in the step comment: a coverage-collection failure with all
+  tests green would now fail the same step that runs the tests (the old
+  run step's continue-on-error is absorbed) — a class unobserved in
+  practice with standard flutter tooling, surfacing as a visible step
+  error; every artifact-level failure stays non-gating per §11.22.
+  ubuntu-gate drops 14 → 13 steps (the "Test coverage" step is gone;
+  the merged Test step replaced the plain Test step); windows-nightly
+  unchanged at 12. No Dart/test files changed.
+  Method: baseline re-verified first (`flutter analyze` →
+  `No issues found!`; full `flutter test` → 651/651 pass), then the
+  merged command was proven empirically on this host BEFORE the workflow
+  edit — `flutter test --coverage` → 651/651 pass (02:04) with
+  coverage/lcov.info generated (10,774 lines / 70 SF entries spanning
+  all lib/ modules, not just test/ui). The §11.4 contract text in
+  FUTURE_WORK.md was updated in place to the new mechanism (this run
+  IS the recorded §11.4-owner decision); the historical §11.x section
+  step-count narratives are unchanged.
+  Evidence: `flutter analyze` → `No issues found! (ran in 2.3s)` (zero
+  errors/warnings/infos); full `flutter test` → 651/651 pass (01:53, All
+  tests passed!); merged `flutter test --coverage` → 651/651 pass (02:04,
+  coverage/lcov.info generated); workflow re-parses clean via a strict
+  duplicate-key PyYAML loader (ubuntu-gate 13 steps + windows-nightly 12
+  — was 14/12; continue-on-error steps now ubuntu-gate 1 +
+  windows-nightly 1; 27 timeout-minutes keys = 25 steps + 2 jobs, every
+  step bounded); all 13 bash run blocks pass `bash -n` (the 2
+  "failures" are the two Windows-only §9.1/§9.2 PowerShell blocks, per
+  the §11.12 precedent). Files changed: `.github/workflows/ci.yaml`
+  (one step merged, one step deleted, §11.22 upload comment updated),
+  this track (header + this Run Log entry), `docs/FUTURE_WORK.md` (Last
+  updated bumped; §11.4 mechanism updated in place; CI P3 #2 removed
+  from the pending-owner list — per the open-items-only rule no new
+  completed-work section).
+  Push **BLOCKED** (same as every prior run since the credentials
+  audit): no GitHub credentials on this host (`git config --get
+  credential.helper` empty, no `gh`, no `~/.git-credentials`, no
+  `~/.netrc`, no token in env); `git ls-remote origin main` still shows
+  e1749b3, so the local queue (~81 commits through this run) remains
+  local-only. Re-run the push once credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials
+  exist; (b) trigger the §11.3 windows-nightly via `workflow_dispatch`
+  (or wait for the 06:00 UTC schedule) on the hosted `windows-latest`
+  runner per the §13 decision + §11.3 checklist — the ONLY remaining
+  functional gap (§14.1-§14.2); or (c) re-check §2.6 on the next
+  Flutter upgrade / when `flutter/flutter#190903` lands. The `dart
+  format` gate (102/127-file churn, needs an explicit owner decision)
+  remains open; coverage-artifact comparison still needs ≥2 real CI
+  runs; CI P3 #2 is now closed — no Linux-implementable process items
+  remain open.

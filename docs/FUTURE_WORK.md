@@ -1,27 +1,35 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-24 (UTC) — §11.30: the windows-nightly "Upload
-smoke artifacts" step now carries `continue-on-error: true` (CI process
-fix — §11.22's defect class fixed on its twin; found by this run's
-independent three-pronged audit, see `automation-track.md` Run Log).
-The open-item set is unchanged: §9.1/§9.2/§11.3/§14.1-§14.2 remain
-Windows-native; §2.6 remains upstream-external (flutter/flutter#190903
-re-checked live: still `merged: false`); CI P3 #2 (coverage merge) and
-the `dart format` gate remain pending their explicit owner decisions;
-coverage-artifact comparison still needs ≥2 real CI runs; and the
-~77-commit local queue still cannot be pushed (no GitHub credentials on
-this host). Evidence: `flutter analyze` → `No issues found! (ran in
-2.4s)`; full `flutter test` → 651/651 pass (02:27); workflow re-parses
-clean via a strict duplicate-key PyYAML loader (ubuntu-gate 14 +
-windows-nightly 12 steps unchanged; continue-on-error steps now
-ubuntu-gate 2 + windows-nightly 1; 28 timeout-minutes keys); all 14
-bash run blocks pass `bash -n` (the 2 "failures" are the Windows-only
-§9.1/§9.2 PowerShell blocks, per the §11.12 precedent). Recorded in
-`automation-track.md` (Run Log); per the open-items-only rule this file
-gains no new completed-work section (§11.3's process-fix list gained
-the §11.30 bullet in place; the item itself stays open as
-Windows-awaiting).
+Last updated: 2026-10-24 (UTC) — §11.31: CI P3 #2 CLOSED — the
+ubuntu-gate's `flutter test` + `flutter test test/ui --coverage` pair
+is merged into ONE full-suite `flutter test --coverage` step (details
+in `automation-track.md` Run Log). This run made the §11.4-owner
+decision the §11.29/§11.30 audits recorded as pending: the merged step
+gates on the test results and produces `coverage/lcov.info` as a
+byproduct of the same run; lcov semantics widen from test/ui-only to
+full-suite (70 SF entries vs 66 — adding san.dart + the storage layer,
+exercised only by unit suites); measured 02:04 vs the old pair's
+~3m38s (~48% less test-execution per push); the §11.22 upload keeps
+`if: always()` + `continue-on-error: true` + `if-no-files-found: warn`
+so artifact-level failures still can never redden the gate. The
+open-item set is otherwise unchanged: §9.1/§9.2/§11.3/§14.1-§14.2
+remain Windows-native; §2.6 remains upstream-external
+(flutter/flutter#190903 re-checked live: still `merged: false`); the
+`dart format` gate (102/127-file churn) remains pending its explicit
+owner decision; coverage-artifact comparison still needs ≥2 real CI
+runs; and the ~80-commit local queue still cannot be pushed (no GitHub
+credentials on this host). Evidence: `flutter analyze` → `No issues
+found! (ran in 2.3s)`; full `flutter test` → 651/651 pass (01:53);
+merged `flutter test --coverage` → 651/651 pass (02:04, lcov.info
+10,774 lines / 70 SF); workflow re-parses clean via a strict
+duplicate-key PyYAML loader (ubuntu-gate 13 + windows-nightly 12
+steps; continue-on-error steps now ubuntu-gate 1 + windows-nightly 1;
+27 timeout-minutes keys); all 13 bash run blocks pass `bash -n` (the 2
+"failures" are the Windows-only §9.1/§9.2 PowerShell blocks, per the
+§11.12 precedent). Recorded in `automation-track.md` (Run Log); per
+the open-items-only rule this file gains no new completed-work section
+(§11.4's mechanism description was updated in place).
 Previously (2026-10-24) §11.29: hourly NO-ACTIONABLE-ITEM
 run (terminal branch). An independent parallel subagent audit (full
 section inventory, track "Next:" clauses, marker grep across
@@ -505,14 +513,21 @@ Remaining:
 **Done when:** a green scheduled Windows run is linked from the repository and
 its artifacts prove the native gate passed.
 
-### 11.4 Coverage (P2 — DONE)
+### 11.4 Coverage (P2 — DONE; CI P3 #2 merge 2026-10-24)
 
-`flutter test test/ui --coverage` is now run in CI as a non-gating step on the
-ubuntu-gate job (`continue-on-error: true`): it generates `coverage/lcov.info`
-and uploads it as a `coverage-lcov` artifact so coverage trends can be
-reported. Coverage is explicitly not the success metric — the goal is that
-every interaction-matrix control is exercised and every transition asserts
-the semantics invariants, not a line-coverage number. See
+Coverage is explicitly not the success metric — the goal is that every
+interaction-matrix control is exercised and every transition asserts
+the semantics invariants, not a line-coverage number. Since CI P3 #2
+(2026-10-24, §11.4-owner decision) the ubuntu-gate "Test" step runs the
+full suite once as `flutter test --coverage`: it gates on the test
+results and generates `coverage/lcov.info` as a byproduct, uploaded by
+the §11.22 `if: always()` + `continue-on-error: true` step (a missing
+lcov or a failed artifact push degrades to a warning, never a red gate)
+so coverage trends can be reported. This merges the former pair of a
+gating `flutter test` + a non-gating `flutter test test/ui --coverage`
+(`continue-on-error: true`), which ran the interaction-matrix suite
+twice per push; the lcov semantics widened from test/ui-only to
+full-suite (a superset of coverage data for the trend artifact). See
 `automation-track.md` for the run evidence.
 
 ### 11.5 Dependency hygiene (P2 — DONE)
