@@ -1,7 +1,32 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-24 (UTC) — §11.33 run: §11.16's
+Last updated: 2026-10-24 (UTC) — §11.34 run: the §11.33
+audit-trail code-P2 list is now empty — its top candidate,
+"engine failure diagnostics silently swallowed in
+lib/src/review/engine_adapter.dart", is closed. `dart:developer`
+`log()` now surfaces four silent-swallow sites in that file (no
+behavior change): the `HeuristicEvaluator._extractPlacement`
+decode-error catch (still degrades to "unsupported"), the stderr
+drain/surface sub (each non-empty stderr line at warning), the
+stdout sub's onError, and the exit-code watcher ("exited
+unexpectedly (code N)" — fires only on the unexpected-exit path
+because dispose() nulls `_process` first, so the normal shutdown
+stays silent). The stale class doc ("fen or pieces") now states the
+true contract: "fen field required; boards without FEN interop out
+of scope". New deterministic offline suite
+`test/engine_adapter_test.dart` (7 tests: standard FEN supported;
+JSON-with-fen supported; malformed JSON degrades unsupported without
+throw; invalid placement unsupported; pieces-only out of scope;
+empty unsupported; garbage unsupported); the real-engine
+smoke/seam/variant suites still pass over the modified
+connect/dispose/stream paths. Evidence: `flutter analyze` → `No
+issues found! (ran in 2.2s)`; full `flutter test` → 658/658 pass
+(651 baseline + 7 new; 02:02, All tests passed!). Recorded in the
+Run Log below; FUTURE_WORK.md Last updated bumped (§11.34), per the
+open-items-only rule no new completed-work section; open-item set
+unchanged.
+Previously (2026-10-24) — §11.33 run: §11.16's
 maintained-in-place timeout-minutes contract is reconciled with the
 current workflow after the §11.31 CI P3 #2 merge. A fresh four-way
 parallel subagent audit (full FUTURE_WORK.md open-item inventory;
@@ -3368,3 +3393,67 @@ suites referenced above now exist. Native Windows execution is tracked in
   format` gate (102/127-file churn, needs an explicit owner decision)
   remains open; coverage-artifact comparison still needs ≥2 real CI
   runs; the ~85-commit local queue still cannot be pushed.
+
+- 2026-10-24Z — §11.34 run: code-P2 audit-trail candidate closed —
+  "engine failure diagnostics silently swallowed in
+  lib/src/review/engine_adapter.dart". The §11.33 four-way audit's
+  silent-swallow pass (9 real/borderline sites) put this file's four
+  catch/stream/exit sites at the top of the code-P2 list; this run
+  closes it with `dart:developer` `log()` calls (zero behavior
+  change) at: (1) `HeuristicEvaluator._extractPlacement` — the
+  `catch (_) { return null; }` now logs the decode error and still
+  degrades to "unsupported" (FEN text, JSON-with-fen, garbage all
+  covered offline); (2) the stderr drain/surface sub — every
+  non-empty stderr line is logged at warning level (previously
+  dropped entirely); (3) the stdout sub's onError — stream errors
+  logged instead of silent; (4) the exit-code watcher — logs
+  "exited unexpectedly (code N)" and fires only on the
+  unexpected-exit path because dispose() nulls `_process` first, so
+  the normal shutdown remains silent (no new log noise). The stale
+  class doc "fen or pieces" is corrected to the true contract:
+  "fen field required; boards without FEN interop out of scope".
+  New deterministic offline test file `test/engine_adapter_test.dart`
+  (7 tests, no real engine needed): standard FEN supported; JSON
+  payload with fen supported; malformed JSON degrades to unsupported
+  without throw; invalid placement unsupported; pieces-only out of
+  scope; empty input unsupported; garbage input unsupported. The
+  §11.33 audit's other borderline sites (backend_bridge.dart:420/1521,
+  openai/anthropic/gemini provider testConnection catches,
+  variant_review.dart:267, variant_projection.dart:195) were
+  deliberately NOT touched — candidates for a future run. Evidence:
+  `flutter analyze` → `No issues found! (ran in 2.2s)`; new suite
+  7/7 pass; targeted suites over the modified connect/dispose/stream
+  paths (e2e_smoke + review_evaluator_seam + variant_review) →
+  18/18 pass including the real-engine "embedded stockfish evaluates
+  and stays honest"; full `flutter test` → 658/658 pass (651 baseline
+  + 7 new; 02:02, All tests passed! — confirmed by a fresh foreground
+  run and the background run). Files changed:
+  `lib/src/review/engine_adapter.dart` (log imports + 4 log sites +
+  class doc), `test/engine_adapter_test.dart` (new), this track
+  (header + this Run Log entry), `docs/FUTURE_WORK.md` (Last updated
+  bumped to §11.34; per the open-items-only rule no new
+  completed-work section; open-item set unchanged — §9.1/§9.2/§11.3/
+  §14.1-§14.2 Windows-native, §2.6 upstream-external, `dart format`
+  gate owner-pending, coverage comparison needs ≥2 CI runs, push
+  queue credentials-blocked).
+  Commit: <FILL-AFTER-COMMIT> (recorded in a follow-up track commit
+  per the §13 precedent).
+  Push **BLOCKED** (same as every prior run since the credentials
+  audit): no GitHub credentials on this host (`git config --get
+  credential.helper` empty, no `gh`, no `~/.git-credentials`, no
+  `~/.netrc`, no token in env); `git push origin main` → `fatal:
+  could not read Username for 'https://github.com'`; the local queue
+  now counts 87 commits through this run's final commit (per `git
+  rev-list --count origin/main..HEAD`). Re-run the push once
+  credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials
+  exist; (b) extend the §11.34 diagnostics pattern to the remaining
+  §11.33 borderline swallow sites (backend_bridge.dart:420/1521,
+  provider testConnection catches, variant_review.dart:267,
+  variant_projection.dart:195); (c) trigger the §11.3 windows-nightly
+  via `workflow_dispatch` on the hosted `windows-latest` runner per
+  the §13 decision + §11.3 checklist; or (d) re-check §2.6 on the
+  next Flutter upgrade / when `flutter/flutter#190903` lands. The
+  `dart format` gate (102/127-file churn, needs an explicit owner
+  decision) remains open; coverage-artifact comparison still needs
+  ≥2 real CI runs; the local commit queue still cannot be pushed.

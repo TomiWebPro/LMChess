@@ -1,7 +1,27 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-24 (UTC) — §11.33: §11.16's maintained-in-place
+Last updated: 2026-10-24 (UTC) — §11.34: the §11.33 audit-trail
+code-P2 list is now empty — its top candidate, "engine failure
+diagnostics silently swallowed in lib/src/review/engine_adapter.dart",
+is closed. `dart:developer` `log()` calls now surface the four
+silent-swallow sites (zero behavior change): the
+`HeuristicEvaluator._extractPlacement` decode-error catch (still
+degrades to "unsupported"), the stderr drain/surface sub (each
+non-empty stderr line at warning), the stdout sub's onError, and the
+exit-code watcher ("exited unexpectedly (code N)" — unexpected-exit
+path only, since dispose() nulls `_process` first). The stale class
+doc ("fen or pieces") now states the true contract: "fen field
+required; boards without FEN interop out of scope". New deterministic
+offline suite `test/engine_adapter_test.dart` (7 tests); verified
+with `flutter analyze` → `No issues found!` and full `flutter test`
+→ 658/658 pass (651 baseline + 7 new). Recorded in
+`automation-track.md` (Run Log); per the open-items-only rule this
+file gains no new completed-work section — no open FUTURE_WORK item
+was touched (§9.1/§9.2/§11.3/§14 remain Windows-blocked, §2.6
+upstream-external; the `dart format` gate and the coverage-artifact
+comparison still await their owner decisions / ≥2 real CI runs).
+Previously (2026-10-24) §11.33: §11.16's maintained-in-place
 timeout-minutes contract is reconciled with the current workflow after the
 §11.31 CI P3 #2 merge. The live §11.16 section still asserted the
 pre-merge state — "all 26 steps", "all 28 `timeout-minutes` keys

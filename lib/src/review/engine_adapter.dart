@@ -19,6 +19,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' show log;
 import 'dart:io';
 
 /// Evaluates a position given as FEN (standard) or variant JSON (chaotic).
@@ -107,8 +108,8 @@ abstract class EngineSources {
 ///
 /// Parses only the piece-placement field of FEN; anything unparseable
 /// yields `supported: false` (never a fabricated 0.00). Variant JSON is
-/// accepted when it contains a `fen` or `pieces` field, otherwise
-/// unsupported. [source] is always `'heuristic'`.
+/// accepted when it contains a `fen` field; boards without FEN interop
+/// are out of scope and unsupported. [source] is always `'heuristic'`.
 class HeuristicEvaluator implements PositionEvaluator {
   /// Piece values in centipawns.
   static const Map<String, int> pieceValues = <String, int>{
@@ -153,7 +154,16 @@ class HeuristicEvaluator implements PositionEvaluator {
           return null;
         }
         return null;
-      } catch (_) {
+      } catch (error) {
+        // Malformed variant JSON: degrade to unsupported, but log the
+        // decode failure so a corrupt game record stays diagnosable
+        // instead of silently yielding "no placement".
+        log(
+          'HeuristicEvaluator: unparseable variant JSON — treating the '
+          'position as unsupported',
+          name: 'heuristic-evaluator',
+          error: error,
+        );
         return null;
       }
     }
@@ -348,13 +358,35 @@ class UciEngineAdapter implements PositionEvaluator {
     _stderrSub = process.stderr
         .transform(utf8.decoder)
         .transform(const LineSplitter())
-        .listen((_) {}, onError: (Object _) {});
+        .listen(
+          (line) {
+            final trimmed = line.trimRight();
+            if (trimmed.isEmpty) return;
+            // Engine stderr carries warnings and errors: drain the pipe
+            // (a full stderr pipe would deadlock the child) AND surface
+            // the content instead of discarding it silently.
+            log('$engineName: $trimmed', name: 'engine-stderr');
+          },
+          onError: (Object error) {
+            log(
+              '$engineName stderr stream error',
+              name: 'engine-stderr',
+              error: error,
+            );
+          },
+        );
     _stdoutSub = process.stdout
         .transform(utf8.decoder)
         .transform(const LineSplitter())
         .listen(
           lines.add,
-          onError: (Object _) {},
+          onError: (Object error) {
+            log(
+              '$engineName stdout stream error',
+              name: 'engine-stdout',
+              error: error,
+            );
+          },
           // Closing the line controller on stdout EOF makes any in-flight
           // `evaluate` finish immediately instead of waiting out its timer.
           onDone: () {
@@ -365,8 +397,17 @@ class UciEngineAdapter implements PositionEvaluator {
     // AV quarantine). Without this the adapter would stay "connected" forever
     // and every evaluate would write into a dead stdin, then wait out the
     // whole search timeout before reporting a silent `unsupported`.
-    unawaited(process.exitCode.then((_) {
+    unawaited(process.exitCode.then((code) {
       if (!identical(_process, process)) return;
+      // The engine died on its own (a mismatched binary, OOM, kill, or
+      // AV quarantine). [dispose] nulls [_process] before killing, so an
+      // intentional teardown never reaches this branch. Surface the exit
+      // code — previously the only trace of this event was a silent
+      // `unsupported` on the next evaluate.
+      log(
+        '$engineName exited unexpectedly (code $code)',
+        name: 'engine-adapter',
+      );
       _process = null;
       final stderrSub = _stderrSub;
       final stdoutSub = _stdoutSub;
