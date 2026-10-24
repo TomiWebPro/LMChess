@@ -1,7 +1,14 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-24 (UTC) — §13 open decisions RESOLVED: the
+Last updated: 2026-10-24 (UTC) — §11.18 closes the last bypass in the §11.15
+Linux-release smoke: the ≥100×100 window-size sanity check gated only the
+search-loop `break` (never the post-loop verdict), so a window that was
+`IsViewable` at a capped <100×100 size through all 75 iterations was greenlit
+(`smoke ok: ... 50x50`); the post-loop guard now also enforces
+WIDTH/HEIGHT ≥ 100 and the error message reports the observed map_state +
+geometry — everything §11.15 documented is enforced unconditionally.
+Previously (2026-10-24) §13 open decisions RESOLVED: the
 Windows-runner question (hosted `windows-latest` vs a dedicated VM for the
 §9.1/§9.2/§11.3 native validation) is DECIDED **hosted `windows-latest`, no
 dedicated VM required**, and the safe-mode question is DECIDED **no toggle —
@@ -1691,3 +1698,80 @@ suites referenced above now exist. Native Windows execution is tracked in
   needs an explicit owner decision) and the coverage-artifact comparison
   (needs ≥2 CI runs) remain the only audit candidates, neither a code/CI
   defect.
+- 2026-10-24Z — CI P1 §11.18 (Linux-release smoke: window-size sanity check
+  actually enforced). Three parallel subagent audits (code-marker scan,
+  full ci.yaml defect audit, FUTURE_WORK.md/ARCHITECTURE.md open-item audit)
+  confirmed the open FUTURE_WORK.md items are all Windows-native (§9.1/§9.2/
+  §11.3/§14.1-14.2 — BLOCKED on this Linux host, no credentials, no Windows
+  desktop/UIA session), external (§2.6 — upstream fix still unlanded), or
+  already-resolved decisions (§13). The ci.yaml audit surfaced a genuine
+  Linux-fixable correctness defect nobody had logged: the §11.15 smoke's
+  window-size sanity check was bypassable. `WIN_ID`/`MAP_STATE` are
+  re-checked by the post-loop verdict, but `WIDTH`/`HEIGHT` ≥ 100 only gated
+  the `break` inside the 75×1 s window-search loop — if the window was
+  `IsViewable` at a capped <100×100 size for all 75 iterations, the loop
+  exhausted without breaking, the post-loop guard passed, and the step
+  printed `smoke ok: ... 50x50` — greenlighting a window that never reached
+  the §11.15 sane-geometry requirement (the exact class of "mapped but
+  wrong" first-frame failure the gate exists to catch; ironically capped
+  windows passed MORE reliably than healthy ones, because a small window
+  maps faster under llvmpipe). Files changed:
+  `.github/workflows/ci.yaml` — the smoke step's post-loop verdict now also
+  requires `${WIDTH:-0} -ge 100` and `${HEIGHT:-0} -ge 100` (single guard:
+  `[ -z "$WIN_ID" ] || [ "$MAP_STATE" != "IsViewable" ] || WIDTH < 100 ||
+  HEIGHT < 100`), and the `::error::` message reports the observed
+  `map_state='...'` + `${WIDTH}x${HEIGHT}` so a capped window is visible in
+  the log; the success line's dimensions are now guaranteed ≥ 100×100.
+  Step counts unchanged (ubuntu-gate 14, windows-nightly 10) — only the
+  smoke step's post-loop `if` changed.
+  `docs/FUTURE_WORK.md` — §11.18 added + closed as DONE in the same run per
+  the §11.4–§11.17 precedent (open list unchanged: §11.18 not an open item),
+  header bumped.
+  `automation-track.md` — header line + this Run Log entry (no Roadmap row
+  exists for §11.18; per protocol the Run Log is the record).
+  No Dart/test files changed.
+  Evidence: workflow re-parses clean via PyYAML with a strict duplicate-key
+  loader (jobs: ubuntu-gate + windows-nightly; ubuntu-gate 14 steps,
+  windows-nightly 10; step counts unchanged); the extracted smoke run block
+  passes `bash -n`; `flutter analyze` → `No issues found! (ran in 2.4s)`
+  (exact output); full regression `flutter test` → 637/637 pass (01:53, All
+  tests passed! — no Dart changes). The fix is proven empirically on this
+  host: (a) an 8-case synthetic probe of the verdict logic — capped 50×50
+  viewable window → FAIL (`::error::... got map_state='IsViewable', 50x50`),
+  real 1278×720 → PASS, empty window id → FAIL, IsUnMapped → FAIL, empty
+  xwininfo dimensions → FAIL, 99×99 / 100×99 / 99×100 boundaries → FAIL,
+  exact 100×100 → PASS (ALL GUARD CASES OK); (b) the FULL modified smoke
+  block executed verbatim against the real Linux release bundle under a
+  fresh Xvfb :91 → `smoke ok: release binary alive after 15s and window
+  mapped (title llm_chess_arena, 1278x720) under Xvfb + openbox`, exit 0,
+  no :91 Xvfb or release-app orphan left behind (the leaked :77/:79 servers
+  from earlier hourly runs remain untouched per the §11.12/§11.14 precedent;
+  a first attempt on :77 was correctly refused by the §11.14 pre-flight
+  probe — `::error::display :77 already in use ... refusing to attach` —
+  itself a live demonstration of that gate). `git status --short` confirms
+  only the workflow + the two track docs changed (release bundle build/
+  stays untracked).
+  Commit: pending (hash recorded after commit below).
+  Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
+  host — audited again this run (`git config --get credential.helper` empty,
+  no `gh`, no SSH key, no `~/.git-credentials`, no `~/.netrc`, no token in
+  env); `git ls-remote origin main` still shows `e1749b3`, so the local
+  queue (50 commits through this run) remains local-only. Re-run the push
+  after credentials are provisioned.
+  Next: (a) re-push the queued local commits once GitHub credentials exist;
+  (b) trigger the §11.3 windows-nightly via `workflow_dispatch` (or wait for
+  the 06:00 UTC schedule) on the hosted `windows-latest` runner per the §13
+  decision + §11.3 checklist — the ONLY remaining functional gap
+  (§14.1-14.2); or (c) re-check §2.6 on the next Flutter upgrade / when
+  `flutter/flutter#190903` lands. Audit candidates logged for future runs:
+  §11.18-bis the fixed Stockfish cache keys never invalidate (constant key
+  with no `hashFiles`/version component — correctness is saved by the
+  download tool's size/SHA-256/type/UCI self-heal, but after a release bump
+  the restored cache slot stays permanently frozen stale and every run
+  re-downloads the ~103 MiB binary; a fix could key on the pinned SHA-256 in
+  the per-platform `assets/engines/*/README.md` via `hashFiles`) and the
+  stale-doc trio found by the docs audit (ARCHITECTURE.md:12 "regression
+  tests pending" — perft tests exist; ARCHITECTURE.md:54 "unit/widget suite
+  deferred" — 12 screen suites + 637 tests exist; ENGINE_RUNTIME.md:154
+  references "§3.3" which no longer exists in RUNBOOK.md — the section is
+  "Flutter upgrade gate (release block, acceptance criterion 14.8)").

@@ -1,7 +1,15 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-24 (UTC) — §13 open decisions RESOLVED: the
+Last updated: 2026-10-24 (UTC) — §11.18 closes the last bypass in the §11.15
+Linux-release smoke gate: the window-size sanity check (width/height ≥ 100)
+only gated the `break` inside the 75×1 s window-search loop, never the
+post-loop verdict — a window that was `IsViewable` at a capped <100×100 size
+through all 75 iterations exhausted the loop without breaking and was
+greenlit (`smoke ok: ... 50x50`). The post-loop guard now also enforces
+`${WIDTH:-0} -ge 100` / `${HEIGHT:-0} -ge 100` and the `::error::` message
+reports the observed `map_state` + geometry, so everything §11.15 documented
+is enforced unconditionally. Previously (2026-10-24) §13 open decisions RESOLVED: the
 Windows-runner question (hosted `windows-latest` vs a dedicated VM for the
 §9.1/§9.2/§11.3 native validation) is DECIDED **hosted `windows-latest`, no
 dedicated VM required**. Evidence (verified against the hosted Windows Server
@@ -666,6 +674,40 @@ added); the download tool was verified against the pinned
 foreign-arch handshake degrades to a warning exactly as designed); full
 regression `flutter test` → 637/637 pass (no behavior change on Linux).
 See `automation-track.md` for the run log.
+
+### 11.18 Linux-release smoke: window-size sanity check actually enforced (P1 — DONE)
+
+The §11.15 smoke requires the app window to be mapped (`map_state ==
+IsViewable`) **and** sane-sized (width/height ≥ 100), but the size check only
+gated the `break` inside the 75×1 s window-search loop — the post-loop verdict
+re-checked only the window id and map state. A window that stayed IsViewable
+at a capped <100×100 size through all 75 iterations exhausted the loop without
+breaking, passed the post-loop guard, and was printed as a success:
+`smoke ok: ... 50x50`. The §11.15 sanity requirement was therefore bypassable
+exactly when the window had a real problem (mapped but with wrong/negligible
+geometry). The post-loop guard now also requires `${WIDTH:-0} -ge 100` and
+`${HEIGHT:-0} -ge 100`, and the error message reports the observed
+`map_state` + geometry so a capped window is visible in the log:
+`::error::release binary is alive but no mapped window titled
+'llm_chess_arena' with sane geometry on :77 (expected map_state IsViewable and
+>= 100x100 px; got map_state='IsViewable', 50x50; ...)`. The success line's
+`${WIDTH}x${HEIGHT}` is now guaranteed ≥ 100×100.
+
+Evidence: workflow re-parses clean via PyYAML (strict duplicate-key loader;
+ubuntu-gate 14 steps, windows-nightly 10 — step counts unchanged, only the
+smoke step's post-loop `if` changed); the smoke run block passes `bash -n`;
+`flutter analyze` → `No issues found! (ran in 2.4s)`; full regression
+`flutter test` → 637/637 pass (01:53, All tests passed! — no Dart changes).
+The verdict logic is proven empirically on this host with an 8-case synthetic
+probe: capped 50×50 viewable → FAIL, real 1278×720 → PASS, empty window id →
+FAIL, IsUnMapped → FAIL, xwininfo empty dimensions → FAIL, 99×99/100×99/
+99×100 boundaries → FAIL, exact 100×100 → PASS; and the full modified smoke
+block ran against the real Linux release binary under a fresh Xvfb :91 →
+`smoke ok: release binary alive after 15s and window mapped (title
+llm_chess_arena, 1278x720) under Xvfb + openbox`, exit 0, no :91 Xvfb/app
+orphan left behind (the pre-existing leaked :77/:79 servers remain untouched
+per the §11.12/§11.14 precedent — the §11.14 pre-flight probe correctly
+refused the occupied :77). See `automation-track.md` for the run log.
 
 ---
 

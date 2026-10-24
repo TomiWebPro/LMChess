@@ -186,8 +186,9 @@ jobs:
             fi
             sleep 1
           done
-          if [ -z "$WIN_ID" ] || [ "$MAP_STATE" != "IsViewable" ]; then
-            echo "::error::release binary is alive but no mapped window titled 'llm_chess_arena' on :77 (first frame never rendered within the wait; check smoke.log)"
+          if [ -z "$WIN_ID" ] || [ "$MAP_STATE" != "IsViewable" ] \
+             || [ "${WIDTH:-0}" -lt 100 ] || [ "${HEIGHT:-0}" -lt 100 ]; then
+            echo "::error::release binary is alive but no mapped window titled 'llm_chess_arena' with sane geometry on :77 (expected map_state IsViewable and >= 100x100 px; got map_state='${MAP_STATE:-<none>}', ${WIDTH:-0}x${HEIGHT:-0}; first frame never fully rendered within the wait; check smoke.log)"
             cat smoke.log
             kill -9 "$APP_PID" "$XVFB_PID" "$WM_PID" 2>/dev/null || true
             exit 1
