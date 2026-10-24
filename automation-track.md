@@ -1751,7 +1751,7 @@ suites referenced above now exist. Native Windows execution is tracked in
   itself a live demonstration of that gate). `git status --short` confirms
   only the workflow + the two track docs changed (release bundle build/
   stays untracked).
-  Commit: pending (hash recorded after commit below).
+  Commit: ffba037 (recorded in a follow-up track commit per the §13 precedent).
   Push **BLOCKED** (same as all prior runs): no GitHub credentials on this
   host — audited again this run (`git config --get credential.helper` empty,
   no `gh`, no SSH key, no `~/.git-credentials`, no `~/.netrc`, no token in
