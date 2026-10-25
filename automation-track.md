@@ -54,8 +54,9 @@ FUTURE_WORK item was touched, the open-item set is unchanged).
 Commit: recorded in the follow-up track commit per the §11.40
 precedent (the run's own commit first, then a
 `docs(lmchess): record §11.41 commit hash in track` follow-up). Push
-this run: attempted and verified after commit (see the Run Log entry
-for the exact result).
+this run: **SUCCEEDED** — `git push origin main` → `To
+https://github.com/TomiWebPro/LMChess.git a50340e..f04a391  main ->
+main`, exit 0 (recorded in the follow-up Run Log entry).
 Next: trigger the §11.3 windows-nightly on hosted `windows-latest`
 (the ONLY remaining functional gap, §14.1-§14.2); re-check §2.6 when
 `flutter/flutter#190903` lands; or continue §11.41-style audit-trail
@@ -4226,11 +4227,16 @@ suites referenced above now exist. Native Windows execution is tracked in
   completed-work section (open-items-only — the open-item set is
   unchanged); `automation-track.md` — header + this Run Log entry
   (no Roadmap row exists for this item; per protocol the Run Log is
-  the record). Commit: recorded in the follow-up track commit per the
-  §11.40 precedent (the run's own commit first, then a
+  the record). Commit: f04a391, recorded in this follow-up track commit
+  per the §11.40 precedent (the run's own commit first, then a
   `docs(lmchess): record §11.41 commit hash in track` follow-up).
-  Push this run: attempted + verified after commit (exact `git push`
-  result in the follow-up Run Log entry).
+  Push this run: **UNBLOCKED + SUCCEEDED** — the remote carries the
+  embedded GitHub PAT (`git remote -v` shows
+  `https://TomiWebPro:<PAT>@github.com/...`); origin/main was a50340e
+  (the §11.40 follow-up) with `git rev-list --count origin/main..HEAD`
+  → 0 before this run's commit; `git push origin main` → `To
+  https://github.com/TomiWebPro/LMChess.git a50340e..f04a391
+  main -> main`, exit 0.
   Next: (a) trigger the §11.3 windows-nightly via `workflow_dispatch`
   on hosted `windows-latest` per the §13 decision + §11.3 checklist —
   the ONLY remaining functional gap (§14.1-§14.2); (b) re-check §2.6
