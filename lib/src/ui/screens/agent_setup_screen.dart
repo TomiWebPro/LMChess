@@ -14,14 +14,22 @@
 /// [SecureKeyStore.deleteApiKey]. A failed Clear (secure-store delete error)
 /// keeps the stored indicator and surfaces a SnackBar, mirroring the save
 /// path — the UI never claims "no key stored" while a secret still exists in
-/// the store. **Test connection** resolves the key (including a just-typed,
-/// not-yet-saved one) and probes the real provider endpoint via
-/// [testAgentConnection] — no simulated latency.
+/// the store. A secure-store READ failure in the stored-key presence check is
+/// never silent either: the indicator degrades to "no key stored" but the
+/// failure is surfaced via a `dart:developer` log (name `agent-setup`),
+/// mirroring the §11.25 `resolveApiKey` read-failure contract, so operators
+/// can distinguish "no key" (quiet) from "store failed" (logged). **Test
+/// connection** resolves the key (including a just-typed, not-yet-saved one)
+/// and probes the real provider endpoint via [testAgentConnection] — no
+/// simulated latency. A throwing probe is likewise logged (never silent),
+/// while the banner still reports the generic failure.
 ///
 /// Construct with [agentId] to edit, or `null` to create (a uuid is minted
 /// on save). Pass [keyStore] to inject a deterministic store in tests
 /// (defaults to the platform-backed [SecureKeyStore]).
 library;
+
+import 'dart:developer' show log;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -130,14 +138,28 @@ class _AgentSetupScreenState extends ConsumerState<AgentSetupScreen> {
   }
 
   /// Checks (best-effort) whether a secret is already stored for the ref.
+  ///
+  /// A secure-store read failure degrades to "no key stored" (the widget
+  /// cannot render a store-failed state without a layout change) but is
+  /// never silent: it is logged via `dart:developer` (name `agent-setup`)
+  /// so "no key" and "store failed" are distinguishable by operators.
   Future<void> _loadKeyPresence() async {
     final ref0 = _apiKeyRef;
     if (ref0 == null || ref0.isEmpty) return;
     var has = false;
     try {
       has = (await _keyStore.readApiKey(ref0))?.isNotEmpty ?? false;
-    } catch (_) {
-      has = false; // No secure backend (e.g. widget tests) → treat as none.
+    } catch (error, stackTrace) {
+      // No secure backend (e.g. widget tests) → treat as none, but log the
+      // read failure instead of swallowing it silently (§11.25 standard).
+      has = false;
+      log(
+        'loadKeyPresence: secure-store read failed for ref "$ref0" — '
+        'treating the stored-key indicator as absent (no key indicated)',
+        name: 'agent-setup',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
     if (!mounted) return;
     setState(() => _hasStoredKey = has);
@@ -473,8 +495,20 @@ class _AgentSetupScreenState extends ConsumerState<AgentSetupScreen> {
         probe,
         inlineSecret: _apiKey.text.trim(),
       );
-    } catch (_) {
+    } catch (error, stackTrace) {
+      // A throwing probe is logged (never silent) — the user-facing result
+      // is the same generic failure banner (the connection-tester seam
+      // already logs its own internal transport failures with no secret
+      // material, and this log message never includes the key either).
       ok = false;
+      log(
+        'testConnection: connection probe threw for ${probe.provider}/'
+        '${probe.model.isEmpty ? '(no model)' : probe.model} — reported '
+        'as connection failed',
+        name: 'agent-setup',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
     if (!mounted) return;
     final label =

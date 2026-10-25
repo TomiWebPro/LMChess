@@ -1,7 +1,53 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-25 (UTC) — §11.40 (arena-chaos runner-failure
+Last updated: 2026-10-25 (UTC) — §11.41 (agent-setup silent-swallow
+closure — the final two screen-level silent-swallow catches in lib/
+closed). A fresh independent parallel subagent audit (full
+FUTURE_WORK.md open-item inventory incl. every "Done when" string; an
+end-to-end ci.yaml defect audit; a lib/test/tool convention + marker
+audit) again confirmed ZERO FUTURE_WORK.md open items implementable-and-
+verifiable on this Linux host (§9.1/§9.2/§11.3/§14.1-§14.2 Windows-
+native-blocked, §2.6 upstream-external — live-checked this run via the
+GitHub API: flutter/flutter#190903 still `merged: false` — the `dart
+format` gate owner-decision-pending, coverage-artifact comparison
+needing ≥2 real CI runs), NO P0 (crash) or P1 (correctness) code or
+workflow-file defects, and the ci.yaml workflow clean end-to-end (strict
+duplicate-key PyYAML: ubuntu-gate 13 + windows-nightly 12 steps, 27
+timeout-minutes keys; all bash blocks pass `bash -n`; both windows
+PowerShell blocks parse with 0 errors under real pwsh 7.6.8 with the
+§11.38 `$LASTEXITCODE` null-guards). The audit's one suspected smoke-gate
+race was verified as a FALSE POSITIVE — the post-loop geometry verdict
+uses `${WIDTH:-0}`/`${HEIGHT:-0}` plus `WIDTH=0`/`HEIGHT=0`
+initializers, so a vanished window at the final loop iteration still
+fails the ≥100x100 check. The lib/test/tool audit DID surface genuine
+remaining silent-swallow catches, proving §11.40's "last silent-swallow
+in lib/" claim wrong; this run closes the final two SCREEN-level ones as
+its ONE deliverable: `lib/src/ui/screens/agent_setup_screen.dart`
+`_loadKeyPresence` (secure-store READ failure silently rendered as "No
+key stored" — the read-side sibling of the §11.24/§11.25 write/delete
+fixes, so "store failed" read exactly like "no key" to operators) and
+`_testConnection` (a throwing connection probe dropped with zero
+diagnostics). Both catches now surface the failure via `dart:developer`
+`log()` (name `agent-setup`, error + stack trace) with ZERO behavior
+change, per the §11.35/§11.40 diagnostics standard; the class + method
+docs restate the contract ("store failed" logged, "no key" quiet). Two
+new deterministic offline widget tests in `test/ui/agent_setup_test.dart`
+pin the degrade contract: a read-failing `SecureKeyStore` fake → the
+edit-mode indicator degrades to lock_open (no Clear action) with the
+throw contained; a throwing `connectionTesterProvider` probe → the
+generic "Connection failed" banner with the throw contained and no
+pending timer. Evidence: `flutter analyze` → `No issues found! (ran in
+2.4s)`; `flutter test test/ui/agent_setup_test.dart` → 34/34 pass (32
+baseline + 2 new); related seams (connection_tester 8, resolve_api_key
+6, swallow_diagnostics 8) → 22/22 pass; full `flutter test` → 671/671
+pass (669 baseline + 2 new). Recorded in `automation-track.md` (Run
+Log); per the open-items-only rule this file gains no new completed-work
+section — no open FUTURE_WORK item was touched (§9.1/§9.2/§11.3/§14
+remain Windows-blocked, §2.6 upstream-external; the `dart format` gate
+and the coverage-artifact comparison still await their owner decisions
+/ ≥2 real CI runs).
+Previously (2026-10-25) — §11.40 (arena-chaos runner-failure
 diagnostics — the last silent-swallow catch in lib/ closed). A fresh
 independent parallel subagent audit (full FUTURE_WORK.md open-item
 inventory incl. every "Done when" string; an end-to-end ci.yaml defect
@@ -649,10 +695,10 @@ The remaining items are release validation, CI automation, and process
 integration that cannot be closed on Linux. Completed work and the crash
 investigation history are preserved in `automation-track.md` and git history.
 
-Verified baseline (2026-10-25, re-verified §11.40):
+Verified baseline (2026-10-25, re-verified §11.41):
 
 - `flutter analyze` — 0 issues.
-- `flutter test` — 669/669 pass.
+- `flutter test` — 671/671 pass.
 - `flutter build linux --release` — succeeds; release binary starts under Xvfb.
 - Roadmap §12 — 18/18 deliverables present; §10.1–10.8 refactors complete.
 - Interaction matrix §6 — all 12 screen/widget suites present.

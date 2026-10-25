@@ -1,7 +1,74 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-25 (UTC) — §11.40 (arena-chaos runner-failure
+Last updated: 2026-10-25 (UTC) — §11.41 (agent-setup silent-swallow
+closure — the final two screen-level silent-swallow catches in lib/
+closed). A fresh independent parallel subagent audit (full
+FUTURE_WORK.md open-item inventory incl. every "Done when" string; an
+end-to-end ci.yaml defect audit; a lib/test/tool convention + marker
+audit) again confirms ZERO FUTURE_WORK.md open items implementable-and-
+verifiable on this Linux host (§9.1/§9.2/§11.3/§14.1-§14.2 remain
+Windows-native-blocked, §2.6 remains upstream-external — live-checked
+this run via the GitHub API: flutter/flutter#190903 still `merged:
+false` — the `dart format` gate remains owner-decision-pending,
+coverage-artifact comparison still needs ≥2 real CI runs), NO P0
+(crash) or P1 (correctness) code or workflow-file defects, and the
+ci.yaml workflow clean end-to-end (strict duplicate-key PyYAML:
+ubuntu-gate 13 + windows-nightly 12 steps, 27 timeout-minutes keys;
+all bash blocks pass `bash -n`; both windows PowerShell blocks parse
+with 0 errors under real pwsh 7.6.8 with the §11.38 `$LASTEXITCODE`
+null-guards). The audit's one suspected smoke-gate race was verified
+as a FALSE POSITIVE: the smoke step's post-loop geometry verdict uses
+`${WIDTH:-0}`/`${HEIGHT:-0}` plus `WIDTH=0`/`HEIGHT=0` initializers,
+so a vanished window at the final loop iteration still fails the
+≥100x100 check (`[ "0" -lt 100 ]` is true) — the §11.18/§11.21
+contract holds. The lib/test/tool audit DID surface genuine remaining
+silent-swallow catches, proving §11.40's "last silent-swallow in lib/"
+claim wrong; this run closes the final two SCREEN-level ones as its ONE
+deliverable: `lib/src/ui/screens/agent_setup_screen.dart` `_loadKeyPresence`
+(secure-store READ failure silently rendered as "No key stored" — the
+read-side sibling of the §11.24/§11.25 write/delete fixes, so "store
+failed" read exactly like "no key" to operators) and `_testConnection`
+(a throwing connection probe was dropped with zero diagnostics). Both
+catches now surface the failure via `dart:developer` `log()` (name
+`agent-setup`, error + stack trace) with ZERO behavior change, following
+the §11.35/§11.40 diagnostics standard, and the class doc + method doc
+restate the contract ("store failed" logged, "no key" quiet). Two new
+deterministic offline widget tests in `test/ui/agent_setup_test.dart`
+pin the degrade contract: a read-failing `SecureKeyStore` fake → the
+edit-mode indicator degrades to lock_open (no Clear action) with the
+throw contained (no widget exception); a throwing
+`connectionTesterProvider` probe → the generic "Connection failed"
+banner with the throw contained and no pending timer. Evidence:
+`flutter analyze` → `No issues found! (ran in 2.4s)`; `flutter test
+test/ui/agent_setup_test.dart` → 34/34 pass (32 baseline + 2 new);
+related seams (connection_tester 8, resolve_api_key 6,
+swallow_diagnostics 8) → 22/22 pass; full `flutter test` → 671/671
+pass (All tests passed! — 669 baseline + 2 new). Files changed:
+`lib/src/ui/screens/agent_setup_screen.dart`,
+`test/ui/agent_setup_test.dart`, this track +
+`docs/FUTURE_WORK.md` (header recap + Last updated bumped + the
+"Verified baseline" block updated in place to 671/671 @ 2026-10-25;
+per the open-items-only rule no new completed-work section — no open
+FUTURE_WORK item was touched, the open-item set is unchanged).
+Commit: recorded in the follow-up track commit per the §11.40
+precedent (the run's own commit first, then a
+`docs(lmchess): record §11.41 commit hash in track` follow-up). Push
+this run: attempted and verified after commit (see the Run Log entry
+for the exact result).
+Next: trigger the §11.3 windows-nightly on hosted `windows-latest`
+(the ONLY remaining functional gap, §14.1-§14.2); re-check §2.6 when
+`flutter/flutter#190903` lands; or continue §11.41-style audit-trail
+passes — recorded candidates: the four remaining unlogged lib/ swallow
+sites (orchestrator `_promptState` :647, the three provider SSE
+`dispatchPayload` catches, `strategies.generateAll` :997,
+`http_helpers.readErrorBody` :70 — none P0/P1), the `fensFor`
+honest-degradation doc-vs-code nit (`backend_bridge.dart` :1214 vs
+:1232), the §11.23 comment saying windows-nightly is "schedule-only"
+while its `if:` also fires on workflow_dispatch (ci.yaml :24 vs :348),
+and the §11.39-recorded `pickBinaryMember` "largest doc-excluded
+entry" doc-vs-code nit (tool/download_stockfish.dart :354).
+Previously (2026-10-25) — §11.40 (arena-chaos runner-failure
 diagnostics — the last silent-swallow catch in lib/). A fresh independent
 parallel subagent audit (full FUTURE_WORK.md open-item inventory incl.
 every "Done when" string; an end-to-end ci.yaml defect audit; a
@@ -4090,3 +4157,97 @@ suites referenced above now exist. Native Windows execution is tracked in
   (the ONLY remaining functional gap, §14.1-§14.2); re-check §2.6 when
   `flutter/flutter#190903` lands; or continue §11.40-style audit-trail
   passes while the Windows/upstream items stay blocked.
+- 2026-10-25Z — CODE-P2 §11.41 (agent-setup silent-swallow
+  closure — the final two screen-level silent-swallow catches in lib/
+  closed). A fresh independent parallel subagent audit (full
+  FUTURE_WORK.md open-item inventory incl. every "Done when" string;
+  an end-to-end ci.yaml defect audit; a lib/test/tool convention +
+  marker audit) again confirmed ZERO FUTURE_WORK.md open items
+  implementable-and-verifiable on this Linux host (§9.1/§9.2/§11.3/
+  §14.1-§14.2 remain Windows-native-blocked, §2.6 remains
+  upstream-external — live-checked this run via the GitHub API:
+  flutter/flutter#190903 still `merged: false` — the `dart format`
+  gate remains owner-decision-pending, coverage-artifact comparison
+  still needs ≥2 real CI runs), NO P0 (crash) or P1 (correctness) code
+  or workflow-file defects, and the ci.yaml workflow clean end-to-end
+  (strict duplicate-key PyYAML: ubuntu-gate 13 + windows-nightly 12
+  steps, 27 timeout-minutes keys; all bash blocks pass `bash -n`; both
+  windows PowerShell blocks parse with 0 errors under real pwsh 7.6.8
+  with the §11.38 `$LASTEXITCODE` null-guards verified live). The
+  audit's one suspected smoke-gate race was verified as a FALSE
+  POSITIVE: the ci.yaml smoke step's post-loop geometry verdict uses
+  `${WIDTH:-0}`/`${HEIGHT:-0}` plus `WIDTH=0`/`HEIGHT=0` initializers
+  (:252-253, :224-225), so a vanished window at the final loop
+  iteration degrades to `"0"` and `[ "0" -lt 100 ]` is TRUE — the
+  ≥100x100 check still fails the step exactly as §11.18/§11.21
+  require (no empty-string `integer expression expected` false-pass
+  exists; the suspected `[ "" -lt 100 ]` path cannot occur). The
+  lib/test/tool audit DID surface genuine remaining silent-swallow
+  catches, proving §11.40's "the last silent-swallow catch in lib/"
+  claim inaccurate; this run closes the final two SCREEN-level ones as
+  its ONE deliverable: `lib/src/ui/screens/agent_setup_screen.dart`
+  `_loadKeyPresence` (secure-store READ failure silently rendered as
+  "No key stored" — the read-side sibling of the §11.24/§11.25
+  write/delete fixes, so "store failed" read exactly like "no key" to
+  operators; the §11.25 `resolveApiKey` read-failure contract was not
+  mirrored at the stored-key presence check) and `_testConnection` (a
+  throwing connection probe was dropped with zero diagnostics — only
+  the generic failure banner reached the UI). Both catches now surface
+  the failure via `dart:developer` `log()` (name `agent-setup`,
+  error + stack trace) with ZERO behavior change, following the
+  §11.35/§11.40 diagnostics standard, and the class doc + `_loadKeyPresence`
+  doc restate the contract ("store failed" logged, "no key" quiet;
+  the log never includes secret material). Two new deterministic
+  offline widget tests in `test/ui/agent_setup_test.dart` pin the
+  degrade contract: (1) stored-key READ failure — a new
+  `_FailingReadKeyStore` fake (the §11.24 seam pattern) → the
+  edit-mode indicator degrades to lock_open (no Clear action) with
+  the throw contained (no widget exception, no crash); (2) Test
+  Connection throwing probe — a `connectionTesterProvider` override
+  that throws `StateError` → the generic "Connection failed" banner
+  with the throw contained and no pending timer. Both failure tests
+  would FAIL against the pre-fix silent-swallow code only in the
+  sense that the old code also passed the behavioral assertions (the
+  degrade was the same); the fix's value is the surfacing — pinned by
+  code + the doc contract, not by asserting on log output. Evidence:
+  `flutter analyze` → `No issues found! (ran in 2.4s)` (zero errors/
+  warnings/infos; Flutter 3.47.6 stable, Dart 3.13.5 — matches the
+  §11.8 CI pin); `flutter test test/ui/agent_setup_test.dart` → 34/34
+  pass (All tests passed! — 32 baseline + 2 new); related seams
+  `flutter test test/connection_tester_seam_test.dart
+  test/resolve_api_key_test.dart test/swallow_diagnostics_test.dart` →
+  22/22 pass; full regression `flutter test` → 671/671 pass (01:59,
+  All tests passed! — 669 baseline + 2 new); `git status --short`
+  before commit: only `lib/src/ui/screens/agent_setup_screen.dart`,
+  `test/ui/agent_setup_test.dart`, `docs/FUTURE_WORK.md`,
+  `automation-track.md` modified. Docs: `docs/FUTURE_WORK.md` —
+  header recap + Last updated bumped to §11.41, the "Verified
+  baseline" block updated in place to 671/671 @ 2026-10-25, no new
+  completed-work section (open-items-only — the open-item set is
+  unchanged); `automation-track.md` — header + this Run Log entry
+  (no Roadmap row exists for this item; per protocol the Run Log is
+  the record). Commit: recorded in the follow-up track commit per the
+  §11.40 precedent (the run's own commit first, then a
+  `docs(lmchess): record §11.41 commit hash in track` follow-up).
+  Push this run: attempted + verified after commit (exact `git push`
+  result in the follow-up Run Log entry).
+  Next: (a) trigger the §11.3 windows-nightly via `workflow_dispatch`
+  on hosted `windows-latest` per the §13 decision + §11.3 checklist —
+  the ONLY remaining functional gap (§14.1-§14.2); (b) re-check §2.6
+  when `flutter/flutter#190903` lands; or (c) continue the
+  audit-trail passes while Windows/upstream stay blocked — recorded
+  candidates: the four remaining unlogged lib/ swallow sites
+  (orchestrator `_promptState` :647-652, the three provider SSE
+  `dispatchPayload` catches at openai/anthropic/gemini_provider.dart
+  :201/:190/:202, `strategies.generateAll` :997-998,
+  `http_helpers.readErrorBody` :70-72 — none P0/P1, all same
+  `dart:developer` pattern), the `fensFor` honest-degradation
+  doc-vs-code nit (`backend_bridge.dart` doc :1214-1221 promises
+  callers "degrade honestly" but the substitution at :1232-1234 is
+  never signalled), the §11.23 comment saying windows-nightly is
+  "schedule-only" while its `if:` also fires on workflow_dispatch
+  (ci.yaml :24 vs :348 — behavior is correct, the comment word is
+  stale), and the §11.39-recorded `pickBinaryMember` "largest
+  doc-excluded entry" doc-vs-code nit (tool/download_stockfish.dart
+  :354-355 vs the `candidates.first` implementation — correct the
+  comment or the pick).

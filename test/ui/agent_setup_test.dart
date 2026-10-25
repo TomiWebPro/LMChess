@@ -60,6 +60,19 @@ class _FailingDeleteKeyStore extends _StoredKeyStore {
   }
 }
 
+/// Deterministic fake store whose READ fails, pinning the stored-key
+/// presence-check failure path (secure-store backend error, not a missing
+/// secret): the indicator must degrade to "no key stored" without the
+/// failure escaping as a widget exception.
+class _FailingReadKeyStore extends _StoredKeyStore {
+  const _FailingReadKeyStore();
+
+  @override
+  Future<String?> readApiKey(String ref) async {
+    throw Exception('simulated secure-store read failure');
+  }
+}
+
 /// An [AgentListStore] with exactly one agent carrying an [apiKeyRef].
 AgentListStore _storeWithStoredKey() => AgentListStore(seedDemos: false)
   ..upsertAgent(AgentConfig(
@@ -355,6 +368,32 @@ void main() {
       await tester.pump();
       expect(tester.takeException(), isNull);
     });
+
+    testWidgets(
+        'stored-key READ failure: indicator degrades to no-key, the throw '
+        'is contained (logged via dart:developer, never silent)',
+        (tester) async {
+      await _pumpSetup(
+        tester,
+        agentId: 'edit-id',
+        overrides: <Override>[
+          ...harness.fakeOverrides(),
+          agentListProvider.overrideWith((ref) => _storeWithStoredKey()),
+          connectionTesterProvider.overrideWithValue(
+              (_, {inlineSecret}) async => true),
+        ],
+        keyStore: const _FailingReadKeyStore(),
+      );
+      await tester.pump();
+
+      // Read failure degrades to "no key stored" (the stored-key presence
+      // check cannot render a store-failed state) — lock_open indicator,
+      // no Clear action — and the throw is contained: no widget exception,
+      // no crash. The diagnostic is the dart:developer log, not a banner.
+      expect(find.byIcon(Icons.lock_open_outlined), findsOneWidget);
+      expect(find.byTooltip('Clear stored key'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
   });
 
   // --- Test connection button ----------------------------------------------
@@ -433,6 +472,36 @@ void main() {
 
       await tester.tap(find.text('Test connection'));
       await tester.pump();
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets(
+        'Test Connection throwing probe: failure banner shown, the throw '
+        'is contained (logged via dart:developer, never silent)',
+        (tester) async {
+      final throwingTester =
+          connectionTesterProvider.overrideWithValue(
+              (_, {inlineSecret}) async {
+        throw StateError('simulated probe failure');
+      });
+
+      await _pumpSetup(
+        tester,
+        overrides: <Override>[
+          ...harness.fakeOverrides(),
+          throwingTester,
+        ],
+        agentId: null,
+      );
+
+      await tester.tap(find.text('Test connection'));
+      await tester.pump();
+      await tester.pump();
+
+      // The probe throw is contained and reported as the generic failure
+      // banner — no widget exception, no crash, no pending timer. The
+      // diagnostic is the dart:developer log, not the user-facing banner.
+      expect(find.textContaining('Connection failed'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   });
