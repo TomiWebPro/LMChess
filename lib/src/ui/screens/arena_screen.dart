@@ -48,6 +48,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' show log;
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -288,7 +289,14 @@ class ArenaScreen extends ConsumerStatefulWidget {
   ///
   /// [elo] allows tests to inject a fresh [EloService] so tournament ratings
   /// do not leak across test boundaries via the session-static singleton.
-  const ArenaScreen({super.key, this.elo, this.initialSeed});
+  /// [chaosRunner] lets tests inject a deterministic runner for the chaotic
+  /// game pump (the default is the shared stateless [AgentRunner]).
+  const ArenaScreen({
+    super.key,
+    this.elo,
+    this.initialSeed,
+    this.chaosRunner,
+  });
 
   /// Optional Elo ladders for the tournament. When absent the screen creates
   /// a fresh [EloService] internally.
@@ -296,6 +304,10 @@ class ArenaScreen extends ConsumerStatefulWidget {
 
   /// Seed for deterministic tournaments — replaces wall-clock randomness.
   final int? initialSeed;
+
+  /// Chaos-turn runner override (test seam). When absent the shared
+  /// stateless `_chaosRunner` is used.
+  final AgentRunner? chaosRunner;
 
   @override
   ConsumerState<ArenaScreen> createState() => _ArenaScreenState();
@@ -1281,8 +1293,9 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
       );
       AgentTurnResult? result;
       final promptState = _variantPromptState(board);
+      final runner = widget.chaosRunner ?? _chaosRunner;
       try {
-        result = await _chaosRunner.runTurn(
+        result = await runner.runTurn(
           backend,
           AgentTurnRequest(
             positionFenOrJson: jsonEncode(board.toJson()),
@@ -1299,8 +1312,18 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
           seed: turnSeed,
           providerOverride: provider,
         );
-      } catch (_) {
-        result = null; // Runner internals only; treated as provider error.
+      } catch (error, stackTrace) {
+        // Runner internals only; treated as provider error. Log the failure
+        // so a genuine runner bug is distinguishable from a provider outage
+        // in the stats (both degrade to the same seeded fallback below).
+        result = null;
+        log(
+          'arena chaotic turn failed for ${backend.id} — degrading to a '
+          'seeded fallback attempt',
+          name: 'arena-chaos',
+          error: error,
+          stackTrace: stackTrace,
+        );
       } finally {
         closeProvider(provider);
       }

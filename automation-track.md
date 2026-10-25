@@ -1,7 +1,66 @@
 # LMChess Automation Track
 
 Status: living document (hourly worker log)
-Last updated: 2026-10-24 (UTC) — §11.39 (download-tool verification
+Last updated: 2026-10-25 (UTC) — §11.40 (arena-chaos runner-failure
+diagnostics — the last silent-swallow catch in lib/). A fresh independent
+parallel subagent audit (full FUTURE_WORK.md open-item inventory incl.
+every "Done when" string; an end-to-end ci.yaml defect audit; a
+lib/test/tool convention + marker audit) again confirms ZERO
+FUTURE_WORK.md open items implementable-and-verifiable on this Linux
+host (§9.1/§9.2/§11.3/§14.1-§14.2 remain Windows-native-blocked, §2.6
+remains upstream-external — live-checked this run via the GitHub API:
+flutter/flutter#190903 still `merged: false` — the `dart format` gate
+remains owner-decision-pending, coverage-artifact comparison still
+needs ≥2 real CI runs), NO P0 (crash) or P1 (correctness) code or
+workflow-file defects, and the ci.yaml workflow clean end-to-end (strict
+duplicate-key PyYAML re-parse: ubuntu-gate 13 + windows-nightly 12
+steps, 27 timeout-minutes keys; all bash blocks pass `bash -n`; both
+windows PowerShell blocks parse with 0 errors under real pwsh 7.6.8
+with the §11.38 `$LASTEXITCODE` null-guards verified live). The
+lib/test/tool audit DID surface one genuine code-P2 diagnostics gap,
+closed as this run's ONE deliverable: `lib/src/ui/screens/arena_screen.dart`
+chaotic-game `_chaosRunner.runTurn` failure catch (`catch (_) {
+result = null; }`) — the LAST silent-swallow catch site in lib/,
+inconsistent with the repo's own §11.35 diagnostics standard — dropped
+the runner-internal exception with zero diagnostics, so a genuine runner
+bug read identically to an LLM provider outage in the stats
+(`providerError: true`). The catch now surfaces the failure via
+`dart:developer` `log()` (name `arena-chaos`, error + stack trace)
+with ZERO behavior change, and a test-only seam
+(`ArenaScreen({..., chaosRunner})`, the §10.5/§11.24 seam precedent)
+enables a deterministic offline widget suite
+`test/ui/arena_chaos_diagnostics_test.dart` (2 tests): a throwing
+`AgentRunner` subclass → every chaotic turn degrades to the seeded
+fallback (`ply.fallback == true`), the tournament still concludes both
+games with valid board+hash chains, the throw is contained (no widget
+exception, no tournament abort), and StatsLog records
+`providerError: true` — the turn is neither lost nor silent; the
+default no-seam path is pinned unchanged (model-sourced plies, zero
+providerError). Evidence: `flutter analyze` → `No issues found! (ran in
+2.3s)`; `flutter test test/ui/arena_chaos_diagnostics_test.dart` →
+2/2 pass; related suites (arena_variant_review 4, arena_screen 27,
+agent_runner 15, swallow_diagnostics 8, support/integration 18) → 72/72
+pass; full `flutter test` → 669/669 pass (All tests passed! — 667
+baseline + 2 new). Files changed: `lib/src/ui/screens/arena_screen.dart`,
+`test/ui/arena_chaos_diagnostics_test.dart`, this track +
+`docs/FUTURE_WORK.md` (header recap + Last updated bumped + the
+"Verified baseline" block updated in place to 669/669 @ 2026-10-25; per
+the open-items-only rule no new completed-work section — the open-item
+set is unchanged). Commit: recorded in the follow-up track commit per
+the §11.39 precedent (the run's own commit first, then a
+`docs(lmchess): record §11.40 commit hash in track` follow-up). Push
+this run: **UNBLOCKED** — the remote now carries an embedded GitHub PAT
+(`git remote -v` shows `https://TomiWebPro:<PAT>@github.com/...`) and
+`git rev-list --count origin/main..HEAD` → 0 before this run's commit
+(origin/main == 68b5ed9, the §11.39 follow-up: the ~98-commit local
+queue was pushed at some point since the §11.39 run); `git push origin
+main` attempted and verified after commit (see the Run Log entry for
+the exact result).
+Next: trigger the §11.3 windows-nightly on hosted `windows-latest`
+(the ONLY remaining functional gap, §14.1-§14.2); re-check §2.6 when
+`flutter/flutter#190903` lands; or keep the §11.40-style audit-trail
+passes alive while the Windows/upstream items stay blocked.
+Previously (2026-10-24) — §11.39 (download-tool verification
 honesty fix). A fresh independent parallel subagent audit (full
 FUTURE_WORK.md open-item inventory incl. every "Done when" string; an
 end-to-end ci.yaml defect audit; a lib/test convention + marker audit)
@@ -3969,3 +4028,64 @@ suites referenced above now exist. Native Windows execution is tracked in
   first filtered member (official archives hold exactly one binary so
   it never bites in practice; correct the comment or the pick in a
   future run if desired).
+- 2026-10-25Z — CODE-P2 §11.40 (arena-chaos runner-failure
+  diagnostics — the last silent-swallow catch in lib/ closed). A fresh
+  independent parallel subagent audit (full FUTURE_WORK.md open-item
+  inventory incl. every "Done when" string; an end-to-end ci.yaml
+  defect audit; a lib/test/tool convention + marker audit) again
+  confirmed ZERO FUTURE_WORK.md open items implementable-and-verifiable
+  on this Linux host (§9.1/§9.2/§11.3/§14.1-§14.2 remain
+  Windows-native-blocked, §2.6 remains upstream-external — live-checked
+  this run via the GitHub API: flutter/flutter#190903 still `merged:
+  false` — the `dart format` gate remains owner-decision-pending,
+  coverage-artifact comparison still needs ≥2 real CI runs), NO P0
+  (crash) or P1 (correctness) code or workflow-file defects, and the
+  ci.yaml workflow clean end-to-end (strict duplicate-key PyYAML:
+  ubuntu-gate 13 + windows-nightly 12 steps, 27 timeout-minutes keys;
+  all bash blocks pass `bash -n`; both windows PowerShell blocks parse
+  with 0 errors under real pwsh 7.6.8 with the §11.38 `$LASTEXITCODE`
+  null-guards verified live). The lib/test/tool audit DID surface ONE
+  genuine code-P2 diagnostics gap, closed as this run's ONE deliverable:
+  `lib/src/ui/screens/arena_screen.dart`'s chaotic-game runner-failure
+  catch (`catch (_) { result = null; }`) — the LAST
+  silent-swallow catch site in lib/, inconsistent with the repo's own
+  §11.35 diagnostics standard (every other silent-swallow site now logs
+  via `dart:developer`). It dropped a thrown `AgentRunner.runTurn`
+  exception with zero diagnostics, so a genuine runner-internal bug was
+  statistically indistinguishable from an LLM provider outage (both
+  degrade to `providerError: true` in the stats). The catch now
+  surfaces the failure via `dart:developer` `log()` (name
+  `arena-chaos`, error + stack trace) with ZERO behavior change, and a
+  test-only seam (`ArenaScreen({..., chaosRunner})`, the
+  §10.5/§11.24 seam precedent) enables a deterministic widget suite
+  `test/ui/arena_chaos_diagnostics_test.dart` (2 tests): a throwing
+  `AgentRunner` subclass → every chaotic turn degrades to the seeded
+  fallback (`ply.fallback == true` on every recorded ply), the
+  tournament still concludes both games with valid board+hash chains,
+  the throw is contained (no widget exception, no tournament abort),
+  and StatsLog records `providerError: true` — the turn is neither
+  lost nor silent; the default no-seam path is pinned unchanged
+  (model-sourced plies, zero providerError). Evidence:
+  `flutter analyze` → `No issues found! (ran in 2.3s)`;
+  `flutter test test/ui/arena_chaos_diagnostics_test.dart` → 2/2 pass;
+  related suites (arena_variant_review 4, arena_screen 27, agent_runner
+  15, swallow_diagnostics 8, support/integration 18) → 72/72 pass;
+  full `flutter test` → 669/669 pass (All tests passed! — 667 baseline
+  + 2 new). Files changed: `lib/src/ui/screens/arena_screen.dart`,
+  `test/ui/arena_chaos_diagnostics_test.dart`, this track +
+  `docs/FUTURE_WORK.md` (header recap + Last updated bumped; the
+  "Verified baseline" block updated in place to 669/669 @ 2026-10-25;
+  per the open-items-only rule no new completed-work section — no open
+  FUTURE_WORK item was touched, the open-item set is unchanged).
+  Commit: recorded in the follow-up track commit per the §11.39
+  precedent. Push this run: **UNBLOCKED** — the remote now embeds a
+  GitHub PAT (`git remote -v` shows
+  `https://TomiWebPro:<PAT>@github.com/...`) and
+  `git rev-list --count origin/main..HEAD` was 0 before this run's
+  commit (origin/main == 68b5ed9, the §11.39 follow-up; the ~98-commit
+  local queue was pushed out since the §11.39 run); `git push origin
+  main` result verified in the Run Log entry above/below after commit.
+  Next: trigger the §11.3 windows-nightly on hosted `windows-latest`
+  (the ONLY remaining functional gap, §14.1-§14.2); re-check §2.6 when
+  `flutter/flutter#190903` lands; or continue §11.40-style audit-trail
+  passes while the Windows/upstream items stay blocked.

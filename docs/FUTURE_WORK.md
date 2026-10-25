@@ -1,7 +1,43 @@
 # Future Work
 
 Status: open items only
-Last updated: 2026-10-24 (UTC) — §11.39 (download-tool verification
+Last updated: 2026-10-25 (UTC) — §11.40 (arena-chaos runner-failure
+diagnostics — the last silent-swallow catch in lib/ closed). A fresh
+independent parallel subagent audit (full FUTURE_WORK.md open-item
+inventory incl. every "Done when" string; an end-to-end ci.yaml defect
+audit; a lib/test/tool convention + marker audit) again confirmed ZERO
+FUTURE_WORK.md open items implementable-and-verifiable on this Linux
+host (§9.1/§9.2/§11.3/§14.1-§14.2 Windows-native-blocked, §2.6
+upstream-external — live-checked this run via the GitHub API:
+flutter/flutter#190903 still `merged: false` — the `dart format` gate
+owner-decision-pending, coverage-artifact comparison needing ≥2 real CI
+runs), NO P0 (crash) or P1 (correctness) code or workflow-file defects,
+and the ci.yaml workflow clean end-to-end. The lib/test/tool audit DID
+surface one genuine code-P2 diagnostics gap, closed as this run's ONE
+deliverable: `lib/src/ui/screens/arena_screen.dart`'s chaotic-game
+runner-failure catch (`catch (_) { result = null; }`) — the LAST
+silent-swallow catch site in lib/, inconsistent with the repo's own
+§11.35 diagnostics standard — dropped an `AgentRunner.runTurn`
+exception with zero diagnostics, so a genuine runner-internal bug was
+indistinguishable from a provider outage in the stats. The catch now
+surfaces the failure via `dart:developer` `log()` (name `arena-chaos`,
+error + stack trace) with zero behavior change; a test-only seam
+(`ArenaScreen({..., chaosRunner})` per the §10.5/§11.24 precedent) plus
+a deterministic offline widget suite (`test/ui/arena_chaos_diagnostics_test.dart`,
+2 tests) pin the degrade contract — a throwing runner → every chaotic
+turn plays the seeded fallback (`ply.fallback == true`), the tournament
+still concludes both games with valid chains, no exception escapes, and
+StatsLog records `providerError: true`; the default no-seam path is
+pinned unchanged (model plies, zero providerError). Evidence:
+`flutter analyze` → `No issues found! (ran in 2.3s)`; new suite 2/2
+pass; related suites 72/72 pass; full `flutter test` → 669/669 pass
+(667 baseline + 2 new). Recorded in `automation-track.md` (Run Log);
+per the open-items-only rule this file gains no new completed-work
+section — no open FUTURE_WORK item was touched (§9.1/§9.2/§11.3/§14
+remain Windows-blocked, §2.6 upstream-external; the `dart format` gate
+and the coverage-artifact comparison still await their owner decisions
+/ ≥2 real CI runs).
+Previously (2026-10-24) — §11.39 (download-tool verification
 honesty fix). A fresh independent parallel subagent audit (full
 FUTURE_WORK.md open-item inventory incl. every "Done when" string; an
 end-to-end ci.yaml defect audit; a lib/test convention + marker audit)
@@ -613,10 +649,10 @@ The remaining items are release validation, CI automation, and process
 integration that cannot be closed on Linux. Completed work and the crash
 investigation history are preserved in `automation-track.md` and git history.
 
-Verified baseline (2026-10-24, re-verified §11.36):
+Verified baseline (2026-10-25, re-verified §11.40):
 
 - `flutter analyze` — 0 issues.
-- `flutter test` — 666/666 pass.
+- `flutter test` — 669/669 pass.
 - `flutter build linux --release` — succeeds; release binary starts under Xvfb.
 - Roadmap §12 — 18/18 deliverables present; §10.1–10.8 refactors complete.
 - Interaction matrix §6 — all 12 screen/widget suites present.
