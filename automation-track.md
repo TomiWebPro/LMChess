@@ -46,16 +46,16 @@ baseline + 2 new). Files changed: `lib/src/ui/screens/arena_screen.dart`,
 `docs/FUTURE_WORK.md` (header recap + Last updated bumped + the
 "Verified baseline" block updated in place to 669/669 @ 2026-10-25; per
 the open-items-only rule no new completed-work section — the open-item
-set is unchanged). Commit: recorded in the follow-up track commit per
+set is unchanged). Committed: 75f73d8. Commit: recorded in the follow-up track commit per
 the §11.39 precedent (the run's own commit first, then a
 `docs(lmchess): record §11.40 commit hash in track` follow-up). Push
-this run: **UNBLOCKED** — the remote now carries an embedded GitHub PAT
-(`git remote -v` shows `https://TomiWebPro:<PAT>@github.com/...`) and
+this run: **UNBLOCKED + SUCCEEDED** — the remote now carries an embedded
+GitHub PAT (`git remote -v` shows `https://TomiWebPro:<PAT>@github.com/...`) and
 `git rev-list --count origin/main..HEAD` → 0 before this run's commit
 (origin/main == 68b5ed9, the §11.39 follow-up: the ~98-commit local
-queue was pushed at some point since the §11.39 run); `git push origin
-main` attempted and verified after commit (see the Run Log entry for
-the exact result).
+queue was pushed out at some point since the §11.39 run); `git push
+origin main` → `To https://github.com/TomiWebPro/LMChess.git
+68b5ed9..75f73d8  main -> main`, exit 0.
 Next: trigger the §11.3 windows-nightly on hosted `windows-latest`
 (the ONLY remaining functional gap, §14.1-§14.2); re-check §2.6 when
 `flutter/flutter#190903` lands; or keep the §11.40-style audit-trail
@@ -4077,14 +4077,15 @@ suites referenced above now exist. Native Windows execution is tracked in
   "Verified baseline" block updated in place to 669/669 @ 2026-10-25;
   per the open-items-only rule no new completed-work section — no open
   FUTURE_WORK item was touched, the open-item set is unchanged).
-  Commit: recorded in the follow-up track commit per the §11.39
-  precedent. Push this run: **UNBLOCKED** — the remote now embeds a
-  GitHub PAT (`git remote -v` shows
+  Commit: 75f73d8 (recorded in this follow-up track commit per the
+  §11.39 precedent). Push this run: **UNBLOCKED + SUCCEEDED** — the
+  remote now embeds a GitHub PAT (`git remote -v` shows
   `https://TomiWebPro:<PAT>@github.com/...`) and
   `git rev-list --count origin/main..HEAD` was 0 before this run's
   commit (origin/main == 68b5ed9, the §11.39 follow-up; the ~98-commit
   local queue was pushed out since the §11.39 run); `git push origin
-  main` result verified in the Run Log entry above/below after commit.
+  main` → `To https://github.com/TomiWebPro/LMChess.git
+  68b5ed9..75f73d8 main -> main`, exit 0.
   Next: trigger the §11.3 windows-nightly on hosted `windows-latest`
   (the ONLY remaining functional gap, §14.1-§14.2); re-check §2.6 when
   `flutter/flutter#190903` lands; or continue §11.40-style audit-trail
