@@ -10,8 +10,10 @@
 /// visible, so the shortcuts are active immediately.
 library;
 
+import 'dart:async';
+
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
 
 import '../../chess/square.dart';
 import 'board_motion.dart';
@@ -163,7 +165,105 @@ class _ScrubShortcutsState extends State<ScrubShortcuts> {
       focusNode: _node,
       canRequestFocus: true,
       skipTraversal: true,
+      // Keyboard-only scope: must not contribute a Semantics node (see
+      // chessboard.dart — default `includeSemantics: true` churns the AX tree
+      // and trips flutter/flutter#175041 on Windows).
+      includeSemantics: false,
       child: widget.child,
+    );
+  }
+}
+
+/// Step button that auto-repeats while held (§15.3).
+///
+/// A single tap fires [onStep] once (via the inner [IconButton]); holding
+/// the pointer down keeps firing it — first after [holdDelay], then every
+/// [repeatInterval] — until release. This is what makes scrubbing a 200-ply
+/// game bearable: hold `‹` / `›` instead of tapping 200 times.
+///
+/// Keyboard hold already auto-repeats (the OS sends repeated [KeyDownEvent]s,
+/// which [_ScrubShortcutsState._handleKey] acts on), so this only covers the
+/// pointer path. [onStep] hosts clamp + no-op when already at the end, so
+/// repeats past the boundary are harmless. `null` [onStep] disables the
+/// button and suppresses repeats.
+class HoldIconButton extends StatefulWidget {
+  /// Creates a hold-to-repeat step button.
+  const HoldIconButton({
+    super.key,
+    required this.icon,
+    required this.tooltip,
+    required this.onStep,
+    this.holdDelay = const Duration(milliseconds: 350),
+    this.repeatInterval = const Duration(milliseconds: 70),
+  });
+
+  /// Glyph shown in the button.
+  final IconData icon;
+
+  /// Accessibility + hover tooltip.
+  final String tooltip;
+
+  /// One step; `null` disables the button.
+  final VoidCallback? onStep;
+
+  /// Pause before repeats start.
+  final Duration holdDelay;
+
+  /// Cadence once repeating.
+  final Duration repeatInterval;
+
+  @override
+  State<HoldIconButton> createState() => _HoldIconButtonState();
+}
+
+class _HoldIconButtonState extends State<HoldIconButton> {
+  Timer? _delayTimer;
+  Timer? _repeatTimer;
+
+  @override
+  void dispose() {
+    _cancelTimers();
+    super.dispose();
+  }
+
+  void _cancelTimers() {
+    _delayTimer?.cancel();
+    _delayTimer = null;
+    _repeatTimer?.cancel();
+    _repeatTimer = null;
+  }
+
+  void _onPointerDown(PointerDownEvent event) {
+    if (widget.onStep == null) return;
+    _cancelTimers();
+    _delayTimer = Timer(widget.holdDelay, () {
+      if (!mounted || widget.onStep == null) return;
+      _repeatTimer = Timer.periodic(widget.repeatInterval, (_) {
+        if (!mounted) return;
+        widget.onStep!();
+      });
+    });
+  }
+
+  void _onPointerUpOrCancel(PointerEvent event) => _cancelTimers();
+
+  @override
+  void didUpdateWidget(covariant HoldIconButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.onStep == null) _cancelTimers();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      onPointerDown: _onPointerDown,
+      onPointerUp: _onPointerUpOrCancel,
+      onPointerCancel: _onPointerUpOrCancel,
+      child: IconButton(
+        tooltip: widget.tooltip,
+        onPressed: widget.onStep,
+        icon: Icon(widget.icon),
+      ),
     );
   }
 }

@@ -1,4 +1,4 @@
-/// [SettingsScreen]: theme switchers + app brightness + license info.
+/// [SettingsScreen]: theme switchers + agents + app brightness + license info.
 ///
 /// Board-theme and piece-theme radio lists bound to [ThemeRegistry]
 /// (`useBoardTheme`/`usePieceTheme`), a light/dark/system segmented control
@@ -19,8 +19,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../review/embedded_engine.dart' show EngineAttributions;
 import '../../theme/registry.dart';
+import '../ui_models.dart' show agentListProvider;
 import '../widgets/chessboard.dart';
-import 'play_screen.dart' show startingPosition;
+import 'agent_setup_screen.dart';
+import 'game_screen.dart' show startingPosition;
 
 /// App settings: theme switchers with a live board preview.
 class SettingsScreen extends ConsumerWidget {
@@ -32,6 +34,7 @@ class SettingsScreen extends ConsumerWidget {
     final registry = ref.watch(themeRegistryProvider);
     final mode = ref.watch(themeModeProvider);
     final theme = Theme.of(context);
+    final agents = ref.watch(agentListProvider).agents;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Center(
@@ -119,6 +122,93 @@ class SettingsScreen extends ConsumerWidget {
                   ],
                 ),
               ),
+              const SizedBox(height: 24),
+              Text('Agents', style: theme.textTheme.headlineSmall),
+              const SizedBox(height: 12),
+              Row(
+                children: <Widget>[
+                  Text(
+                    '${agents.length} agents',
+                    style: theme.textTheme.titleMedium,
+                  ),
+                  const Spacer(),
+                  FilledButton.icon(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (_) => Scaffold(
+                          appBar: AppBar(title: const Text('New agent')),
+                          body: const SafeArea(child: AgentSetupScreen()),
+                        ),
+                      ),
+                    ),
+                    icon: const Icon(Icons.add),
+                    label: const Text('New agent'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (agents.isEmpty)
+                const Text('No agents yet — create one to get started.')
+              else
+                for (final a in agents)
+                  Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.smart_toy_outlined),
+                      title: Text(a.name),
+                      subtitle: Text(
+                        '${a.summary} · t=${a.temperature.toStringAsFixed(2)}',
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          IconButton(
+                            tooltip: 'Edit',
+                            icon: const Icon(Icons.edit_outlined),
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute<void>(
+                                builder: (_) => Scaffold(
+                                  appBar: AppBar(title: Text('Edit ${a.name}')),
+                                  body: AgentSetupScreen(agentId: a.id),
+                                ),
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Delete',
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: () async {
+                              final confirmed = await showDialog<bool>(
+                                context: context,
+                                builder: (dialogContext) => AlertDialog(
+                                  title: const Text('Delete agent?'),
+                                  content: Text(
+                                    'Are you sure you want to delete "${a.name}"?',
+                                  ),
+                                  actions: <Widget>[
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(dialogContext, false),
+                                      child: const Text('Cancel'),
+                                    ),
+                                    FilledButton(
+                                      onPressed: () =>
+                                          Navigator.pop(dialogContext, true),
+                                      child: const Text('Delete'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              if (confirmed == true) {
+                                ref.read(agentListProvider).removeAgent(a.id);
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
               const SizedBox(height: 24),
               Text('License & attributions', style: theme.textTheme.titleMedium),
               const SizedBox(height: 8),

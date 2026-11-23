@@ -24,6 +24,13 @@ import 'package:llm_chess_arena/src/ui/widgets/activity_panel.dart'
         AgentActivityPanel,
         redactSecrets;
 
+import '../support/semantics_invariants.dart'
+    show
+        captureSemantics,
+        expectNoReparenting,
+        expectSemanticsTreeInvariants,
+        parentMap;
+
 /// Minimal theme wrapper that provides both MaterialApp-level Material and
 /// an extra Material node for widgets using InkWell (MoveList).
 Widget wrapWidget(Widget child) => MaterialApp(
@@ -253,6 +260,64 @@ void main() {
         expect(find.text('Alice'), findsOneWidget);
         // 1800 seconds = 30:00.
         expect(find.text('30:00'), findsOneWidget);
+      });
+
+      testWidgets('clock display is excluded from semantics.', (tester) async {
+        // The 1 Hz countdown must not churn the AX tree: every tick would
+        // otherwise re-send a semantics update, widening the Windows
+        // accessibility-bridge crash window (flutter/flutter#175041), and
+        // would spam screen readers with a re-announcement per second.
+        final handle = tester.ensureSemantics();
+        try {
+          await tester.pumpWidget(
+            wrapWidget(
+              const PlayerCard(
+                name: 'Alice',
+                subtitle: 'gpt-4o · t=0.7',
+                clockSeconds: 1800,
+                isActive: true,
+              ),
+            ),
+          );
+          await tester.pump();
+          // Visual clock text still renders...
+          expect(find.text('30:00'), findsOneWidget);
+          // ...but contributes no semantics node.
+          expect(find.bySemanticsLabel('30:00'), findsNothing);
+          expect(tester.takeException(), isNull);
+        } finally {
+          handle.dispose();
+        }
+      });
+
+      testWidgets('clock second change keeps semantics stable.', (tester) async {
+        // Exercises the per-second repaint path (10:00 -> 9:59) with the
+        // tree invariants held: no reparenting, no clock label leaking.
+        final handle = tester.ensureSemantics();
+        try {
+          await tester.pumpWidget(
+            wrapWidget(
+              const PlayerCard(name: 'Alice', clockSeconds: 600),
+            ),
+          );
+          await tester.pump();
+          final before = parentMap(captureSemantics(tester));
+
+          await tester.pumpWidget(
+            wrapWidget(
+              const PlayerCard(name: 'Alice', clockSeconds: 599),
+            ),
+          );
+          await tester.pump();
+          expect(find.text('9:59'), findsOneWidget);
+          expect(find.bySemanticsLabel('10:00'), findsNothing);
+          expect(find.bySemanticsLabel('9:59'), findsNothing);
+          expectSemanticsTreeInvariants(tester);
+          expectNoReparenting(before, parentMap(captureSemantics(tester)));
+          expect(tester.takeException(), isNull);
+        } finally {
+          handle.dispose();
+        }
       });
 
       testWidgets('inactive card renders without accent border.', (tester) async {

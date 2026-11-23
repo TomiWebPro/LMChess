@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "lmchess (Windows, stable dev)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "debug",
+      "args": ["-d", "windows", "--dart-define=DISABLE_SEMANTICS=true"]
+    },
+    {
+      "name": "lmchess (Windows, accessible)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "debug",
+      "args": ["-d", "windows"]
+    }
+  ]
+}

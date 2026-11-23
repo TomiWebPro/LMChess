@@ -30,12 +30,18 @@ lib/src/stats/      event_log (idempotent), metrics (denominators documented)
 lib/src/review/     engine_adapter, quality labels, wintrchess notes
 lib/src/storage/    AppRepository, LocalAppStore (Hive), migrations/retention hooks
 lib/src/theme/      board/piece themes + registry
-lib/src/ui/         widgets (chessboard/activity/boards) + 9 screens + app shell
+lib/src/ui/screens|widgets (Flutter only: 9 screens + chessboard/activity/boards)
+lib/src/ui/backend  (pure Dart use-cases: pumps, mappers, runners, review + telemetry logs)
+lib/src/ui/providers (Flutter Riverpod adapters over ui/backend)
 backend/            OpenAPI stub mirroring AppRepository; server roadmap
 ```
 
 Dependency rule: `chess` ← `variant` ← `game` ← `ui`; `llm`/`agent` independent of
 game rules; `stats`/`review`/`arena` consume events only. No layer imports `ui`.
+Rule: `ui/backend` never imports `package:flutter` (enforced by
+`test/architecture_test.dart`); the one grandfathered exception is
+`telemetry_logs.dart` importing `foundation.dart` for `ChangeNotifier` only
+(no widgets/material) until it migrates off.
 This is enforced by convention and code review, not by tooling — there is no
 import-lint gate configured (`analysis_options.yaml` covers lints, not layering).
 
@@ -45,6 +51,15 @@ import-lint gate configured (`analysis_options.yaml` covers lints, not layering)
 - Events are immutable, idempotent by key (`gameId:seq`), persisted before broadcast.
 - Tournament export schema `1.0` — see `lib/src/arena/export.dart` + `backend/openapi.yaml`.
 - Ratings versioned per mode; model identity = `provider/model/promptHash/toolSchema/ruleset`.
+
+## BackendLog correlation convention
+
+Every `ui/backend` log record carries correlation IDs — `gameId` for single
+games, plus `tournamentId` for arena runs — alongside the monotonic event
+`seq`, so one turn traces from DevTools filters through
+`AppLog.recent(tag: ...)` to the persisted `GameEventRecord` (`gameId:seq`
+idempotency key) without grepping message text. New backend logs must include
+all three fields; screens add no new log tags of their own.
 
 ## What is intentionally deferred
 

@@ -15,6 +15,8 @@
 /// [isProvisional]; UI must render a warning ("provisional — < N games")
 /// and must never present such a rating as an established skill claim.
 /// There is no placement shortcut: every key starts at [initialRating].
+/// Talks to: `tournament.dart` results; standings rendered by the arena screen via `ui/backend/arena_runner.dart`.
+/// Never imports: `package:flutter`, `ui/`, `game/`, `llm/`, `storage/`, `chess/`+`variant/` engines — pure math.
 library;
 
 import 'dart:math' as math;

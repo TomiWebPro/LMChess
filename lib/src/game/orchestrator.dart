@@ -1,9 +1,12 @@
 /// Turn orchestration: clocks, AI/human move intake, fallback, lifecycle and
 /// the ordered game-event log.
 ///
-/// This is the only file in the LLM/agent/game layers allowed to import
-/// Flutter (`package:flutter/foundation.dart` for [ChangeNotifier]); the
-/// providers, runner, clock and state model stay pure Dart.
+/// Pure Dart: the game layer never imports Flutter. UI layers observe state
+/// via [GameOrchestrator.addStateListener]/[GameOrchestrator.removeStateListener]
+/// (or the Flutter `ChangeNotifier` adapter in
+/// `lib/src/ui/providers/orchestrator_adapter.dart`) and subscribe to
+/// [GameOrchestrator.events]; the providers, runner, clock and state model
+/// stay pure Dart.
 ///
 /// Engine decoupling: the orchestrator never imports the chess/variant
 /// engine. The position is an opaque [String] (FEN or variant JSON), legal
@@ -32,22 +35,23 @@
 /// [FallbackRecord]s (payload flag `isFallback: true` plus the failure
 /// reason) and are NEVER attributed to the agent — no agent phrase or id is
 /// attached to them.
+/// Talks to: `game_state.dart`, `clock.dart`, `turn_pump.dart`, `agent/`, `llm/`, `stats/` (`GameEventRecord` persist-then-broadcast).
+/// Never imports: `ui/` widgets/screens, `chess/`+`variant/` engines (opaque position `String`), `storage/local_store`, `arena/`.
 library;
 
 import 'dart:async';
 import 'dart:math';
 
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../agent/agent_config.dart';
 import '../agent/agent_runner.dart';
-import '../chess/fen.dart';
-import '../llm/prompt_board.dart';
+import '../diagnostics/backend_log.dart';
 import '../llm/provider.dart';
 import '../llm/validation.dart';
 import 'clock.dart';
 import 'game_state.dart';
+import 'turn_pump.dart';
 
 /// Standard chess starting position (FEN).
 const String standardStartFen =
@@ -98,12 +102,12 @@ class GameEvent {
 
   /// Serializes to JSON.
   Map<String, Object?> toJson() => {
-        'seq': seq,
-        'idempotencyKey': idempotencyKey,
-        'type': type,
-        'payload': payload,
-        'timestamp': timestamp.toIso8601String(),
-      };
+    'seq': seq,
+    'idempotencyKey': idempotencyKey,
+    'type': type,
+    'payload': payload,
+    'timestamp': timestamp.toIso8601String(),
+  };
 }
 
 /// Record of one orchestrator-applied fallback move.
@@ -137,17 +141,18 @@ class FallbackRecord {
 
   /// Serializes to JSON.
   Map<String, Object?> toJson() => {
-        'reason': reason.name,
-        'chosenUci': chosenUci,
-        'isFallback': isFallback,
-        if (agentConfigId != null) 'agentConfigId': agentConfigId,
-        'timestamp': timestamp.toIso8601String(),
-      };
+    'reason': reason.name,
+    'chosenUci': chosenUci,
+    'isFallback': isFallback,
+    if (agentConfigId != null) 'agentConfigId': agentConfigId,
+    'timestamp': timestamp.toIso8601String(),
+  };
 }
 
 /// Owns the clock, position bookkeeping, turn flow and event log for one
-/// game. UI layers listen via [ChangeNotifier] and subscribe to [events].
-class GameOrchestrator extends ChangeNotifier {
+/// game. UI layers observe state via [addStateListener]/[removeStateListener]
+/// (or the Flutter `ChangeNotifier` adapter) and subscribe to [events].
+class GameOrchestrator {
   /// Static game settings (mutable to allow arena overrides pre-start).
   GameConfig config;
 
@@ -169,6 +174,9 @@ class GameOrchestrator extends ChangeNotifier {
   /// Authoritative clock; consumed once per applied turn.
   final ChessClock clock;
 
+  /// UI-free logger (per-call override wins; defaults to [currentBackendLog]).
+  final BackendLog? log;
+
   /// Maximum retained events in [_eventLog] (oldest-first eviction).
   ///
   /// Bounded retention: long games/streams cannot grow memory without
@@ -189,6 +197,14 @@ class GameOrchestrator extends ChangeNotifier {
   final List<GameEvent> _eventLog = [];
   final StreamController<GameEvent> _events =
       StreamController<GameEvent>.broadcast();
+
+  /// Pure-Dart state listeners (replaces `ChangeNotifier`).
+  ///
+  /// Notified via [_bumpState] on every state transition and position intake
+  /// — the same points that previously called `notifyListeners()`. The
+  /// Flutter UI wraps this with `OrchestratorListenable` (a `ChangeNotifier`
+  /// adapter) where a `Listenable` is needed.
+  final List<void Function()> _stateListeners = <void Function()>[];
   int _seq = 0;
   bool _turnInFlight = false;
   bool _pauseRequested = false;
@@ -216,6 +232,11 @@ class GameOrchestrator extends ChangeNotifier {
   /// or touch the closed stream.
   bool _disposed = false;
 
+  /// AI-turn sequencer. Owns the `requestAiTurn` pipeline (guards, runner
+  /// invocation, flag race, fallback, summaries); this class keeps state
+  /// transitions, the event log, clocks, positions and terminal reporting.
+  late final TurnPump _pump;
+
   /// Creates an orchestrator.
   ///
   /// * [initialPosition] defaults to [standardStartFen]; chaotic games pass
@@ -240,13 +261,24 @@ class GameOrchestrator extends ChangeNotifier {
     Random? random,
     ChessClock? clock,
     this.maxEvents = 10000,
-  })  : _position = initialPosition,
-        _turn = _normalizeColor(initialTurn),
-        _legalMoves = List.of(initialLegalMoves),
-        agents = agents ?? {},
-        runner = runner ?? const AgentRunner(),
-        _random = random ?? Random(config.seed),
-        clock = clock ?? ChessClock.fromTimeControl(config.timeControl);
+    this.log,
+  }) : _position = initialPosition,
+       _turn = _normalizeColor(initialTurn),
+       _legalMoves = List.of(initialLegalMoves),
+       agents = agents ?? {},
+       runner = runner ?? const AgentRunner(),
+       _random = random ?? Random(config.seed),
+       clock = clock ?? ChessClock.fromTimeControl(config.timeControl) {
+    _pump = TurnPump(
+      host: _OrchestratorTurnHost(this),
+      runner: this.runner,
+      clock: this.clock,
+      onEvent: (type, payload) {
+        emit(type, payload);
+      },
+      log: log,
+    );
+  }
 
   // -- Read-only views -------------------------------------------------------
 
@@ -275,6 +307,35 @@ class GameOrchestrator extends ChangeNotifier {
 
   /// Broadcast stream of [GameEvent]s (persisted before broadcast).
   Stream<GameEvent> get events => _events.stream;
+
+  /// Whether [dispose] has run.
+  bool get isDisposed => _disposed;
+
+  /// Whether any state listeners are registered.
+  bool get hasStateListeners => _stateListeners.isNotEmpty;
+
+  /// Registers a state listener, notified via [_bumpState] on transitions
+  /// and position intake. No-op after [dispose].
+  void addStateListener(void Function() listener) {
+    if (_disposed) return;
+    _stateListeners.add(listener);
+  }
+
+  /// Removes a previously registered state listener.
+  void removeStateListener(void Function() listener) {
+    _stateListeners.remove(listener);
+  }
+
+  /// Notifies a snapshot of [_stateListeners].
+  ///
+  /// Same call sites that previously used `notifyListeners()`. No-op after
+  /// [dispose].
+  void _bumpState() {
+    if (_disposed) return;
+    for (final listener in List<void Function()>.of(_stateListeners)) {
+      listener();
+    }
+  }
 
   /// Whether an AI turn is currently in flight.
   bool get isBusy => _turnInFlight;
@@ -318,7 +379,6 @@ class GameOrchestrator extends ChangeNotifier {
   /// so replay-then-subscribe consumers observe every event exactly once.
   /// After [dispose] (or when closed) this is a no-op returning a
   /// synthetic event with seq -1 that is neither logged nor broadcast.
-  @protected
   GameEvent emit(String type, [Map<String, Object?> payload = const {}]) {
     if (_disposed || _events.isClosed) {
       return GameEvent(
@@ -353,8 +413,8 @@ class GameOrchestrator extends ChangeNotifier {
   /// outgoing edges: once terminal the game only leaves via a fresh
   /// orchestrator ([startGame] refuses re-entry). [paused] only resumes to
   /// stable wait states, never to transient AI-turn sub-states.
-  static const Map<OrchestratorState, Set<OrchestratorState>> _allowedTransitions =
-      <OrchestratorState, Set<OrchestratorState>>{
+  static const Map<OrchestratorState, Set<OrchestratorState>>
+  _allowedTransitions = <OrchestratorState, Set<OrchestratorState>>{
     OrchestratorState.initializing: {
       OrchestratorState.waitingHuman,
       OrchestratorState.waitingAi,
@@ -413,21 +473,43 @@ class GameOrchestrator extends ChangeNotifier {
   /// waiting state matching the side to move.
   ///
   /// Returns `false` (emitting `startRejected`) when validation fails or the
-  /// game already started.
-  bool startGame({int? nowMs}) {
+  /// game already started. [log] overrides [log]/[currentBackendLog] for
+  /// this call; [gameId]/[tournamentId] attach correlation IDs.
+  bool startGame({
+    int? nowMs,
+    BackendLog? log,
+    String? gameId,
+    String? tournamentId,
+  }) {
+    final effectiveLog = log ?? this.log ?? currentBackendLog;
+    effectiveLog.debug(
+      'game start seq=$_seq',
+      tag: 'orchestrator',
+      gameId: gameId,
+      tournamentId: tournamentId,
+    );
     if (_disposed) return false;
     if (_state != OrchestratorState.initializing) {
+      effectiveLog.debug(
+        'game start rejected reason=already started seq=$_seq',
+        tag: 'orchestrator',
+        gameId: gameId,
+        tournamentId: tournamentId,
+      );
       emit('startRejected', {'reason': 'already started'});
       return false;
     }
     final problems = config.validate();
     if (problems.isNotEmpty) {
+      effectiveLog.warning(
+        'game failed kind=invalidConfig seq=$_seq',
+        tag: 'orchestrator',
+        gameId: gameId,
+        tournamentId: tournamentId,
+      );
       _failureMessage = problems.join(' ');
       _transition(OrchestratorState.failed);
-      emit('gameFinished', {
-        'reason': 'invalidConfig',
-        'problems': problems,
-      });
+      emit('gameFinished', {'reason': 'invalidConfig', 'problems': problems});
       return false;
     }
     _gameStopwatch
@@ -439,9 +521,17 @@ class GameOrchestrator extends ChangeNotifier {
       'turn': _turn,
       'position': _position,
     });
-    _transition(participantToMove.isHuman
-        ? OrchestratorState.waitingHuman
-        : OrchestratorState.waitingAi);
+    _transition(
+      participantToMove.isHuman
+          ? OrchestratorState.waitingHuman
+          : OrchestratorState.waitingAi,
+    );
+    effectiveLog.debug(
+      'game started seq=$_seq',
+      tag: 'orchestrator',
+      gameId: gameId,
+      tournamentId: tournamentId,
+    );
     return true;
   }
 
@@ -485,11 +575,12 @@ class GameOrchestrator extends ChangeNotifier {
       // but `initializing`/`paused` values — possible only if pause/resume
       // were reordered by a future edit — fall back to the side to move
       // rather than stranding the game.
-      final restore = _stateBeforePause == OrchestratorState.paused ||
+      final restore =
+          _stateBeforePause == OrchestratorState.paused ||
               _stateBeforePause == OrchestratorState.initializing
           ? (participantToMove.isHuman
-              ? OrchestratorState.waitingHuman
-              : OrchestratorState.waitingAi)
+                ? OrchestratorState.waitingHuman
+                : OrchestratorState.waitingAi)
           : _stateBeforePause;
       _transition(restore);
     }
@@ -510,6 +601,26 @@ class GameOrchestrator extends ChangeNotifier {
     clock.stop();
     _transition(OrchestratorState.finished);
     emit('gameFinished', {'outcome': '*', 'reason': reason});
+  }
+
+  /// Charges idle thinking time for the side to move and adjudicates a flag.
+  ///
+  /// The UI's live ticker calls this when its displayed clock for a *human*
+  /// seat reaches zero: the orchestrator never consumed that idle time
+  /// (consumption otherwise happens only on applied moves/turns), so without
+  /// this a human could sit forever on an expired clock. No-op when untimed,
+  /// terminal, disposed, or an AI turn is in flight. Returns `true` when this
+  /// call ended the game on time.
+  bool expireIdleTurn(int elapsedMs) {
+    if (_disposed || _isTerminal || _turnInFlight) return false;
+    if (config.timeControl.type == TimeControlType.none) return false;
+    if (_state == OrchestratorState.paused) return false;
+    _consumeClock(_turn, elapsedMs);
+    if (clock.isFlagged(_turn)) {
+      _onFlag(_turn);
+      return true;
+    }
+    return false;
   }
 
   /// Records resignation by [color]; the other side wins.
@@ -551,7 +662,9 @@ class GameOrchestrator extends ChangeNotifier {
   void reportTerminal(GameResult terminalResult) {
     if (_disposed || _isTerminal) return;
     if (!GameResult.isConsistent(
-        terminalResult.outcome, terminalResult.winnerColor)) {
+      terminalResult.outcome,
+      terminalResult.winnerColor,
+    )) {
       emit('terminalRejected', {
         'reason': 'outcome/winner mismatch',
         'outcome': terminalResult.outcome,
@@ -606,348 +719,75 @@ class GameOrchestrator extends ChangeNotifier {
     _turn = _normalizeColor(turn);
     _legalMoves = List.of(legalMoves);
     if (boardHandle != null) _boardHandle = boardHandle;
-    emit('positionSet', {
-      'turn': _turn,
-      'legalMoveCount': _legalMoves.length,
-    });
-    notifyListeners();
+    emit('positionSet', {'turn': _turn, 'legalMoveCount': _legalMoves.length});
+    _bumpState();
   }
 
-  // -- AI turns ------------------------------------------------------------------
-
-  /// Renders [_position] as the shared prompt state for [color].
-  ///
-  /// Both variants use `renderBoardForPrompt`, so the model sees the same
-  /// format at the same position. Castling rights and the en-passant target
-  /// are included because they are part of the position and the model cannot
-  /// infer them from the piece placement alone. A malformed FEN degrades to a
-  /// placeholder rather than crashing the turn.
-  ({String board, String castling, String enPassant}) _promptState(
-    String color,
-  ) {
-    try {
-      final position = parseFen(_position);
-      final rights = <String>['K', 'Q', 'k', 'q']
-          .where(position.castling.contains)
-          .join();
-      return (
-        board: renderBoardForPrompt(
-          squares: <String, String>{
-            for (final entry in position.board.entries)
-              entry.key.name: promptPieceLetter(
-                entry.value.type.letter,
-                isWhite: entry.value.color.isWhite,
-              ),
-          },
-          sideToMove: color == 'w' ? 'white' : 'black',
-        ),
-        castling: rights.isEmpty ? '-' : rights,
-        enPassant: position.enPassant?.name ?? '-',
-      );
-    } catch (_) {
-      return (
-        board: '(board unavailable)',
-        castling: '-',
-        enPassant: '-',
-      );
-    }
-  }
+  // -- AI turns (delegated to TurnPump) ------------------------------------
 
   /// Runs one AI turn for [participantColor] (`w`/`b`).
   ///
-  /// Guards: rejects (returns `null` + `turnRejected` event) when a turn is
-  /// already in flight, the game is paused/finished/failed, it is not that
-  /// side's turn, the seat is human or has no bound agent config, or no
-  /// legal moves are known.
-  ///
-  /// On success the validated move is applied (after the pre-apply flag
-  /// check). On definitive failure a seeded random-legal fallback applies
-  /// when [FallbackPolicy.enabled] (recorded, unattributed); otherwise the
-  /// game continues and the side to move must retry or resign.
-  ///
-  /// Stale-completion discard: the runner future is captured with the
-  /// current cancellation generation; when `stop`/`resign`/
-  /// `reportTerminal`/`dispose` intervene mid-turn, the continuation
-  /// discards the result (never applied, never emitted) and returns `null`.
-  /// [AgentRunner]'s signature is untouched — discard is orchestrator-side.
-  ///
-  /// Metrics contract: `aiTurnStarted`/`aiStream`/`moveApplied` carry
-  /// `agentId` plus the deprecated `agentConfigId` alias, and full color
-  /// names (`colorName`: `'white'`/`'black'`) alongside the compact
-  /// `color` (`'w'`/`'b'`). A single `turnSummary` event per executed turn
-  /// carries the metrics flags and is the only event with
-  /// `countAsTurn: true`; auxiliary events set `countAsTurn: false` so
-  /// multi-event turns count once in `AgentMetrics.compute`.
+  /// Sequencing lives in [TurnPump] (guards, runner invocation, flag race,
+  /// fallback, summaries); this method preserves the public signature used
+  /// by screens and pumps and delegates verbatim. See [TurnPump.requestAiTurn]
+  /// for the guard, stale-completion, metrics and fallback contracts.
   ///
   /// Live provider events are re-broadcast as `aiStream` game events via the
   /// runner's `onEvent` hook. [providerOverride]/[httpClient]/[seed] are
   /// forwarded to [AgentRunner.runTurn] (tests, shared clients,
-  /// reproducible sampling).
+  /// reproducible sampling). [log] overrides [log]/[currentBackendLog] for
+  /// this call; [gameId]/[tournamentId] attach correlation IDs (the pump
+  /// records them on its entry/exit/failure logs; [seq] defaults to
+  /// [eventSeq] here).
   Future<AgentTurnResult?> requestAiTurn(
     String participantColor, {
     LlmProvider? providerOverride,
     http.Client? httpClient,
     ApiKeyResolver? apiKeyResolver,
     int? seed,
-  }) async {
-    final color = _normalizeColor(participantColor);
-    if (_disposed) return null;
-    if (_turnInFlight) {
-      emit('turnRejected', {
-        'reason': 'overlapping turn in flight',
-        'color': color,
-        'colorName': _colorName(color),
-        'countAsTurn': false,
-      });
-      return null;
-    }
-    if (_state == OrchestratorState.paused) {
-      emit('turnRejected', {
-        'reason': 'game paused',
-        'color': color,
-        'colorName': _colorName(color),
-        'countAsTurn': false,
-      });
-      return null;
-    }
-    if (_isTerminal) {
-      emit('turnRejected', {
-        'reason': 'game already over',
-        'color': color,
-        'colorName': _colorName(color),
-        'countAsTurn': false,
-      });
-      return null;
-    }
-    if (color != _turn) {
-      emit('turnRejected', {
-        'reason': 'not that side to move',
-        'color': color,
-        'colorName': _colorName(color),
-        'turn': _turn,
-        'countAsTurn': false,
-      });
-      return null;
-    }
-    final participant = color == 'b' ? black : white;
-    if (!participant.isAi) {
-      emit('turnRejected', {
-        'reason': 'seat is not a bound AI agent',
-        'color': color,
-        'colorName': _colorName(color),
-        'countAsTurn': false,
-      });
-      return null;
-    }
-    final agent = agents[participant.agentConfigId];
-    if (agent == null) {
-      emit('turnRejected', {
-        'reason': 'no agent config bound',
-        'color': color,
-        'colorName': _colorName(color),
-        'agentId': participant.agentConfigId,
-        // Deprecated alias for consumers on the old contract.
-        'agentConfigId': participant.agentConfigId,
-        'countAsTurn': false,
-      });
-      return null;
-    }
-    if (_legalMoves.isEmpty) {
-      emit('turnRejected', {
-        'reason': 'no legal moves known; engine must call setPosition',
-        'color': color,
-        'colorName': _colorName(color),
-        'countAsTurn': false,
-      });
-      return null;
-    }
-
-    _turnInFlight = true;
-    final generation = _generation;
-    // Abort any superseded provider stream and arm a fresh token so a later
-    // stop/resign/reportTerminal can cancel this turn cooperatively.
-    _turnCancel?.cancel();
-    final turnCancel = CancelToken();
-    _turnCancel = turnCancel;
-    _transition(OrchestratorState.waitingAi);
-    emit('aiTurnStarted', {
-      'color': color,
-      'colorName': _colorName(color),
-      'agentId': agent.id,
-      // Deprecated alias for consumers on the old contract.
-      'agentConfigId': agent.id,
-      'model': agent.model,
-      'countAsTurn': false,
-    });
-
-    final turnStopwatch = Stopwatch()..start();
-    final promptState = _promptState(color);
-    AgentTurnResult? turnResult;
-    try {
-      _transition(OrchestratorState.streaming);
-      turnResult = await runner.runTurn(
-        agent.copyWith(retry: config.retryPolicy, fallback: config.fallbackPolicy),
-        AgentTurnRequest(
-          positionFenOrJson: _position,
-          legalMovesUci: List.of(_legalMoves),
-          boardText: promptState.board,
-          castlingRights: promptState.castling,
-          enPassantTarget: promptState.enPassant,
-          mode: config.mode.name,
-          color: color,
-          timersMs: {'white': clock.remainingW, 'black': clock.remainingB},
-        ),
-        seed: seed ?? config.seed,
-        providerOverride: providerOverride,
-        apiKeyResolver: apiKeyResolver,
-        httpClient: httpClient,
-        cancelToken: turnCancel,
-        onEvent: (streamEvent) {
-          // Drop late stream events once this turn is superseded or the game
-          // is over, so a stopped game stops emitting aiStream rows.
-          if (_disposed || _isTerminal || generation != _generation) return;
-          emit('aiStream', {
-            'color': color,
-            'colorName': _colorName(color),
-            'agentId': agent.id,
-            // Deprecated alias for consumers on the old contract.
-            'agentConfigId': agent.id,
-            'kind': streamEvent.kind.name,
-            if (streamEvent.message != null) 'message': streamEvent.message,
-            if (streamEvent.text != null) 'text': streamEvent.text,
-            if (streamEvent.toolName != null)
-              'toolName': streamEvent.toolName,
-            if (streamEvent.toolArgsJson != null)
-              'toolArgsJson': streamEvent.toolArgsJson,
-            if (streamEvent.tokensIn != null)
-              'tokensIn': streamEvent.tokensIn,
-            if (streamEvent.tokensOut != null)
-              'tokensOut': streamEvent.tokensOut,
-            if (streamEvent.latencyMs != null)
-              'latencyMs': streamEvent.latencyMs,
-            'countAsTurn': false,
-          });
-        },
-      );
-    } catch (e) {
-      turnStopwatch.stop();
-      _consumeClock(color, turnStopwatch.elapsedMilliseconds);
-      _turnInFlight = false;
-      if (_isTerminal || _disposed || generation != _generation) return null;
-      _failureMessage = 'Agent turn crashed: $e';
-      _transition(OrchestratorState.failed);
-      emit('aiTurnFailed', {
-        'color': color,
-        'colorName': _colorName(color),
-        'agentId': agent.id,
-        // Deprecated alias for consumers on the old contract.
-        'agentConfigId': agent.id,
-        'kind': FailureKind.internal.name,
-        'error': '$e',
-        'countAsTurn': false,
-      });
-      return null;
-    }
-    turnStopwatch.stop();
-    _consumeClock(color, turnStopwatch.elapsedMilliseconds);
-
-    // Stale-completion guard: stop()/resign()/reportTerminal()/dispose()
-    // during the flight wins — the resolved turn is discarded, never
-    // applied and never emitted.
-    if (_isTerminal || _disposed || generation != _generation) {
-      _turnInFlight = false;
-      return null;
-    }
-
-    // Timeout-vs-move race: the flag is authoritative and checked BEFORE
-    // anything touches the position — even a valid move loses on time.
-    // Untimed games (`TimeControl.none`) never flag: `isFlagged` is false
-    // by construction, so this path is unreachable for them. The explicit
-    // type check below documents the invariant for readers.
-    if (config.timeControl.type != TimeControlType.none &&
-        clock.isFlagged(color)) {
-      _emitTurnSummary(
-        agentId: agent.id,
-        color: color,
-        turnResult: turnResult,
-        isFallback: false,
-        timedOut: true,
-      );
-      _turnInFlight = false;
-      _onFlag(color);
-      return turnResult;
-    }
-
-    _transition(OrchestratorState.validating);
-    final outcome = turnResult.outcome;
-    if (outcome.isValid && outcome.toolCall != null) {
-      _applyMove(
-        color,
-        outcome.toolCall!.uci,
-        isFallback: false,
-        phrase: outcome.toolCall!.phrase,
-        agentConfigId: agent.id,
-      );
-      _emitTurnSummary(
-        agentId: agent.id,
-        modelKey: agent.model,
-        color: color,
-        turnResult: turnResult,
-        isFallback: false,
-        timedOut: false,
-      );
-    } else {
-      emit('aiTurnFailed', {
-        'color': color,
-        'colorName': _colorName(color),
-        'agentId': agent.id,
-        // Deprecated alias for consumers on the old contract.
-        'agentConfigId': agent.id,
-        'kind': outcome.kind.name,
-        if (outcome.error != null) 'error': outcome.error,
-        'attempts': turnResult.failure?.attempts ?? 1,
-        'countAsTurn': false,
-      });
-      if (config.fallbackPolicy.enabled && _legalMoves.isNotEmpty) {
-        _applySeededFallback(color, outcome.kind, agent.id);
-        _emitTurnSummary(
-          agentId: agent.id,
-          modelKey: agent.model,
-          color: color,
-          turnResult: turnResult,
-          isFallback: true,
-          timedOut: false,
-        );
-      } else {
-        _emitTurnSummary(
-          agentId: agent.id,
-          modelKey: agent.model,
-          color: color,
-          turnResult: turnResult,
-          isFallback: false,
-          timedOut: false,
-        );
-        // Game continues: the side to move must retry, resign or stop.
-        _transition(participantToMove.isHuman
-            ? OrchestratorState.waitingHuman
-            : OrchestratorState.waitingAi);
-      }
-    }
-
-    _checkEndConditions();
-    _turnInFlight = false;
-    if (!_isTerminal && _pauseRequested) {
-      // A pause arrived mid-turn: honor it now that the turn settled.
-      _pauseRequested = false;
-      _transition(OrchestratorState.paused);
-    } else if (!_isTerminal && !_stateIsWait()) {
-      // Backstop: every path above already lands on a wait state, but a
-      // future edit must never strand the game between turns.
-      _transition(participantToMove.isHuman
-          ? OrchestratorState.waitingHuman
-          : OrchestratorState.waitingAi);
-    }
-    return turnResult;
+    BackendLog? log,
+    String? gameId,
+    String? tournamentId,
+    int? seq,
+  }) {
+    final effectiveLog = log ?? this.log ?? currentBackendLog;
+    final seqValue = seq ?? _seq;
+    effectiveLog.debug(
+      'orch turn start color=$participantColor seq=$seqValue',
+      tag: 'orchestrator',
+      gameId: gameId,
+      tournamentId: tournamentId,
+    );
+    return _pump
+        .requestAiTurn(
+          participantColor,
+          providerOverride: providerOverride,
+          httpClient: httpClient,
+          apiKeyResolver: apiKeyResolver,
+          seed: seed,
+          log: effectiveLog,
+          gameId: gameId,
+          tournamentId: tournamentId,
+          seq: seqValue,
+        )
+        .then((result) {
+          if (result == null) {
+            effectiveLog.debug(
+              'orch turn end no-move seq=$seqValue',
+              tag: 'orchestrator',
+              gameId: gameId,
+              tournamentId: tournamentId,
+            );
+          } else {
+            effectiveLog.debug(
+              'orch turn end kind=${result.outcome.kind.name} seq=$seqValue',
+              tag: 'orchestrator',
+              gameId: gameId,
+              tournamentId: tournamentId,
+            );
+          }
+          return result;
+        });
   }
 
   // -- Human moves ---------------------------------------------------------------
@@ -987,8 +827,7 @@ class GameOrchestrator extends ChangeNotifier {
       });
       return false;
     }
-    final normalized =
-        _legalMoves.firstWhereOrNull(_foldCaseEquals(uci));
+    final normalized = _legalMoves.firstWhereOrNull(_foldCaseEquals(uci));
     if (normalized == null) {
       emit('humanMoveRejected', {
         'reason': 'illegal move',
@@ -1028,17 +867,20 @@ class GameOrchestrator extends ChangeNotifier {
     );
   }
 
-  @override
+  /// Releases resources: cancels the in-flight turn, closes [events] and
+  /// clears state listeners. After this, [emit], [_transition] and
+  /// [setPosition] are no-ops.
   void dispose() {
+    if (_disposed) return;
     _disposed = true;
     _generation++;
     _turnCancel?.cancel();
     _turnInFlight = false;
     _pauseRequested = false;
+    _stateListeners.clear();
     if (!_events.isClosed) {
       _events.close();
     }
-    super.dispose();
   }
 
   // -- Internals ---------------------------------------------------------------------
@@ -1055,7 +897,7 @@ class GameOrchestrator extends ChangeNotifier {
   ///
   /// Illegal transitions (including any attempt to leave a terminal state)
   /// are ignored with a diagnostic `transitionRejected` event — they never
-  /// mutate state. No-op after [dispose] (ChangeNotifier is dead).
+  /// mutate state. No-op after [dispose] (listeners are gone).
   void _transition(OrchestratorState next) {
     if (_disposed) return;
     if (next != _state &&
@@ -1068,7 +910,7 @@ class GameOrchestrator extends ChangeNotifier {
       return;
     }
     _state = next;
-    notifyListeners();
+    _bumpState();
   }
 
   /// Stable wait state corresponding to [state]: transient AI-turn
@@ -1098,62 +940,6 @@ class GameOrchestrator extends ChangeNotifier {
   /// Metrics color vocabulary: compact internal `'w'`/`'b'` to the full
   /// `'white'`/`'black'` names `AgentMetrics.compute` aggregates on.
   static String _colorName(String color) => color == 'b' ? 'black' : 'white';
-
-  /// Emits the single `turnSummary` event for an executed AI turn — the
-  /// only orchestrator event with `countAsTurn: true` (see [requestAiTurn]).
-  ///
-  /// Flags mirror the `AgentMetrics.compute` payload contract: `parsedMove`
-  /// (a candidate move was parsed), `validTool`/`legal` (a legal move was
-  /// produced and applied), `illegalAttempt` (illegal tool-call failure),
-  /// `unparseable` (malformed/unparseable output), `missingTool` (no usable
-  /// tool call), `providerError` (transport/auth/rate-limit failures),
-  /// `timeout` (the turn — or the clock — timed out), `fallback` (a seeded
-  /// random-legal move resolved the turn, unattributed to the agent).
-  void _emitTurnSummary({
-    required String agentId,
-    String? modelKey,
-    required String color,
-    required AgentTurnResult turnResult,
-    required bool isFallback,
-    required bool timedOut,
-  }) {
-    final kind = turnResult.outcome.kind;
-    final valid = turnResult.outcome.isValid;
-    final payload = <String, Object?>{
-      'agentId': agentId,
-      // Deprecated alias for consumers on the old contract.
-      'agentConfigId': agentId,
-      'color': color,
-      'colorName': _colorName(color),
-      'mode': config.mode.name,
-      'latencyMs': turnResult.latencyMs,
-      'parsedMove': valid || kind == FailureKind.illegalMove,
-      'validTool': valid,
-      'legal': valid && !isFallback,
-      'illegalAttempt': kind == FailureKind.illegalMove,
-      'unparseable': kind == FailureKind.unparseableResponse ||
-          kind == FailureKind.malformedArgs,
-      'missingTool': kind == FailureKind.missingToolCall ||
-          kind == FailureKind.incompleteResponse ||
-          kind == FailureKind.cancelled ||
-          kind == FailureKind.internal,
-      'providerError': kind == FailureKind.providerError ||
-          kind == FailureKind.rateLimit ||
-          kind == FailureKind.authError,
-      'timeout': timedOut || kind == FailureKind.timeout,
-      'fallback': isFallback,
-      'attempts': turnResult.failure?.attempts ?? 1,
-      'countAsTurn': true,
-    };
-    final key = modelKey;
-    if (key != null) payload['modelKey'] = key;
-    final usage = turnResult.usage;
-    if (usage != null) {
-      payload['inputTokens'] = usage.inputTokens;
-      payload['outputTokens'] = usage.outputTokens;
-    }
-    emit('turnSummary', payload);
-  }
 
   /// Charges [elapsedMs] to [color] with the game's increment/delay bonus.
   void _consumeClock(String color, int elapsedMs) {
@@ -1226,9 +1012,11 @@ class GameOrchestrator extends ChangeNotifier {
       'moveIndex': _moveHistory.length,
       'countAsTurn': false,
     });
-    _transition(participantToMove.isHuman
-        ? OrchestratorState.waitingHuman
-        : OrchestratorState.waitingAi);
+    _transition(
+      participantToMove.isHuman
+          ? OrchestratorState.waitingHuman
+          : OrchestratorState.waitingAi,
+    );
   }
 
   /// Picks a uniform random legal move with the seeded RNG, records a
@@ -1272,14 +1060,10 @@ class GameOrchestrator extends ChangeNotifier {
     if (config.maxDurationMs != null) {
       final elapsed = _gameStopwatch.elapsedMilliseconds;
       if (elapsed >= config.maxDurationMs!) {
-        _result =
-            const GameResult(outcome: '*', reason: 'maxDurationExceeded');
+        _result = const GameResult(outcome: '*', reason: 'maxDurationExceeded');
         clock.stop();
         _transition(OrchestratorState.finished);
-        emit('gameFinished', {
-          'outcome': '*',
-          'reason': 'maxDurationExceeded',
-        });
+        emit('gameFinished', {'outcome': '*', 'reason': 'maxDurationExceeded'});
       }
     }
   }
@@ -1290,6 +1074,125 @@ class GameOrchestrator extends ChangeNotifier {
   static bool Function(String) _foldCaseEquals(String uci) {
     final want = uci.trim().toLowerCase();
     return (candidate) => candidate.toLowerCase() == want;
+  }
+}
+
+/// Adapts [GameOrchestrator] private state to the [TurnPumpHost] contract.
+///
+/// Same library, so it forwards to the orchestrator's private fields and
+/// transition/apply helpers without widening the public API used by
+/// screens. All `GameEvent` emission still flows through the
+/// orchestrator's persist-then-broadcast [GameOrchestrator.emit].
+class _OrchestratorTurnHost implements TurnPumpHost {
+  final GameOrchestrator _orch;
+  _OrchestratorTurnHost(this._orch);
+
+  @override
+  GameConfig get config => _orch.config;
+
+  @override
+  String get position => _orch._position;
+
+  @override
+  List<String> get legalMoves => List.unmodifiable(_orch._legalMoves);
+
+  @override
+  String get turn => _orch._turn;
+
+  @override
+  OrchestratorState get state => _orch._state;
+
+  @override
+  GameParticipant get participantToMove => _orch.participantToMove;
+
+  @override
+  GameParticipant participantFor(String color) =>
+      color == 'b' ? _orch.black : _orch.white;
+
+  @override
+  AgentConfig? agentFor(String? id) => _orch.agents[id];
+
+  @override
+  bool get isDisposed => _orch._disposed;
+
+  @override
+  bool get isTerminal => _orch._isTerminal;
+
+  @override
+  bool get turnInFlight => _orch._turnInFlight;
+
+  @override
+  void setTurnInFlight(bool value) => _orch._turnInFlight = value;
+
+  @override
+  int get generation => _orch._generation;
+
+  @override
+  bool get pauseRequested => _orch._pauseRequested;
+
+  @override
+  void setPauseRequested(bool value) => _orch._pauseRequested = value;
+
+  @override
+  CancelToken? get turnCancel => _orch._turnCancel;
+
+  @override
+  void setTurnCancel(CancelToken? token) => _orch._turnCancel = token;
+
+  @override
+  void cancelPreviousTurn() => _orch._turnCancel?.cancel();
+
+  @override
+  void transition(OrchestratorState next) => _orch._transition(next);
+
+  @override
+  void consumeClock(String color, int elapsedMs) =>
+      _orch._consumeClock(color, elapsedMs);
+
+  @override
+  void applyMove(
+    String color,
+    String uci, {
+    required bool isFallback,
+    String? phrase,
+    String? agentConfigId,
+  }) => _orch._applyMove(
+    color,
+    uci,
+    isFallback: isFallback,
+    phrase: phrase,
+    agentConfigId: agentConfigId,
+  );
+
+  @override
+  void applyFallback(String color, FailureKind reason, String? agentConfigId) =>
+      _orch._applySeededFallback(color, reason, agentConfigId);
+
+  @override
+  void flag(String color) => _orch._onFlag(color);
+
+  @override
+  void setFailureMessage(String message) => _orch._failureMessage = message;
+
+  @override
+  void checkEndConditions() => _orch._checkEndConditions();
+
+  @override
+  void finishTurn() {
+    _orch._turnInFlight = false;
+    if (!_orch._isTerminal && _orch._pauseRequested) {
+      // A pause arrived mid-turn: honor it now that the turn settled.
+      _orch._pauseRequested = false;
+      _orch._transition(OrchestratorState.paused);
+    } else if (!_orch._isTerminal && !_orch._stateIsWait()) {
+      // Backstop: every path above already lands on a wait state, but a
+      // future edit must never strand the game between turns.
+      _orch._transition(
+        _orch.participantToMove.isHuman
+            ? OrchestratorState.waitingHuman
+            : OrchestratorState.waitingAi,
+      );
+    }
   }
 }
 

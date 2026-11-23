@@ -22,6 +22,9 @@ enum ProviderId {
   /// Local Ollama server (OpenAI-compatible surface).
   ollama,
 
+  /// Embedded Stockfish engine (UCI, Elo-capped via `UCI_Elo`).
+  stockfish,
+
   /// Scripted in-process provider for demos / arena runs without API keys.
   mock,
 }
@@ -92,11 +95,11 @@ class LlmCapabilities {
 
   /// Serializes to JSON.
   Map<String, Object?> toJson() => {
-        'supportsTools': supportsTools,
-        'supportsStreaming': supportsStreaming,
-        'supportsReasoning': supportsReasoning,
-        'friendlyName': friendlyName,
-      };
+    'supportsTools': supportsTools,
+    'supportsStreaming': supportsStreaming,
+    'supportsReasoning': supportsReasoning,
+    'friendlyName': friendlyName,
+  };
 }
 
 /// Cooperative cancellation token for one agent turn / provider stream.
@@ -231,8 +234,7 @@ class LlmStreamEvent {
   @override
   String toString() {
     final detail = message ?? text ?? toolName ?? '';
-    return 'LlmStreamEvent(${kind.name}${
-        detail.isEmpty ? '' : ', $detail'})';
+    return 'LlmStreamEvent(${kind.name}${detail.isEmpty ? '' : ', $detail'})';
   }
 }
 
@@ -251,8 +253,10 @@ class LlmUsage {
   int get totalTokens => inputTokens + outputTokens;
 
   /// Serializes to JSON.
-  Map<String, Object?> toJson() =>
-      {'inputTokens': inputTokens, 'outputTokens': outputTokens};
+  Map<String, Object?> toJson() => {
+    'inputTokens': inputTokens,
+    'outputTokens': outputTokens,
+  };
 
   /// Parses from JSON; missing keys default to 0, never throws on shapes
   /// produced by [toJson].
@@ -286,6 +290,9 @@ abstract class LlmProvider {
   /// Lightweight connectivity check (e.g. list-models ping).
   ///
   /// Returns `true` on success, `false` on any failure — never throws.
+  /// Concrete providers additionally accept an optional per-call log /
+  /// gameId / tournamentId override (resolving to their constructor log
+  /// field, then the shared backend log).
   Future<bool> testConnection();
 
   /// Streams one move turn for [request], mapping backend SSE/chunks to
@@ -294,7 +301,8 @@ abstract class LlmProvider {
   /// Implementations honor `request.cancelToken` cooperatively: they check
   /// it before connecting and while consuming the response stream, and
   /// yield a non-retryable `cancelled` error event (then return) when it
-  /// fires.
+  /// fires. Concrete providers additionally accept an optional per-call
+  /// log / gameId / tournamentId override (see testConnection).
   Stream<LlmStreamEvent> streamMove(AgentRequest request);
 
   /// Releases resources held by the provider (owned HTTP client, …).

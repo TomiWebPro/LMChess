@@ -4,29 +4,30 @@
 /// the config form builds a [TournamentConfig] (uuid id, selected agent
 /// ids, `games = pairs × games per pairing × rounds`, fixed 600 s time
 /// control, standard/chaotic mode from the chip, the concurrency slider as
-/// `maxConcurrentGames`, balanced colors, a time-based seed shown in the
-/// UI), [ArenaScheduler.generateSchedule] lays out the pairings and
+/// `maxConcurrentGames`, balanced colors, a time-based seed), [ArenaScheduler.generateSchedule] lays out the pairings and
 /// [ArenaScheduler.run] executes them with bounded concurrency and
-/// per-game failure isolation. Every game is played by [_runGame]:
+/// per-game failure isolation. Every game is played by [_runGame], which
+/// delegates the mode-specific pump to [ArenaRunner]
+/// (`lib/src/ui/backend/arena_runner.dart`) and only owns screen concerns
+/// (live snapshots, Elo, failure mapping):
 ///
 /// * **Standard** games run a full [GameOrchestrator] (two AI seats)
 ///   driven by a sequential pump identical to the watch room's: bind the
-///   roster config, one `requestAiTurn` with a [mockAwareProvider]
+///   roster config, one `requestAiTurn` with a caller-supplied provider
 ///   override, replay the UCI history onto a mirror [Position] (idempotent
-///   [appliedMetaFor]-based sync), feed the fresh legal list back via
-///   `setPosition`, and report engine terminals through [mapTerminal] +
-///   `reportTerminal`. Finished games flush buffered [PendingTurn]s to
+///   sync), feed the fresh legal list back via `setPosition`, and report
+///   engine terminals. Finished games flush buffered [PendingTurn]s to
 ///   [StatsLog], write per-agent W/L/D markers and land in [ReviewLog] for
 ///   the review screen.
 /// * **Chaotic** games have no orchestrator (its position contract is
 ///   FEN-shaped): the pump runs [AgentRunner.runTurn] directly against a
-///   [VariantBoard] JSON payload, validates against a UI-side pseudo-legal
-///   attempt list ([_variantAttempts]), interprets every attempt through
+///   [VariantBoard] JSON payload, validates against a pseudo-legal
+///   attempt list, interprets every attempt through
 ///   [ChaoticRules.interpret] and adjudicates king captures with
 ///   [ChaoticRules.gameOver]. Definitive failures fall back to a seeded
 ///   attempt from the same list (explicitly marked, never attributed).
 ///   Finished chaotic games are recorded losslessly into
-///   [VariantReviewLog] as [VariantGameRecord]s ([_concludeGame]): initial
+///   [VariantReviewLog] as [VariantGameRecord]s: initial
 ///   board, per-ply attempt/interpretation trail and outcome, replayable
 ///   from the review screen's "Chaotic replays" card. The FEN-shaped
 ///   [ReviewLog] is standard-only by design.
@@ -47,42 +48,34 @@
 library;
 
 import 'dart:async';
-import 'dart:convert';
-import 'dart:developer' show log;
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../agent/agent_config.dart' as backend_cfg;
 import '../../agent/agent_runner.dart';
+import '../backend/arena_runner.dart';
 import '../../arena/elo.dart';
 import '../../arena/scheduler.dart';
 import '../../arena/tournament.dart';
-import '../../chess/engine.dart' as chess_eng;
-import '../../chess/fen.dart';
-import '../../chess/piece.dart';
 import '../../chess/position.dart';
-import '../../game/clock.dart';
-import '../../game/game_state.dart';
 import '../../game/orchestrator.dart';
-import '../../llm/prompt_board.dart';
 import '../../theme/board_theme.dart';
 import '../../theme/piece_theme.dart';
 import '../../theme/registry.dart';
-import '../../variant/chaotic_engine.dart';
-import '../../variant/interpretation.dart';
 import '../../variant/variant_board.dart';
 import '../../variant/variant_replay.dart';
 import 'variant_replay_screen.dart';
-import '../backend_bridge.dart';
-import '../game_mirror.dart';
+import '../backend/activity_mapper.dart';
+import '../backend/agent_providers.dart';
+import '../backend/board_mapper.dart';
+import '../backend/telemetry_logs.dart';
+import '../providers/backend_providers.dart';
+import '../providers/orchestrator_adapter.dart';
 import '../ui_models.dart';
 import '../widgets/boards.dart';
 import '../widgets/chessboard.dart';
-
-/// Shared stats-less runner for chaotic turns (stateless by default).
-const AgentRunner _chaosRunner = AgentRunner();
 
 /// Refcounted change notifier so the drill-down dialog follows a live game.
 ///
@@ -220,6 +213,12 @@ class _LiveGame {
 
   /// Live orchestrator for standard games, while the pump owns it.
   GameOrchestrator? orch;
+
+  /// `ChangeNotifier` adapter over [orch] (pure-Dart core).
+  ///
+  /// Forwards state bumps to the screen ticker so the grid/dialog refresh;
+  /// recreated with each game and disposed with the screen or supersession.
+  OrchestratorListenable? orchListenable;
 }
 
 /// Human-readable status for one game, derived from the authoritative
@@ -290,13 +289,8 @@ class ArenaScreen extends ConsumerStatefulWidget {
   /// [elo] allows tests to inject a fresh [EloService] so tournament ratings
   /// do not leak across test boundaries via the session-static singleton.
   /// [chaosRunner] lets tests inject a deterministic runner for the chaotic
-  /// game pump (the default is the shared stateless [AgentRunner]).
-  const ArenaScreen({
-    super.key,
-    this.elo,
-    this.initialSeed,
-    this.chaosRunner,
-  });
+  /// game pump (forwarded to [ArenaRunner]).
+  const ArenaScreen({super.key, this.elo, this.initialSeed, this.chaosRunner});
 
   /// Optional Elo ladders for the tournament. When absent the screen creates
   /// a fresh [EloService] internally.
@@ -305,8 +299,8 @@ class ArenaScreen extends ConsumerStatefulWidget {
   /// Seed for deterministic tournaments — replaces wall-clock randomness.
   final int? initialSeed;
 
-  /// Chaos-turn runner override (test seam). When absent the shared
-  /// stateless `_chaosRunner` is used.
+  /// Chaos-turn runner override (test seam). When absent the arena runner
+  /// uses its own shared stateless [AgentRunner].
   final AgentRunner? chaosRunner;
 
   @override
@@ -349,6 +343,11 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
 
   /// Whether cancellation was requested (Stop or dispose).
   bool _cancelling = false;
+
+  /// Set at the start of [dispose]; [_touch] drops bumps once torn down so
+  /// a synchronous `orch.stop()` state bump during unmount never calls
+  /// `setState` on a defunct element.
+  bool _disposed = false;
 
   /// Completed/total games (mirrors [SchedulerProgress]).
   int _completed = 0;
@@ -399,10 +398,18 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
 
   @override
   void dispose() {
+    _disposed = true;
     _cancelling = true;
     _scheduler?.cancel();
     unawaited(_progressSub?.cancel());
     for (final live in _live.values) {
+      // Detach the UI listener BEFORE stopping the orchestrator: `stop()`
+      // bumps state synchronously, and notifying `_touch` during unmount
+      // calls `setState` on a defunct element (flutter/flutter#175041
+      // crash window). Disposing first drops the state listener so the
+      // stop bump never reaches the widget tree.
+      live.orchListenable?.dispose();
+      live.orchListenable = null;
       final orch = live.orch;
       if (orch != null && !isTerminalOrchestratorState(orch.state)) {
         orch.stop(reason: 'screen disposed');
@@ -418,6 +425,7 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
 
   /// Re-renders the screen and any open drill-down dialog.
   void _touch() {
+    if (_disposed) return;
     _ticker.bump();
     if (mounted) setState(() {});
   }
@@ -542,8 +550,7 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
             ),
             Text(
               '$pairs pairing(s) × $_gamesPerPairing game(s) × $_rounds '
-              'round(s) = $totalGames game(s). Colors alternate per pairing; '
-              'the seed is drawn at start.',
+              'round(s) = $totalGames game(s). Colors alternate per pairing.',
               style: theme.textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
@@ -590,7 +597,7 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
     );
   }
 
-  /// Progress card: name, mode/seed chips, completion bar, run notice.
+  /// Progress card: name, mode chip, completion bar, run notice.
   Widget _buildProgress(TournamentState state) {
     final theme = Theme.of(context);
     final config = state.config;
@@ -613,11 +620,6 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
                   label: Text(
                     config.mode == 'chaotic' ? 'chaos variants' : 'standard',
                   ),
-                  visualDensity: VisualDensity.compact,
-                ),
-                const SizedBox(width: 4),
-                Chip(
-                  label: Text('seed ${config.seed}'),
                   visualDensity: VisualDensity.compact,
                 ),
               ],
@@ -727,66 +729,78 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final w = constraints.maxWidth.isFinite ? constraints.maxWidth : 800;
-        final cols = w > 1100 ? 3 : (w >= 700 ? 2 : 1);
-        return GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: cols,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            childAspectRatio: 0.92,
-          ),
-          itemCount: state.games.length,
-          itemBuilder: (context, i) {
-            final gameRef = state.games[i];
-            final live = _live[gameRef.gameId];
-            if (live == null) return const SizedBox.shrink();
-            return Card(
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: () => _openDetail(gameRef, live),
-                child: Column(
-                  children: <Widget>[
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-                      child: Row(
-                        children: <Widget>[
-                          Expanded(
-                            child: Text(
-                              '${live.label} · ${live.whiteLabel} vs '
-                              '${live.blackLabel}',
-                              style: Theme.of(context).textTheme.labelLarge,
-                              overflow: TextOverflow.ellipsis,
+        final targetCols = w > 1100 ? 3 : (w >= 700 ? 2 : 1);
+        return DebouncedBreakpoint<int>(
+          target: targetCols,
+          builder: (context, cols) {
+            return GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: cols,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                childAspectRatio: 0.92,
+              ),
+              itemCount: state.games.length,
+              itemBuilder: (context, i) {
+                final gameRef = state.games[i];
+                final live = _live[gameRef.gameId];
+                if (live == null) return const SizedBox.shrink();
+                return Card(
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () => _openDetail(gameRef, live),
+                    child: Column(
+                      children: <Widget>[
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                          child: Row(
+                            children: <Widget>[
+                              Expanded(
+                                child: Text(
+                                  '${live.label} · ${live.whiteLabel} vs '
+                                  '${live.blackLabel}',
+                                  style: Theme.of(context).textTheme.labelLarge,
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  _gameStatusText(gameRef, live),
+                                  style:
+                                      Theme.of(context).textTheme.labelSmall,
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
+                                  textAlign: TextAlign.right,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                            child: Chessboard(
+                              squares: live.squares,
+                              boardTheme: boardTheme,
+                              pieceTheme: pieceTheme,
+                              lastFrom: live.lastFrom,
+                              lastTo: live.lastTo,
+                              inCheck: live.inCheck,
+                              terminalSquare: live.terminalSquare,
+                              interactive: false,
+                              showCoordinates: false,
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          Text(
-                            _gameStatusText(gameRef, live),
-                            style: Theme.of(context).textTheme.labelSmall,
-                          ),
-                        ],
-                      ),
-                    ),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                        child: Chessboard(
-                          squares: live.squares,
-                          boardTheme: boardTheme,
-                          pieceTheme: pieceTheme,
-                          lastFrom: live.lastFrom,
-                          lastTo: live.lastTo,
-                          inCheck: live.inCheck,
-                          terminalSquare: live.terminalSquare,
-                          interactive: false,
-                          showCoordinates: false,
                         ),
-                      ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
+                  ),
+                );
+              },
             );
           },
         );
@@ -837,11 +851,13 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
     _standingsCache = null;
     _roster
       ..clear()
-      ..addEntries(
-        <MapEntry<String, AgentConfig>>[
-          for (final a in picked) MapEntry<String, AgentConfig>(a.id, a),
-        ],
-      );
+      ..addEntries(<MapEntry<String, AgentConfig>>[
+        for (final a in picked) MapEntry<String, AgentConfig>(a.id, a),
+      ]);
+    for (final live in _live.values) {
+      live.orchListenable?.dispose();
+      live.orchListenable = null;
+    }
     _live.clear();
     final startSquares = squaresOf(Position.initial());
     for (var i = 0; i < state.games.length; i++) {
@@ -886,7 +902,7 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
         setState(() {
           _running = false;
           final failureNote =
-              failed == 0 ? '' : ' · $failed infrastructure failure(s)';
+              failed == 0 ? '' : ' Â· $failed infrastructure failure(s)';
           _noticeIsError = failed > 0;
           _notice = _cancelling
               ? 'Cancelled after $played/${finished.games.length} played '
@@ -1004,11 +1020,15 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
     return rows;
   }
 
-  /// Executes one scheduled game with full failure isolation.
+  /// Executes one scheduled game by delegating to [ArenaRunner].
   ///
-  /// Wraps the mode-specific pump: [state.config] decides standard vs
-  /// chaotic, so a re-run can never leak mode changes into games already
-  /// dispatched. Any throw becomes that game's `infraFailure` only.
+  /// Owns only screen concerns: the [_LiveGame] snapshot the grid renders,
+  /// cancellation guards, Elo updates and failure-isolation mapping into a
+  /// [GameResultSummary]. The mode-specific pump plus stats/review writes
+  /// live in [ArenaRunner] (`lib/src/ui/backend/arena_runner.dart`); [state.config]
+  /// still decides standard vs chaotic so a re-run can never leak mode
+  /// changes into games already dispatched. Any throw becomes that game's
+  /// `infraFailure` only.
   Future<GameResultSummary> _runGame(
     TournamentState state,
     Pairing pairing,
@@ -1035,10 +1055,111 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
     live.seed = seed;
     live.reason = '';
     _touch();
+    final runner = ArenaRunner(
+      log: _statsLog,
+      reviews: _reviewLog,
+      variantReviews: _variantReviewLog,
+    );
+    final backendAgents = <String, backend_cfg.AgentConfig>{
+      for (final entry in _roster.entries)
+        entry.key: toBackendAgent(entry.value),
+    };
+    var lastOutcome = '*';
+    var lastReason = '';
+    void onProgress(ArenaGameSnapshot snapshot) {
+      // Stale guard: a restarted tournament owns a different snapshot
+      // instance per game id; never paint a detached one.
+      if (!identical(_live[pairing.gameId], live)) return;
+      live.squares = Map<String, String>.of(snapshot.squares);
+      live.lastFrom = snapshot.lastFrom;
+      live.lastTo = snapshot.lastTo;
+      live.inCheck = snapshot.inCheck;
+      live.terminalSquare = snapshot.terminalSquare;
+      live.ucis
+        ..clear()
+        ..addAll(snapshot.ucis);
+      live.sans
+        ..clear()
+        ..addAll(snapshot.sans);
+      live.fens
+        ..clear()
+        ..addAll(snapshot.fens);
+      live.phrases
+        ..clear()
+        ..addAll(snapshot.phrases);
+      live.fallbacks
+        ..clear()
+        ..addAll(snapshot.fallbacks);
+      live.interpretations
+        ..clear()
+        ..addAll(snapshot.interpretations);
+      live.variantPlies
+        ..clear()
+        ..addAll(snapshot.variantPlies);
+      live.initialBoard = snapshot.initialBoard;
+      live.startedAt = snapshot.startedAt;
+      lastOutcome = snapshot.outcome;
+      lastReason = snapshot.reason;
+      _touch();
+    }
+
     try {
-      return state.config.mode == 'chaotic'
-          ? await _runChaoticGame(state, pairing, seed, live)
-          : await _runStandardGame(state, pairing, seed, live);
+      final turnFactory = ref.read(turnProviderFactoryProvider);
+      final summary = state.config.mode == 'chaotic'
+          ? await runner.runChaotic(
+              config: state.config,
+              pairing: pairing,
+              agents: backendAgents,
+              seed: seed,
+              turnProviderFactory: turnFactory,
+              chaosRunner: widget.chaosRunner,
+              clock: _clock,
+              isCancelled: () => _cancelling,
+              onProgress: onProgress,
+            )
+          : await runner.runStandard(
+              config: state.config,
+              pairing: pairing,
+              agents: backendAgents,
+              seed: seed,
+              turnProviderFactory: turnFactory,
+              isCancelled: () => _cancelling,
+              onProgress: onProgress,
+              onOrchestrator: (GameOrchestrator? orch) {
+                live.orchListenable?.dispose();
+                live.orchListenable = null;
+                live.orch = orch;
+                if (orch != null) {
+                  // Pure-Dart core: forward state bumps to the ticker so
+                  // the grid/dialog refresh without touching the pump.
+                  live.orchListenable = OrchestratorListenable(orch)
+                    ..addListener(_touch);
+                }
+              },
+            );
+      if (summary.infraFailure != null) {
+        live.status = 'failed';
+        live.reason = summary.infraFailure!;
+      } else if (summary.result != null) {
+        live.status = 'finished';
+        live.resultLabel = lastOutcome == '*' ? 'draw' : lastOutcome;
+        live.reason = lastReason;
+        final eloResult = _eloResult(summary.result);
+        if (eloResult != null) {
+          _elo.updateAfterGame(
+            pairing.whiteAgentId,
+            pairing.blackAgentId,
+            eloResult,
+            mode: state.config.mode,
+          );
+        }
+      } else {
+        live.status = 'cancelled';
+        live.resultLabel = null;
+        live.reason = lastReason;
+      }
+      _touch();
+      return summary;
     } catch (e) {
       live.status = 'failed';
       live.reason = '$e';
@@ -1049,733 +1170,6 @@ class _ArenaScreenState extends ConsumerState<ArenaScreen> {
         blackAgentId: pairing.blackAgentId,
         infraFailure: '$e',
       );
-    }
-  }
-
-  /// Standard pump: orchestrator + mirror engine (watch-room pattern).
-  Future<GameResultSummary> _runStandardGame(
-    TournamentState state,
-    Pairing pairing,
-    int seed,
-    _LiveGame live,
-  ) async {
-    final white = _roster[pairing.whiteAgentId];
-    final black = _roster[pairing.blackAgentId];
-    if (white == null || black == null) {
-      return GameResultSummary(
-        gameId: pairing.gameId,
-        whiteAgentId: pairing.whiteAgentId,
-        blackAgentId: pairing.blackAgentId,
-        infraFailure: 'agent config missing from the roster snapshot',
-      );
-    }
-    final engine = Position.initial();
-    if (live.fens.isEmpty) live.fens.add(standardStartFen);
-    var applied = 0;
-    final pending = <PendingTurn>[];
-    final orch = GameOrchestrator(
-      config: GameConfig(
-        mode: GameMode.standard,
-        timeControl: const TimeControl(
-          type: TimeControlType.fixed,
-          initialMs: 600000,
-        ),
-        maxMoves: 200,
-        seed: seed,
-      ),
-      white: GameParticipant(
-        agentConfigId: white.id,
-        label: white.name,
-        isHuman: false,
-      ),
-      black: GameParticipant(
-        agentConfigId: black.id,
-        label: black.name,
-        isHuman: false,
-      ),
-      positionUpdater: fenAdvance,
-    );
-    live.orch = orch;
-    orch.setPosition(
-      standardStartFen,
-      turn: 'w',
-      legalMoves: legalUcis(engine),
-    );
-    orch.startGame();
-    try {
-      while (!_cancelling && identical(live, _live[pairing.gameId])) {
-        if (isTerminalOrchestratorState(orch.state)) break;
-        if (orch.state != OrchestratorState.waitingAi) break;
-        if (orch.legalMoves.isEmpty) break;
-        final color = orch.turn;
-        final uiAgent = color == 'w' ? white : black;
-        final backend = toBackendAgent(uiAgent);
-        orch.bindAgent(backend);
-        final before = orch.moveHistory.length;
-        final provider = await ref.read(turnProviderFactoryProvider)(
-          backend,
-          orch.legalMoves,
-          seed: _turnSeed(seed, before),
-          phrase: '${uiAgent.name} move',
-        );
-        AgentTurnResult? result;
-        try {
-          result = await orch.requestAiTurn(color, providerOverride: provider);
-        } finally {
-          closeProvider(provider);
-        }
-        if (!identical(live, _live[pairing.gameId])) break;
-        final replay = _syncStandard(live, orch, engine, applied);
-        applied = replay.applied;
-        if (result == null) break; // Rejected: stop/finish raced us.
-        final grew = orch.moveHistory.length > before;
-        if (grew || !result.isSuccess) {
-          pending.add(
-            PendingTurn.ai(
-              agentId: backend.id,
-              modelKey: backend.model,
-              color: color == 'w' ? 'white' : 'black',
-              mode: 'standard',
-              result: result,
-              fallback: grew && !result.isSuccess,
-            ),
-          );
-        }
-        if (replay.hasError || applied != orch.moveHistory.length) {
-          // Mirror desync: an engine/UI bug, not a normal game outcome.
-          for (final turn in pending) {
-            turn.flush(
-              log: _statsLog,
-              gameId: pairing.gameId,
-              tournamentId: state.config.id,
-            );
-          }
-          live.status = 'failed';
-          live.reason = replay.hasError
-              ? 'mirror desync at ply $applied: ${replay.error}'
-              : 'mirror desync at ply $applied';
-          _touch();
-          return GameResultSummary(
-            gameId: pairing.gameId,
-            whiteAgentId: pairing.whiteAgentId,
-            blackAgentId: pairing.blackAgentId,
-            infraFailure: live.reason,
-          );
-        }
-        if (!isTerminalOrchestratorState(orch.state)) {
-          orch.setPosition(
-            engine.toFen(),
-            turn: engine.sideToMove.isWhite ? 'w' : 'b',
-            legalMoves: legalUcis(engine),
-          );
-        }
-        final terminal = chess_eng.ChessRules.resultOf(engine);
-        if (terminal != null && !isTerminalOrchestratorState(orch.state)) {
-          if (terminal.termination == chess_eng.GameTermination.checkmate) {
-            live.terminalSquare =
-                engine.kingSquare(engine.sideToMove)?.name;
-          }
-          final mapped = mapTerminal(terminal);
-          orch.reportTerminal(
-            gameResult(
-              outcome: mapped.outcome,
-              reason: mapped.reason,
-              winnerColor: mapped.winnerColor,
-            ),
-          );
-        }
-        _touch();
-      }
-    } finally {
-      if (identical(live.orch, orch)) live.orch = null;
-      orch.dispose();
-    }
-    if (orch.state == OrchestratorState.failed) {
-      for (final turn in pending) {
-        turn.flush(
-          log: _statsLog,
-          gameId: pairing.gameId,
-          tournamentId: state.config.id,
-        );
-      }
-      live.status = 'failed';
-      live.reason = orch.failureMessage ?? 'orchestrator failed';
-      _touch();
-      return GameResultSummary(
-        gameId: pairing.gameId,
-        whiteAgentId: pairing.whiteAgentId,
-        blackAgentId: pairing.blackAgentId,
-        infraFailure: live.reason,
-      );
-    }
-    final outcome = orch.result?.outcome ?? '*';
-    final reason = orch.result?.reason ?? '';
-    final mapped = _mapOutcome(outcome, reason);
-    _concludeGame(
-      state: state,
-      pairing: pairing,
-      live: live,
-      result: mapped,
-      outcome: outcome,
-      reason: reason,
-      pending: pending,
-    );
-    return GameResultSummary(
-      gameId: pairing.gameId,
-      whiteAgentId: pairing.whiteAgentId,
-      blackAgentId: pairing.blackAgentId,
-      result: mapped,
-    );
-  }
-
-  /// Chaotic pump: direct runner turns + interpretation pipeline.
-  ///
-  /// No orchestrator: its position contract is FEN-shaped, while variant
-  /// state is JSON. The runner still does all validation/retry; a turn
-  /// that definitively fails (or crashes) falls back to a seeded attempt
-  /// from [_variantAttempts], applied through [ChaoticRules.interpret] and
-  /// recorded as an unattributed fallback.
-  Future<GameResultSummary> _runChaoticGame(
-    TournamentState state,
-    Pairing pairing,
-    int seed,
-    _LiveGame live,
-  ) async {
-    final white = _roster[pairing.whiteAgentId];
-    final black = _roster[pairing.blackAgentId];
-    if (white == null || black == null) {
-      return GameResultSummary(
-        gameId: pairing.gameId,
-        whiteAgentId: pairing.whiteAgentId,
-        blackAgentId: pairing.blackAgentId,
-        infraFailure: 'agent config missing from the roster snapshot',
-      );
-    }
-    var board = VariantBoard.fromStandard(Position.initial());
-    final pending = <PendingTurn>[];
-    live.initialBoard = board;
-    live.variantPlies.clear();
-    live.startedAt = _clock().toUtc();
-    var ply = 0;
-    var outcome = '*';
-    var reason = '';
-    while (true) {
-      if (_cancelling) {
-        reason = 'cancelled';
-        break;
-      }
-      if (ply >= 200) {
-        reason = 'maxMoves';
-        break;
-      }
-      final over = ChaoticRules.gameOver(board);
-      if (over.over) {
-        outcome = over.winner == null
-            ? '1/2-1/2'
-            : (over.winner!.isWhite ? '1-0' : '0-1');
-        reason = over.reason;
-        break;
-      }
-      final moverColor = board.sideToMove;
-      final uiAgent = moverColor.isWhite ? white : black;
-      final backend = toBackendAgent(uiAgent);
-      final attempts = _variantAttempts(board);
-      if (attempts.isEmpty) {
-        reason = 'noAttempts';
-        break;
-      }
-      final turnSeed = _turnSeed(seed, ply);
-      final provider = await ref.read(turnProviderFactoryProvider)(
-        backend,
-        attempts,
-        seed: turnSeed,
-        phrase: '${uiAgent.name} move',
-      );
-      AgentTurnResult? result;
-      final promptState = _variantPromptState(board);
-      final runner = widget.chaosRunner ?? _chaosRunner;
-      try {
-        result = await runner.runTurn(
-          backend,
-          AgentTurnRequest(
-            positionFenOrJson: jsonEncode(board.toJson()),
-            legalMovesUci: attempts,
-            boardText: promptState.board,
-            castlingRights: promptState.castling,
-            enPassantTarget: promptState.enPassant,
-            mode: 'chaotic',
-            color: moverColor.isWhite ? 'w' : 'b',
-            // Intent-first: any well-formed attempt reaches the interpreter;
-            // the prompt never showed a legal-move list to begin with.
-            acceptAnyMove: true,
-          ),
-          seed: turnSeed,
-          providerOverride: provider,
-        );
-      } catch (error, stackTrace) {
-        // Runner internals only; treated as provider error. Log the failure
-        // so a genuine runner bug is distinguishable from a provider outage
-        // in the stats (both degrade to the same seeded fallback below).
-        result = null;
-        log(
-          'arena chaotic turn failed for ${backend.id} — degrading to a '
-          'seeded fallback attempt',
-          name: 'arena-chaos',
-          error: error,
-          stackTrace: stackTrace,
-        );
-      } finally {
-        closeProvider(provider);
-      }
-      final colorName = moverColor.isWhite ? 'white' : 'black';
-      var attemptUci = '';
-      String? phrase;
-      var wasFallback = false;
-      if (result != null && result.isSuccess && result.selectedMove != null) {
-        attemptUci = result.selectedMove!.uci;
-        phrase = result.selectedMove!.phrase;
-        pending.add(
-          PendingTurn.ai(
-            agentId: backend.id,
-            modelKey: backend.model,
-            color: colorName,
-            mode: state.config.mode,
-            result: result,
-          ),
-        );
-      } else {
-        // Seeded fallback attempt (unattributed), never the model's pick.
-        attemptUci = attempts[math.Random(turnSeed).nextInt(attempts.length)];
-        phrase = null;
-        wasFallback = true;
-        if (result != null) {
-          pending.add(
-            PendingTurn.ai(
-              agentId: backend.id,
-              modelKey: backend.model,
-              color: colorName,
-              mode: state.config.mode,
-              result: result,
-              fallback: true,
-            ),
-          );
-        } else {
-          _statsLog.logTurn(
-            gameId: pairing.gameId,
-            agentId: backend.id,
-            tournamentId: state.config.id,
-            modelKey: backend.model,
-            color: colorName,
-            mode: state.config.mode,
-            providerError: true,
-          );
-        }
-      }
-      final boardBefore = board;
-      final rawTool = rawToolCallFrom(result);
-      final selectedMove = result?.selectedMove;
-      final attemptFrom = selectedMove?.from ??
-          (attemptUci.length >= 2 ? attemptUci.substring(0, 2) : '');
-      final attemptTo = selectedMove?.to ??
-          (attemptUci.length >= 4 ? attemptUci.substring(2, 4) : '');
-      final attemptPromotion = selectedMove?.promotion ??
-          (attemptUci.length > 4 ? attemptUci.substring(4, 5) : null);
-      final attemptRecord = VariantAttemptRecord(
-        uci: attemptUci,
-        fromSquareName: attemptFrom,
-        toSquareName: attemptTo,
-        promotion: attemptPromotion,
-        phrase: phrase ?? '',
-        rawToolArgsJson: rawTool.rawToolArgsJson,
-        rawToolCallJson: rawTool.rawToolCallJson,
-        source: wasFallback
-            ? VariantAttemptSource.fallback
-            : VariantAttemptSource.model,
-      );
-      final interpreted = ChaoticRules.interpret(
-        boardBefore,
-        AttemptedMove(
-          fromSquareName: attemptFrom,
-          toSquareName: attemptTo,
-          promotion: attemptPromotion,
-          phrase: phrase ?? '',
-          rawToolCallJson:
-              rawTool.rawToolCallJson ?? <String, Object?>{'uci': attemptUci},
-          rawToolArgsJson: rawTool.rawToolArgsJson ?? '',
-        ),
-        seed: turnSeed,
-      );
-      live.variantPlies.add(VariantPlyRecord(
-        ply: ply,
-        mover: colorName == 'white' ? 'w' : 'b',
-        agentId: backend.id,
-        modelKey: backend.model,
-        seed: turnSeed,
-        fallback: wasFallback,
-        attempt: attemptRecord,
-        wasLegal: interpreted.wasLegal,
-        standardDetail: interpreted.standardDetail,
-        interpretationKind: VariantInterpretationKind.fromStrategyId(
-          interpreted.selected.strategyId,
-        ),
-        selected:
-            VariantInterpretationRecord.fromCandidate(interpreted.selected),
-        candidates: <VariantInterpretationRecord>[
-          for (final c in interpreted.candidates)
-            VariantInterpretationRecord.fromCandidate(c),
-        ],
-        events: interpreted.events,
-        boardAfter: interpreted.selected.resultingBoard,
-        kingFacts: VariantKingFacts.between(
-          boardBefore,
-          interpreted.selected.resultingBoard,
-          moverColor,
-        ),
-        boardHashBefore: boardBefore.boardHash(),
-        boardHashAfter: interpreted.selected.resultingBoard.boardHash(),
-        policy: interpreted.policy,
-        turnFailureKind: result?.failure?.kind.name,
-        turnFailureMessage: result?.failure?.message,
-        latencyMs: result?.latencyMs,
-        inputTokens: result?.usage?.inputTokens,
-        outputTokens: result?.usage?.outputTokens,
-      ));
-      board = interpreted.selected.resultingBoard;
-      ply++;
-      live.ucis.add(attemptUci);
-      live.sans.add(attemptUci); // Chaotic plies have no SAN; UCI is honest.
-      live.phrases.add(wasFallback ? null : phrase);
-      live.fallbacks.add(wasFallback);
-      live.interpretations.add(
-        '${interpreted.selected.strategyId}'
-        '${interpreted.selected.capturesKing ? ' · king captured' : ''}',
-      );
-      live.squares = _variantSquares(board);
-      // Exact trail only for standard-legal attempts; an interpretation
-      // (teleport, closest-legal, …) may have moved another piece.
-      if (interpreted.wasLegal) {
-        live.lastFrom = attemptUci.substring(0, 2);
-        live.lastTo = attemptUci.substring(2, 4);
-      } else {
-        live.lastFrom = null;
-        live.lastTo = null;
-      }
-      _touch();
-    }
-    final mapped = _mapOutcome(outcome, reason);
-    _concludeGame(
-      state: state,
-      pairing: pairing,
-      live: live,
-      result: mapped,
-      outcome: outcome,
-      reason: reason,
-      pending: pending,
-    );
-    return GameResultSummary(
-      gameId: pairing.gameId,
-      whiteAgentId: pairing.whiteAgentId,
-      blackAgentId: pairing.blackAgentId,
-      result: mapped,
-    );
-  }
-
-  /// Replays unapplied orchestrator UCIs onto the mirror engine.
-  ///
-  /// Idempotent (called after every turn); refreshes the check highlight
-  /// and returns the new applied count.
-  MirrorReplayResult _syncStandard(
-    _LiveGame live,
-    GameOrchestrator orch,
-    Position engine,
-    int applied,
-  ) {
-    // Shared replay core; arena's hooks also maintain the mini-board/check
-    // snapshot. Any error is reported to the caller as a mirror desync.
-    return replayMoves(
-      orch: orch,
-      engine: engine,
-      applied: applied,
-      onApplied: (index, uci, move, receipt, meta) {
-        live.sans.add(receipt.san);
-        live.ucis.add(uci);
-        live.phrases.add(meta.isFallback ? null : meta.phrase);
-        live.fallbacks.add(meta.isFallback);
-        live.fens.add(engine.toFen());
-        live.squares = squaresOf(engine);
-        live.lastFrom = move.from.name;
-        live.lastTo = move.to.name;
-        live.inCheck = checkSquare(engine);
-      },
-    );
-  }
-
-  /// Flushes buffered turns, writes result markers, updates Elo (when the
-  /// game has a result) and records the standard game for review.
-  void _concludeGame({
-    required TournamentState state,
-    required Pairing pairing,
-    required _LiveGame live,
-    required TournamentGameResult? result,
-    required String outcome,
-    required String reason,
-    required List<PendingTurn> pending,
-  }) {
-    live.status = result == null ? 'cancelled' : 'finished';
-    live.resultLabel =
-        result == null ? null : (outcome == '*' ? 'draw' : outcome);
-    live.reason = reason;
-    for (final turn in pending) {
-      turn.flush(
-        log: _statsLog,
-        gameId: pairing.gameId,
-        tournamentId: state.config.id,
-      );
-    }
-    pending.clear();
-    logGameResults(
-      log: _statsLog,
-      gameId: pairing.gameId,
-      whiteAgentId: pairing.whiteAgentId,
-      blackAgentId: pairing.blackAgentId,
-      tournamentId: state.config.id,
-      whiteModelKey: _roster[pairing.whiteAgentId]?.model ?? '',
-      blackModelKey: _roster[pairing.blackAgentId]?.model ?? '',
-      mode: state.config.mode,
-      outcome: outcome,
-    );
-    final eloResult = _eloResult(result);
-    if (eloResult != null) {
-      _elo.updateAfterGame(
-        pairing.whiteAgentId,
-        pairing.blackAgentId,
-        eloResult,
-        mode: state.config.mode,
-      );
-    }
-    // Standard games land in the FEN-based review log; chaotic games land in
-    // the lossless variant replay log (board chain + attempts + readings).
-    if (state.config.mode == 'standard') {
-      _reviewLog.record(
-        ReviewGame(
-          id: pairing.gameId,
-          whiteLabel: live.whiteLabel,
-          blackLabel: live.blackLabel,
-          whiteAgentId: pairing.whiteAgentId,
-          blackAgentId: pairing.blackAgentId,
-          mode: state.config.mode,
-          ucis: List<String>.of(live.ucis),
-          sans: List<String>.of(live.sans),
-          fens: List<String>.of(live.fens),
-          phrases: List<String?>.of(live.phrases),
-          fallbackFlags: List<bool>.of(live.fallbacks),
-        ),
-      );
-    } else {
-      final initial = live.initialBoard;
-      if (initial != null) {
-        _variantReviewLog.record(VariantGameRecord(
-          id: pairing.gameId,
-          tournamentId: state.config.id,
-          whiteLabel: live.whiteLabel,
-          blackLabel: live.blackLabel,
-          whiteAgentId: pairing.whiteAgentId,
-          blackAgentId: pairing.blackAgentId,
-          seed: live.seed,
-          initialBoard: initial,
-          plies: List<VariantPlyRecord>.of(live.variantPlies),
-          outcome: outcome,
-          reason: reason,
-          startedAt: live.startedAt,
-          finishedAt: _clock().toUtc(),
-        ));
-      }
-    }
-    _touch();
-  }
-
-  /// Ping-pong seed for mock scripting/fallback picks (game seed + ply).
-  int _turnSeed(int gameSeed, int ply) =>
-      (gameSeed + ply * 0x85EBCA6B) & 0x7fffffff;
-
-  /// Renders a [VariantBoard] as the shared LLM prompt state (same format as
-  /// the standard orchestrator uses).
-  ///
-  /// Castling rights come from the board's home-square geometry; en passant is
-  /// always `-` because variant boards carry no double-push history.
-  ({String board, String castling, String enPassant}) _variantPromptState(
-    VariantBoard board,
-  ) {
-    final rights = board.castlingRights;
-    final castling = <String>['K', 'Q', 'k', 'q']
-        .where(rights.contains)
-        .join();
-    return (
-      board: renderBoardForPrompt(
-        squares: <String, String>{
-          for (final e in board.squares.entries)
-            e.key.name: promptPieceLetter(
-              e.value.type.letter,
-              isWhite: e.value.color.isWhite,
-            ),
-        },
-        sideToMove: board.sideToMove.isWhite ? 'white' : 'black',
-      ),
-      castling: castling.isEmpty ? '-' : castling,
-      enPassant: '-',
-    );
-  }
-
-  /// Renders a [VariantBoard] as a [Chessboard] `squares` map.
-  Map<String, String> _variantSquares(VariantBoard board) {
-    return <String, String>{
-      for (final e in board.squares.entries)
-        e.key.name:
-            '${colorCode(e.value.color)}${e.value.type.letter}',
-    };
-  }
-
-  /// Pseudo-legal attempt generator for chaotic boards.
-  ///
-  /// Deliberately standard-move-shaped: pawn pushes (double from the home
-  /// rank, queen on promotion), pawn diagonal captures, knight jumps,
-  /// sliding rays (stop at the first blocker, capture enemy), king steps.
-  /// No castling and no en passant (variant boards carry no double-push
-  /// history) — a documented deviation, and no check filtering, because
-  /// illegal attempts are exactly what [ChaoticRules.interpret] resolves.
-  /// The list only scripts mock agents with meaningful attempts and gives
-  /// the runner an initial legality vocabulary; whatever the model
-  /// actually attempts is interpreted as-is.
-  List<String> _variantAttempts(VariantBoard board) {
-    final out = <String>[];
-    final squares = board.squares.keys.toList()..sort();
-    for (final sq in squares) {
-      final piece = board.pieceAt(sq)!;
-      if (piece.color != board.sideToMove) continue;
-      switch (piece.type) {
-        case PieceType.pawn:
-          final step = piece.color.isWhite ? 1 : -1;
-          final promoRank = piece.color.isWhite ? 7 : 0;
-          final forward = sq.offset(0, step);
-          if (forward != null && board.pieceAt(forward) == null) {
-            if (forward.rank == promoRank) {
-              out.add('${sq.name}${forward.name}q');
-            } else {
-              out.add('${sq.name}${forward.name}');
-              final dbl = sq.offset(0, 2 * step);
-              final startRank = piece.color.isWhite ? 1 : 6;
-              if (sq.rank == startRank &&
-                  dbl != null &&
-                  board.pieceAt(dbl) == null) {
-                out.add('${sq.name}${dbl.name}');
-              }
-            }
-          }
-          for (final df in const <int>[-1, 1]) {
-            final capture = sq.offset(df, step);
-            if (capture == null) continue;
-            final target = board.pieceAt(capture);
-            if (target == null || target.color == board.sideToMove) continue;
-            out.add(
-              '${sq.name}${capture.name}'
-              '${capture.rank == promoRank ? 'q' : ''}',
-            );
-          }
-        case PieceType.knight:
-          const jumps = <(int, int)>[
-            (1, 2),
-            (2, 1),
-            (2, -1),
-            (1, -2),
-            (-1, -2),
-            (-2, -1),
-            (-2, 1),
-            (-1, 2),
-          ];
-          for (final (df, dr) in jumps) {
-            final target = sq.offset(df, dr);
-            if (target == null) continue;
-            final occupant = board.pieceAt(target);
-            if (occupant == null || occupant.color != board.sideToMove) {
-              out.add('${sq.name}${target.name}');
-            }
-          }
-        case PieceType.bishop:
-        case PieceType.rook:
-        case PieceType.queen:
-          final dirs = switch (piece.type) {
-            PieceType.bishop => const <(int, int)>[
-              (1, 1),
-              (1, -1),
-              (-1, -1),
-              (-1, 1),
-            ],
-            PieceType.rook => const <(int, int)>[
-              (1, 0),
-              (-1, 0),
-              (0, 1),
-              (0, -1),
-            ],
-            _ => const <(int, int)>[
-              (1, 0),
-              (-1, 0),
-              (0, 1),
-              (0, -1),
-              (1, 1),
-              (1, -1),
-              (-1, -1),
-              (-1, 1),
-            ],
-          };
-          for (final (df, dr) in dirs) {
-            var cursor = sq;
-            while (true) {
-              final next = cursor.offset(df, dr);
-              if (next == null) break;
-              final target = board.pieceAt(next);
-              if (target == null) {
-                out.add('${sq.name}${next.name}');
-                cursor = next;
-                continue;
-              }
-              if (target.color != board.sideToMove) {
-                out.add('${sq.name}${next.name}');
-              }
-              break;
-            }
-          }
-        case PieceType.king:
-          for (final neighbor in squareNeighbors(sq)) {
-            final occupant = board.pieceAt(neighbor);
-            if (occupant == null || occupant.color != board.sideToMove) {
-              out.add('${sq.name}${neighbor.name}');
-            }
-          }
-      }
-    }
-    return out;
-  }
-
-  /// Maps an outcome/reason pair to a scheduler result.
-  ///
-  /// `'*'` with a move-limit/no-attempt reason is a completed draw;
-  /// `'*'` from a stop/cancel is "no result" (the scheduler marks the ref
-  /// cancelled when the summary carries neither result nor failure).
-  TournamentGameResult? _mapOutcome(String outcome, String reason) {
-    switch (outcome) {
-      case '1-0':
-        return TournamentGameResult.whiteWin;
-      case '0-1':
-        return TournamentGameResult.blackWin;
-      case '1/2-1/2':
-        return TournamentGameResult.draw;
-      default:
-        if (reason == 'maxMoves' ||
-            reason == 'maxDurationExceeded' ||
-            reason == 'noAttempts') {
-          return TournamentGameResult.draw;
-        }
-        return null;
     }
   }
 
@@ -1864,10 +1258,6 @@ class _GameDetailDialog extends ConsumerWidget {
                       StatChip(
                         label: 'Mode',
                         value: live.mode,
-                      ),
-                      StatChip(
-                        label: 'Seed',
-                        value: '${live.seed}',
                       ),
                     ],
                   ),

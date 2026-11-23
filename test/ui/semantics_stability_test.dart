@@ -76,17 +76,18 @@ List<Override> _fakeOverrides() => <Override>[
 
 /// Destination labels by index.
 final Map<int, String> _indexToLabel = <int, String>{
-  0: 'Home',
-  1: 'Play',
-  2: 'Watch',
-  3: 'Arena',
-  4: 'Stats',
-  5: 'Review',
-  6: 'Agents',
-  7: 'Settings',
+  0: 'Game',
+  1: 'Arena',
+  2: 'Stats',
+  3: 'Review',
+  4: 'Settings',
 };
 
 /// Pump the full app at [size], navigating to [index], settling animations.
+///
+/// In narrow mode the Settings destination lives behind the drawer,
+/// so they are reached through the navigation drawer; the daily
+/// destinations are tapped directly on the bottom bar.
 Future<void> _pumpShell(
   WidgetTester tester, {
   Size size = const Size(1400, 1000),
@@ -105,6 +106,14 @@ Future<void> _pumpShell(
   if (index > 0) {
     final label = _indexToLabel[index];
     if (label != null) {
+      final narrow = size.width < 700;
+      if (narrow && label == 'Settings') {
+        final scaffoldState =
+            tester.state<ScaffoldState>(find.byType(Scaffold).first);
+        scaffoldState.openDrawer();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
+      }
       await tester.tap(find.text(label).first);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
@@ -114,7 +123,6 @@ Future<void> _pumpShell(
 
 /// Tap the navigation rail label for the given destination index.
 Future<void> _goTo(WidgetTester tester, int index) async {
-  if (index == 0) return; // Home is default
   final label = _indexToLabel[index];
   if (label != null) {
     await tester.tap(find.text(label).first);
@@ -130,13 +138,13 @@ Future<void> _goTo(WidgetTester tester, int index) async {
 void main() {
 
   // -----------------------------------------------------------------------
-  // §7 – Destination invariants (all 8 at wide)
+  // §7 – Destination invariants (all 5 at wide)
   // -----------------------------------------------------------------------
 
   group('Destination semantics (wide)', () {
     const names = <String>[
-      'Home', 'Play', 'Watch', 'Arena',
-      'Stats', 'Review', 'Agents', 'Settings',
+      'Game', 'Arena',
+      'Stats', 'Review', 'Settings',
     ];
 
     for (var idx = 0; idx < names.length; idx++) {
@@ -162,8 +170,8 @@ void main() {
   // Narrow layout: verify shell renders without crashing.
   group('Destination semantics (narrow)', () {
     const names = <String>[
-      'Home', 'Play', 'Watch', 'Arena',
-      'Stats', 'Review', 'Agents', 'Settings',
+      'Game', 'Arena',
+      'Stats', 'Review', 'Settings',
     ];
 
     // Use 500px wide — avoids overflow on some screens while still staying below
@@ -191,32 +199,22 @@ void main() {
   // §7 – Hidden-tab rule
   // -----------------------------------------------------------------------
 
-  testWidgets('hidden-tab rule: Home→Play→Stats shows zero/occupied/zero squares',
+  testWidgets('hidden-tab rule: Game→Stats shows occupied/zero squares',
       (tester) async {
-    await _pumpShell(tester, index: 0); // Home
+    await _pumpShell(tester, index: 0); // Game
 
-    final homeCap = captureSemantics(tester);
-    final homeSquares = homeCap.nodes.where((SemanticsNode n) {
+    final gameCap = captureSemantics(tester);
+    final gameSquares = gameCap.nodes.where((SemanticsNode n) {
       final d = n.getSemanticsData();
       return RegExp(r'^(?:Empty|White|Black) square .+$').hasMatch(d.label);
     }).length;
-    expect(homeSquares, equals(0), reason: 'Home exposes no square nodes');
-
-    await _goTo(tester, 1); // Play
-    expect(find.byType(ArenaApp), findsOneWidget);
-
-    final playCap = captureSemantics(tester);
-    final playSquares = playCap.nodes.where((SemanticsNode n) {
-      final d = n.getSemanticsData();
-      return RegExp(r'^(?:Empty|White|Black) square .+$').hasMatch(d.label);
-    }).length;
-    expect(playSquares, greaterThan(0), reason: 'Play exposes occupied-square count');
+    expect(gameSquares, greaterThan(0), reason: 'Game exposes occupied squares');
 
     expectSemanticsTreeInvariants(tester);
     await tester.pump(const Duration(milliseconds: 50));
     expectSemanticsTreeInvariants(tester);
 
-    await _goTo(tester, 4); // Stats
+    await _goTo(tester, 2); // Stats
     expect(find.byType(ArenaApp), findsOneWidget);
 
     final statsCap = captureSemantics(tester);
@@ -226,15 +224,25 @@ void main() {
     }).length;
     expect(statsSquares, equals(0), reason: 'Stats exposes no square nodes');
 
+    await _goTo(tester, 0); // Game
+    expect(find.byType(ArenaApp), findsOneWidget);
+
+    final backCap = captureSemantics(tester);
+    final backSquares = backCap.nodes.where((SemanticsNode n) {
+      final d = n.getSemanticsData();
+      return RegExp(r'^(?:Empty|White|Black) square .+$').hasMatch(d.label);
+    }).length;
+    expect(backSquares, greaterThan(0), reason: 'Game squares reappear');
+
     expectNoExceptionWithSemanticsDump(tester, 'hidden-tab rule');
   });
 
   // -----------------------------------------------------------------------
-  // §7 – Play panel tab switches
+  // §7 – Game panel tab switches
   // -----------------------------------------------------------------------
 
-  testWidgets('Play: Activity→Moves→Activity tab switch stable', (tester) async {
-    await _pumpShell(tester, index: 1);
+  testWidgets('Game: Activity→Moves→Activity tab switch stable', (tester) async {
+    await _pumpShell(tester, index: 0);
 
     var prev = parentMap(captureSemantics(tester));
 
@@ -259,12 +267,12 @@ void main() {
   });
 
   // -----------------------------------------------------------------------
-  // §7 – Watch panel tab switches
+  // §7 – Game panel error tab switches
   // -----------------------------------------------------------------------
 
-  testWidgets('Watch: Activity→Moves→Errors→Activity tab switches stable',
+  testWidgets('Game: Activity→Moves→Errors→Activity tab switches stable',
       (tester) async {
-    await _pumpShell(tester, index: 2);
+    await _pumpShell(tester, index: 0);
 
     var prev = parentMap(captureSemantics(tester));
 
@@ -297,7 +305,7 @@ void main() {
   // -----------------------------------------------------------------------
 
   testWidgets('Arena: empty state has zero mini-boards', (tester) async {
-    await _pumpShell(tester, index: 3);
+    await _pumpShell(tester, index: 1);
 
     var cap = captureSemantics(tester);
     var pm = parentMap(cap);
@@ -341,9 +349,9 @@ void main() {
       expectNoReparenting(before, parentMap(captureSemantics(tester)));
       expectSemanticsTreeInvariants(tester);
 
-      // Go back to Home by tapping Home.
+      // Go back via the Play bar item (Home is drawer/rail-only now).
       before = parentMap(captureSemantics(tester));
-      await tester.tap(find.text('Home').first);
+      await tester.tap(find.text('Game').first);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
@@ -371,7 +379,7 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.tap(find.text('Play').first);
+    await tester.tap(find.text('Game').first);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
@@ -436,7 +444,7 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.tap(find.text('Play').first);
+    await tester.tap(find.text('Game').first);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
 
@@ -481,13 +489,13 @@ void main() {
 
   testWidgets('50 rapid destination switches — zero duplicate ids',
       (tester) async {
-    const dests = <int>[0, 1, 2, 3, 4, 5, 6, 7];
+    const dests = <int>[0, 1, 2, 3, 4];
 
     // Build a deterministic sequence: round-robin with offset each round.
     final sequence = <int>[];
-    for (var round = 0; round < 7; round++) {
-      for (var i = 0; i < 8; i++) {
-        sequence.add(dests[(i + round) % 8]);
+    for (var round = 0; round < 9; round++) {
+      for (var i = 0; i < 5; i++) {
+        sequence.add(dests[(i + round) % 5]);
       }
     }
 
@@ -526,17 +534,17 @@ void main() {
 
   testWidgets('Review: empty state then navigate away and back',
       (tester) async {
-    await _pumpShell(tester, index: 5); // Review
+    await _pumpShell(tester, index: 3); // Review
 
     var cap = captureSemantics(tester);
     var pm = parentMap(cap);
     expectSemanticsTreeInvariants(tester);
 
     // Brief navigation away and back.
-    await _goTo(tester, 0); // Home
+    await _goTo(tester, 0); // Game
     await tester.pump(const Duration(milliseconds: 100));
 
-    await _goTo(tester, 5); // Review
+    await _goTo(tester, 3); // Review
     await tester.pump(const Duration(milliseconds: 100));
 
     expectNoReparenting(pm, parentMap(captureSemantics(tester)));
@@ -546,12 +554,12 @@ void main() {
   });
 
   // -----------------------------------------------------------------------
-  // §7 – Agents form push/pop
+  // §7 – Settings agents section push/pop
   // -----------------------------------------------------------------------
 
-  testWidgets('Agents list → New agent form push and pop stable',
+  testWidgets('Settings agents section → New agent form push and pop stable',
       (tester) async {
-    await _pumpShell(tester, index: 6); // Agents
+    await _pumpShell(tester, index: 4); // Settings
 
     var cap = captureSemantics(tester);
     var pm = parentMap(cap);
@@ -588,7 +596,7 @@ void main() {
         }
       }
 
-      expectNoExceptionWithSemanticsDump(tester, 'agents dialog');
+      expectNoExceptionWithSemanticsDump(tester, 'settings agents dialog');
     }
   });
 
@@ -596,7 +604,7 @@ void main() {
   // §7 – Wide rail completeness
   // -----------------------------------------------------------------------
 
-  testWidgets('Wide layout renders all 8 destinations — rail has 8 items',
+  testWidgets('Wide layout renders all 5 destinations — rail has 5 items',
       (tester) async {
     tester.view.physicalSize = const Size(1400, 1000);
     tester.view.devicePixelRatio = 1.0;
@@ -612,17 +620,17 @@ void main() {
     // Allow LayoutBuilder to compute and render.
     await tester.pump(const Duration(milliseconds: 50));
 
-    // The rail exists and reports 8 destination slots.
+    // The rail exists and reports 5 destination slots.
     final railFinder = find.byType(NavigationRail);
     expect(railFinder, findsOneWidget);
     final rail = tester.widget<NavigationRail>(railFinder);
-    expect(rail.destinations.length, equals(8),
-        reason: 'NavigationRail should have 8 destinations');
+    expect(rail.destinations.length, equals(5),
+        reason: 'NavigationRail should have 5 destinations');
 
-    // All 8 labels present in the semantics tree.
+    // All 5 labels present in the semantics tree.
     const labels = <String>[
-      'Home', 'Play', 'Watch', 'Arena',
-      'Stats', 'Review', 'Agents', 'Settings',
+      'Game', 'Arena',
+      'Stats', 'Review', 'Settings',
     ];
     for (final label in labels) {
       expect(
@@ -654,18 +662,18 @@ void main() {
     );
     await tester.pump();
 
-    // Home selected by default — one AppBar present with a Text title.
+    // Game selected by default — one AppBar present with a Text title.
     expect(find.byType(AppBar), findsOneWidget);
-    expect(find.text('Home'), findsWidgets); // drawer + appBar both have "Home"
+    expect(find.text('Game'), findsWidgets); // drawer + appBar both have "Game"
 
-    // Tap Play.
-    await tester.tap(find.text('Play').first);
+    // Tap Game (already selected; taps the bottom-bar destination).
+    await tester.tap(find.text('Game').first);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    // App bar still there, Play label visible.
+    // App bar still there, Game label visible.
     expect(find.byType(AppBar), findsOneWidget);
-    expect(find.text('Play'), findsWidgets);
+    expect(find.text('Game'), findsWidgets);
 
     // Tap Settings via More.
     await tester.tap(find.text('More').first);
@@ -735,7 +743,7 @@ void main() {
 
   testWidgets('Settings: toggle colour scheme segments — no semantic churn',
       (tester) async {
-    await _pumpShell(tester, index: 7); // Settings
+    await _pumpShell(tester, index: 4); // Settings
 
     var cap = captureSemantics(tester);
     var pm = parentMap(cap);
@@ -765,22 +773,22 @@ void main() {
   // §7 – Quick round-trip through every destination
   // -----------------------------------------------------------------------
 
-  testWidgets('Quick round-trip: Home→Play→Watch→Home — zero exceptions',
+  testWidgets('Quick round-trip: Game→Arena→Stats→Game — zero exceptions',
       (tester) async {
     await _pumpShell(tester, index: 0);
     var cap = captureSemantics(tester);
     var pm = parentMap(cap);
     expectSemanticsTreeInvariants(tester);
 
-    await _goTo(tester, 1); // Play
+    await _goTo(tester, 1); // Arena
     expectSemanticsTreeInvariants(tester);
     pm = parentMap(captureSemantics(tester));
 
-    await _goTo(tester, 2); // Watch
+    await _goTo(tester, 2); // Stats
     expectSemanticsTreeInvariants(tester);
     pm = parentMap(captureSemantics(tester));
 
-    await _goTo(tester, 0); // Home
+    await _goTo(tester, 0); // Game
     expectSemanticsTreeInvariants(tester);
     expectNoReparenting(pm, parentMap(captureSemantics(tester)));
 

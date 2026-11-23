@@ -39,6 +39,7 @@ void main() {
         ),
       );
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
 
       // Board should render pieces from the custom FEN.
       final board = tester.widget<Chessboard>(find.byType(Chessboard).first);
@@ -62,6 +63,7 @@ void main() {
         ),
       );
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
 
       final board = tester.widget<Chessboard>(find.byType(Chessboard).first);
       // Custom FEN: white pawn on e5 confirms initialFen was applied.
@@ -82,6 +84,7 @@ void main() {
         ),
       );
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
 
       final board = tester.widget<Chessboard>(find.byType(Chessboard).first);
       final squares = board.squares;
@@ -101,6 +104,7 @@ void main() {
         ),
       );
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
 
       final board = tester.widget<Chessboard>(find.byType(Chessboard).first);
       final squares = board.squares;
@@ -114,52 +118,55 @@ void main() {
 
   group('AppShell initialIndex', () {
     testWidgets(
-        'default AppShell starts at index 0 (Home)',
+        'default AppShell starts at index 0 (Game)',
         (tester) async {
       await tester.pumpWidget(
         ProviderScope(child: const ArenaApp()),
       );
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
 
-      // Home screen title rendered via ArenaApp shell.
-      expect(find.text('LLM Chess Arena'), findsOneWidget);
-      expect(find.textContaining('Standard 8'), findsOneWidget);
+      // Unified game room is the default tab.
+      expect(find.text('Game'), findsWidgets);
+      expect(find.byType(Chessboard), findsOneWidget);
     });
 
     testWidgets(
-        'initialIndex=1 shows Play directly without Home navigation',
+        'initialIndex=0 shows Game directly without navigation',
         (tester) async {
       await tester.pumpWidget(
         ProviderScope(
           overrides: harness.fakeOverrides(),
           child: MaterialApp(
             home: Builder(
-              builder: (context) => AppShell(initialIndex: 1),
+              builder: (context) => AppShell(initialIndex: 0),
             ),
           ),
         ),
       );
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
 
-      // Play content visible — PlayerCard labels.
-      expect(find.text('You'), findsOneWidget);
-      expect(find.text('AI Opponent'), findsOneWidget);
+      // Game content visible — seat card labels.
+      expect(find.text('You · White'), findsOneWidget);
+      expect(find.text('Demo Black'), findsWidgets);
     });
 
     testWidgets(
-        'initialIndex=7 shows Settings directly',
+        'initialIndex=4 shows Settings directly',
         (tester) async {
       await tester.pumpWidget(
         ProviderScope(
           overrides: harness.fakeOverrides(),
           child: MaterialApp(
             home: Builder(
-              builder: (context) => AppShell(initialIndex: 7),
+              builder: (context) => AppShell(initialIndex: 4),
             ),
           ),
         ),
       );
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
 
       expect(find.text('Settings'), findsOneWidget);
     });
@@ -180,11 +187,14 @@ void main() {
         ),
       );
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
 
       expect(find.byType(WatchScreen), findsOneWidget);
       expect(find.byType(Chessboard), findsOneWidget);
-      expect(find.text('White agent'), findsOneWidget);
-      expect(find.text('Black agent'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('game-setup-button')),
+        findsOneWidget,
+      );
     });
 
     testWidgets(
@@ -204,9 +214,13 @@ void main() {
         ),
       );
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
 
       expect(find.byType(Chessboard), findsNWidgets(2));
-      expect(find.text('White agent'), findsNWidgets(2));
+      expect(
+        find.byKey(const ValueKey<String>('game-setup-button')),
+        findsNWidgets(2),
+      );
     });
   });
 
@@ -221,6 +235,7 @@ void main() {
         ),
       );
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
       expect(find.byType(PlayScreen), findsOneWidget);
     });
 
@@ -234,6 +249,7 @@ void main() {
         ),
       );
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
       expect(find.byType(WatchScreen), findsOneWidget);
     });
 
@@ -242,6 +258,7 @@ void main() {
         ProviderScope(child: const ArenaApp()),
       );
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
       expect(find.byType(AppShell), findsOneWidget);
     });
   });

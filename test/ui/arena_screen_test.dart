@@ -1,4 +1,4 @@
-/// ArenaScreen widget tests (§6.6, P1).
+﻿/// ArenaScreen widget tests (§6.6, P1).
 ///
 /// Covers config form, start/stop flow, standings table, mini-board cards,
 /// drill-down dialog, resize, scheduler cancellation, and semantics stability.
@@ -231,7 +231,7 @@ void main() {
   // =========================================================================
 
   group('Seed chip', () {
-    testWidgets('Seed chip renders after start', (tester) async {
+    testWidgets('Seed chip is hidden (seed is backend-only)', (tester) async {
       await _pumpArena(tester, overrides: _overrides());
       await tester.tap(find.text('Start tournament'));
       await tester.pump();
@@ -242,14 +242,14 @@ void main() {
       }
       await tester.pump();
       await tester.pump(const Duration(seconds: 1));
-      // Seed Chip renders with 'seed <number>' label
+      // Seed is backend-only: no Chip with 'seed <number>' label
       expect(
           find.byWidgetPredicate(
             (w) => w is Chip && w.label is Text &&
                 (w.label as Text).data != null &&
                 (w.label as Text).data!.startsWith('seed '),
           ),
-          findsOneWidget);
+          findsNothing);
       expect(tester.takeException(), isNull);
     });
   });

@@ -269,3 +269,21 @@ class MoveToolCall {
     return 'MoveToolCall($uci$suffix)';
   }
 }
+
+/// Builds a [MoveToolCall] from a UCI string (`'e2e4'`, `'e7e8q'`).
+///
+/// Throws [FormatException] on malformed input; the orchestrator/runner
+/// re-validates legality later, so this is shape-only.
+MoveToolCall uciToMoveToolCall(String uci, {String? phrase}) {
+  final text = uci.trim().toLowerCase();
+  if (text.length < 4) {
+    throw FormatException('Invalid UCI move: $uci');
+  }
+  final promotion = text.length > 4 ? text.substring(4, 5) : null;
+  return MoveToolCall(
+    from: text.substring(0, 2),
+    to: text.substring(2, 4),
+    promotion: promotion == null || promotion.isEmpty ? null : promotion,
+    phrase: phrase,
+  );
+}

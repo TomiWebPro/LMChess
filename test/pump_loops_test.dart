@@ -15,11 +15,53 @@ import 'package:llm_chess_arena/src/ui/screens/play_screen.dart';
 import 'package:llm_chess_arena/src/ui/screens/watch_screen.dart';
 import 'package:llm_chess_arena/src/ui/widgets/chessboard.dart';
 
-/// Current "Move N" chip from the watch transport bar.
+/// Total plies applied, read from the Moves tab header (`Ply a / b`).
+///
+/// The header lives in the Moves tab (offstage until selected), so offstage
+/// widgets are included. Before the first move the panel shows
+/// `No moves yet` and the count is 0.
 int _moveCount(WidgetTester tester) {
-  final finder = find.textContaining(RegExp(r'^Move \d+$')).first;
-  final text = tester.widget<Text>(finder).data!;
-  return int.parse(text.split(' ').last);
+  final header = find.textContaining(
+    RegExp(r'^Ply \d+ / \d+$'),
+    skipOffstage: false,
+  );
+  if (header.evaluate().isEmpty) return 0;
+  final text = tester.widget<Text>(header.first).data!;
+  return int.parse(text.split('/').last.trim());
+}
+
+/// Transport overlay controls: idle/terminal shows a `Start` button, while a
+/// live game shows icon-only Pause/Resume + Stop buttons with tooltips.
+Finder _startControl() => find.text('Start');
+Finder _pauseControl() => find.byTooltip('Pause');
+Finder _resumeControl() => find.byTooltip('Resume');
+
+/// Selects a panel tab and waits for the page animation to settle.
+///
+/// Tab pages are built lazily, so content (e.g. the Moves `Ply a / b`
+/// header) only exists once the controller stops changing.
+Future<void> _selectTab(WidgetTester tester, String name) async {
+  await tester.tap(find.text(name));
+  final controller =
+      DefaultTabController.of(tester.element(find.byType(TabBar)));
+  for (var i = 0; i < 20 && controller.indexIsChanging; i++) {
+    await tester.pump(const Duration(milliseconds: 300));
+  }
+  await tester.pump(const Duration(milliseconds: 100));
+}
+
+/// Selects the Moves tab (see [_selectTab]).
+Future<void> _showMovesTab(WidgetTester tester) => _selectTab(tester, 'Moves');
+
+/// Pumps until at least [min] plies are applied (or [maxSteps] is hit).
+///
+/// Move count is read from the Moves tab header, so call [_showMovesTab]
+/// first. Each mock turn takes several pump cycles.
+Future<void> _waitForMoves(WidgetTester tester, int min,
+    {int maxSteps = 80}) async {
+  for (var i = 0; i < maxSteps && _moveCount(tester) < min; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
 }
 
 /// Taps the centre of [square] on the first chessboard.
@@ -103,19 +145,18 @@ void main() {
     );
     await tester.pump();
 
-    await tester.tap(find.text('Start'));
+    await tester.tap(_startControl());
     await tester.pump();
-    await _pumpSteps(tester);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 50));
+    await _showMovesTab(tester);
+    await _waitForMoves(tester, 1);
 
     final afterStart = _moveCount(tester);
     expect(afterStart, greaterThan(0),
         reason: 'the pump must sequence at least one AI turn');
 
-    await tester.tap(find.text('Pause'));
+    await tester.tap(_pauseControl());
     await tester.pump();
-    expect(find.text('Resume'), findsOneWidget);
+    expect(_resumeControl(), findsOneWidget);
 
     // Let any in-flight turn settle, then verify no new turns are scheduled.
     await _pumpSteps(tester, steps: 10);

@@ -49,6 +49,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'engine_adapter.dart';
+import '../diagnostics/app_log.dart';
 
 /// Locates (and first-run extracts) the embedded Stockfish binary.
 abstract class EmbeddedEngine {
@@ -227,9 +228,11 @@ abstract class EmbeddedEngine {
         // only a README placeholder) or failed size/digest verification.
         // Warn loudly — never silently — before falling back to PATH, so a
         // missing or corrupted bundle is visible instead of masked.
-        debugPrint(
+        AppLog.current.warning(
           'LLM Chess Arena: embedded Stockfish for "$assetDir" could not be '
           'extracted/verified ($error); falling back to PATH `stockfish`.',
+          tag: 'embedded-engine',
+          error: error,
         );
       }
     }

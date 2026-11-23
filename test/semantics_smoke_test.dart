@@ -57,19 +57,19 @@ void main() {
       await tester.pumpWidget(const ProviderScope(child: ArenaApp()));
       await tester.pumpAndSettle();
 
-      // The board lives on the Play tab; while Home is selected its per-square
-      // nodes must not be present in the accessibility tree.
-      expect(find.bySemanticsLabel('White piece on e1'), findsNothing);
-
-      await tester.tap(find.text('Play').first);
-      await tester.pumpAndSettle();
+      // The board lives on the Game tab, which is selected by default, so
+      // its per-square nodes are present in the accessibility tree.
       expect(find.bySemanticsLabel('White piece on e1'), findsOneWidget);
-      expect(tester.takeException(), isNull);
 
-      // Stats hosts no board, so the Play board's nodes must be gone again.
+      // Stats hosts no board, so the Game board's nodes must be gone.
       await tester.tap(find.text('Stats').first);
       await tester.pumpAndSettle();
       expect(find.bySemanticsLabel('White piece on e1'), findsNothing);
+
+      // Back to Game: the board nodes return.
+      await tester.tap(find.text('Game').first);
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel('White piece on e1'), findsOneWidget);
       expect(tester.takeException(), isNull);
     } finally {
       handle.dispose();

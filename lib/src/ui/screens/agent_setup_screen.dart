@@ -29,7 +29,7 @@
 /// (defaults to the platform-backed [SecureKeyStore]).
 library;
 
-import 'dart:developer' show log;
+import '../../diagnostics/app_log.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -46,6 +46,7 @@ const List<String> kAgentProviders = <String>[
   'gemini',
   'custom',
   'demo',
+  'stockfish',
 ];
 
 /// Create/edit form for one agent configuration.
@@ -88,6 +89,9 @@ class _AgentSetupScreenState extends ConsumerState<AgentSetupScreen> {
   late String _provider;
   late double _temperature;
 
+  /// Stockfish playing strength, edited only when [_provider] is stockfish.
+  late double _stockfishElo;
+
   /// Test-connection state: `true` while probing.
   bool _testing = false;
 
@@ -123,6 +127,7 @@ class _AgentSetupScreenState extends ConsumerState<AgentSetupScreen> {
     _apiKeyRef = existing?.apiKeyRef;
     _provider = existing?.provider ?? kAgentProviders.first;
     _temperature = existing?.temperature ?? 0.7;
+    _stockfishElo = (existing?.stockfishElo ?? 1500).toDouble();
     _loadKeyPresence();
   }
 
@@ -153,10 +158,10 @@ class _AgentSetupScreenState extends ConsumerState<AgentSetupScreen> {
       // No secure backend (e.g. widget tests) → treat as none, but log the
       // read failure instead of swallowing it silently (§11.25 standard).
       has = false;
-      log(
+      AppLog.current.warning(
         'loadKeyPresence: secure-store read failed for ref "$ref0" — '
         'treating the stored-key indicator as absent (no key indicated)',
-        name: 'agent-setup',
+        tag: 'agent-setup',
         error: error,
         stackTrace: stackTrace,
       );
@@ -177,6 +182,7 @@ class _AgentSetupScreenState extends ConsumerState<AgentSetupScreen> {
       systemPrompt: _system.text,
       userPromptTemplate: _userTemplate.text,
       apiKeyRef: apiKeyRef,
+      stockfishElo: _stockfishElo.round(),
     );
   }
 
@@ -265,6 +271,30 @@ class _AgentSetupScreenState extends ConsumerState<AgentSetupScreen> {
                 ),
                 keyboardType: TextInputType.number,
               ),
+              if (_provider == 'stockfish') ...<Widget>[
+                const SizedBox(height: 12),
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        'Stockfish Elo ${_stockfishElo.round()}',
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: Slider(
+                        value: _stockfishElo,
+                        min: 400,
+                        max: 3000,
+                        divisions: 26,
+                        label: '${_stockfishElo.round()}',
+                        onChanged: (v) => setState(() => _stockfishElo = v),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 12),
               TextFormField(
                 controller: _system,
@@ -501,11 +531,11 @@ class _AgentSetupScreenState extends ConsumerState<AgentSetupScreen> {
       // already logs its own internal transport failures with no secret
       // material, and this log message never includes the key either).
       ok = false;
-      log(
+      AppLog.current.warning(
         'testConnection: connection probe threw for ${probe.provider}/'
         '${probe.model.isEmpty ? '(no model)' : probe.model} — reported '
         'as connection failed',
-        name: 'agent-setup',
+        tag: 'agent-setup',
         error: error,
         stackTrace: stackTrace,
       );

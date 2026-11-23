@@ -1,4 +1,4 @@
-/// [ArenaApp] root: MaterialApp, providers, responsive shell, route table.
+﻿/// [ArenaApp] root: MaterialApp, providers, responsive shell, route table.
 ///
 /// * **Providers**: [themeRegistryProvider]/[themeModeProvider] (declared in
 ///   `theme/registry.dart`) and [agentListProvider] (declared in
@@ -19,22 +19,29 @@
 /// `runApp(const ProviderScope(child: ArenaApp()))`.
 library;
 
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'theme/registry.dart';
-import 'ui/screens/agent_setup_screen.dart';
 import 'ui/screens/arena_screen.dart';
-import 'ui/screens/home_screen.dart';
-import 'ui/screens/play_screen.dart';
+import 'ui/screens/game_screen.dart';
 import 'ui/screens/review_screen.dart';
 import 'ui/screens/settings_screen.dart';
 import 'ui/screens/stats_screen.dart';
-import 'ui/screens/watch_screen.dart';
 import 'ui/ui_models.dart';
+import 'ui/semantics_heal.dart';
+import 'ui/widgets/boards.dart';
 import 'ui/widgets/tab_visibility.dart';
 
 // Re-export the provider surface so `app.dart` is the single import point.
+export 'diagnostics/app_log.dart'
+    show AppLog, AppLogLevel, AppLogRecord, appLogProvider;
+export 'storage/repository_provider.dart'
+    show appRepositoryProvider, eventStoreProvider;
 export 'theme/registry.dart' show themeRegistryProvider, themeModeProvider;
 export 'ui/ui_models.dart'
     show
@@ -42,6 +49,15 @@ export 'ui/ui_models.dart'
         ArenaRoutes,
         AgentConfig,
         AgentListStore;
+
+/// Dev-only kill switch for the Windows accessibility-bridge crash
+/// (flutter/flutter#175041). Set via
+/// `--dart-define=DISABLE_SEMANTICS=true`. `const` + `bool.fromEnvironment`
+/// so release builds pay nothing when unset.
+const bool kDisableSemantics = bool.fromEnvironment(
+  'DISABLE_SEMANTICS',
+  defaultValue: false,
+);
 
 /// Application root widget.
 ///
@@ -68,21 +84,44 @@ class ArenaApp extends ConsumerWidget {
         useMaterial3: true,
       ),
       themeMode: mode,
+      // Windows accessibility-bridge guard (flutter/flutter#182444,
+      // flutter/flutter#175041): a stray UIA client forces
+      // `semanticsEnabled=true` from frame 1 even with no screen reader
+      // (verified on this host: bare template app also reports true), so
+      // the first incremental update crowns the wrong AXTree root
+      // (`0 will not be in the tree`) and the next reparent
+      // (`28 will not be ...` — board square d7) kills the process
+      // (`Lost connection`). Wrapping the tree in ExcludeSemantics while
+      // no screen reader is attached keeps the native tree empty (no
+      // updates to reject); real screen-reader users still get full
+      // semantics. Dev override `--dart-define=DISABLE_SEMANTICS=true`
+      // forces exclusion everywhere.
+      builder: (context, child) {
+        if (kDisableSemantics) {
+          return ExcludeSemantics(child: child ?? const SizedBox.shrink());
+        }
+        if (defaultTargetPlatform == TargetPlatform.windows &&
+            !(MediaQuery.maybeAccessibleNavigationOf(context) ?? false)) {
+          return ExcludeSemantics(child: child ?? const SizedBox.shrink());
+        }
+        return child ?? const SizedBox.shrink();
+      },
       home: const AppShell(),
       routes: _routeTable,
     );
   }
 }
 
-/// Named route table for home-card navigation.
+/// Named route table for deep links.
 ///
-/// Each entry wraps the content screen in [_RoutedScreen] so pushed routes
-/// get an AppBar + back button; the shell embeds the bare screens.
+/// Play and Watch are kept as aliases: both resolve to the unified [GameScreen].
 Map<String, WidgetBuilder> get _routeTable => <String, WidgetBuilder>{
   ArenaRoutes.play: (_) =>
-      const _RoutedScreen(title: 'Play · Human vs AI', child: PlayScreen()),
+      const _RoutedScreen(title: 'Game · Human & Engines', child: GameScreen()),
   ArenaRoutes.watch: (_) =>
-      const _RoutedScreen(title: 'Watch · AI vs AI', child: WatchScreen()),
+      const _RoutedScreen(title: 'Game · Human & Engines', child: GameScreen()),
+  ArenaRoutes.game: (_) =>
+      const _RoutedScreen(title: 'Game · Human & Engines', child: GameScreen()),
   ArenaRoutes.arena: (_) =>
       const _RoutedScreen(title: 'Arena', child: ArenaScreen()),
   ArenaRoutes.stats: (_) =>
@@ -90,7 +129,7 @@ Map<String, WidgetBuilder> get _routeTable => <String, WidgetBuilder>{
   ArenaRoutes.review: (_) =>
       const _RoutedScreen(title: 'Review', child: ReviewScreen()),
   ArenaRoutes.agents: (_) =>
-      const _RoutedScreen(title: 'Agents', child: _AgentListScreen()),
+      const _RoutedScreen(title: 'Settings', child: SettingsScreen()),
   ArenaRoutes.settings: (_) =>
       const _RoutedScreen(title: 'Settings', child: SettingsScreen()),
 };
@@ -132,22 +171,27 @@ class _Destination {
 
 /// Shell destinations in nav order.
 final List<_Destination> _destinations = <_Destination>[
-  _Destination('Home', Icons.home_outlined, (_) => HomeScreen()),
-  _Destination('Play', Icons.sports_esports_outlined, (_) => PlayScreen()),
-  _Destination('Watch', Icons.visibility_outlined, (_) => WatchScreen()),
+  _Destination('Game', Icons.sports_esports_outlined, (_) => GameScreen()),
   _Destination('Arena', Icons.emoji_events_outlined, (_) => ArenaScreen()),
   _Destination('Stats', Icons.bar_chart_outlined, (_) => StatsScreen()),
   _Destination('Review', Icons.replay_outlined, (_) => ReviewScreen()),
-  _Destination('Agents', Icons.smart_toy_outlined, (_) => _AgentListScreen()),
   _Destination('Settings', Icons.palette_outlined, (_) => SettingsScreen()),
 ];
+
+/// Phone bottom-bar slots: the four daily destinations (Game, Arena, Stats,
+/// Review). Indices into [_destinations].
+const List<int> _phoneBarIndices = <int>[0, 1, 2, 3];
+
+/// Phone "More" overflow: everything not on the bottom bar (Settings).
+/// Indices into [_destinations].
+const List<int> _phoneOverflowIndices = <int>[4];
 
 /// Responsive app shell: rail (≥700px) vs. bottom bar + drawer (<700px).
 class AppShell extends StatefulWidget {
   /// Creates the app shell.
   const AppShell({super.key, this.initialIndex = 0});
 
-  /// Destination index to start on — tests set this to skip tapping Home cards.
+  /// Destination index to start on — tests set this to reach a tab directly.
   final int initialIndex;
 
   @override
@@ -158,17 +202,58 @@ class _AppShellState extends State<AppShell> {
   /// Selected destination index.
   int _index = 0;
 
+  /// Delayed full-tree semantics resend (see [resendFullSemanticsTree]).
+  Timer? _semanticsHealTimer;
+
+  /// Re-enable listener for late-attaching clients (see below).
+  VoidCallback? _semanticsHealListener;
+
   @override
   void initState() {
     super.initState();
     _index = widget.initialIndex;
+    // The bridge initializes while the startup storm is still moving nodes,
+    // so its first updates can miss creations (flutter/flutter#175041).
+    // Re-send the complete tree once startup settles: this heals any missed
+    // creations and all later incremental updates merge into a valid tree.
+    _semanticsHealTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) resendFullSemanticsTree();
+    });
+    // A newly attached client (UIA smoke, Narrator) enables semantics long
+    // after startup; hand it a complete tree instead of a partial one.
+    _semanticsHealListener = () {
+      if (mounted && SemanticsBinding.instance.semanticsEnabled) {
+        resendFullSemanticsTree();
+      }
+    };
+    SemanticsBinding.instance
+        .addSemanticsEnabledListener(_semanticsHealListener!);
+  }
+
+  @override
+  void dispose() {
+    _semanticsHealTimer?.cancel();
+    final listener = _semanticsHealListener;
+    if (listener != null) {
+      SemanticsBinding.instance.removeSemanticsEnabledListener(listener);
+    }
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final wide = constraints.maxWidth >= 700;
+        final targetWide = constraints.maxWidth >= 700;
+        // Debounce the rail-vs-bar switch: a live window drag fires
+        // LayoutBuilder dozens of times per second, and swapping the nav
+        // chrome on every intermediate width churns the semantics tree
+        // (flutter/flutter#175041). Hold the old chrome until the width
+        // settles, so a drag is size-only updates plus one structural
+        // switch at most.
+        return DebouncedBreakpoint<bool>(
+          target: targetWide,
+          builder: (context, wide) {
         final body = IndexedStack(
           index: _index,
           children: <Widget>[
@@ -190,12 +275,7 @@ class _AppShellState extends State<AppShell> {
                   enabled: i == _index,
                   child: TabVisibility(
                     isVisible: i == _index,
-                    child: i == 0
-                        // The dashboard selects shell destinations instead
-                        // of pushing a second live instance of the same
-                        // screen (which doubled board/stream work).
-                        ? HomeScreen(onOpen: _openRoute)
-                        : _destinations[i].screen(context),
+                    child: _destinations[i].screen(context),
                   ),
                 ),
               ),
@@ -257,33 +337,32 @@ class _AppShellState extends State<AppShell> {
             ],
           ),
           bottomNavigationBar: wide ? null : NavigationBar(
-            // The bottom bar folds Stats/Review/Agents/Settings into "More";
-            // mirror the real section instead of clamping everything above
-            // the first four to Home.
-            selectedIndex: _index <= 3 ? _index : 4,
+            // The phone bar holds the four daily destinations (Game, Arena,
+            // Stats, Review); the "More" sheet holds Settings.
+            selectedIndex: _phoneBarSelectedIndex(_index),
             onDestinationSelected: (i) {
-              if (i == 4) {
+              if (i == _phoneBarIndices.length) {
                 _openMore();
               } else {
-                setState(() => _index = i);
+                setState(() => _index = _phoneBarIndices[i]);
               }
             },
             destinations: const <NavigationDestination>[
               NavigationDestination(
-                icon: Icon(Icons.home_outlined),
-                label: 'Home',
-              ),
-              NavigationDestination(
                 icon: Icon(Icons.sports_esports_outlined),
-                label: 'Play',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.visibility_outlined),
-                label: 'Watch',
+                label: 'Game',
               ),
               NavigationDestination(
                 icon: Icon(Icons.emoji_events_outlined),
                 label: 'Arena',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.bar_chart_outlined),
+                label: 'Stats',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.replay_outlined),
+                label: 'Review',
               ),
               NavigationDestination(
                 icon: Icon(Icons.more_horiz),
@@ -292,29 +371,22 @@ class _AppShellState extends State<AppShell> {
             ],
           ),
         );
+          },
+        );
       },
     );
   }
 
-  /// Shell destination index for each named route used by the home cards.
-  static const Map<String, int> _routeToIndex = <String, int>{
-    ArenaRoutes.play: 1,
-    ArenaRoutes.watch: 2,
-    ArenaRoutes.arena: 3,
-    ArenaRoutes.stats: 4,
-    ArenaRoutes.review: 5,
-    ArenaRoutes.agents: 6,
-    ArenaRoutes.settings: 7,
-  };
-
-  /// Selects the shell destination matching [route] (home-card navigation).
-  void _openRoute(String route) {
-    final index = _routeToIndex[route];
-    if (index != null) setState(() => _index = index);
+  /// Phone bottom-bar highlight for shell destination [_index]: the bar
+  /// slot, or the "More" slot when the destination lives in the overflow
+  /// sheet, drawer or rail.
+  static int _phoneBarSelectedIndex(int index) {
+    final slot = _phoneBarIndices.indexOf(index);
+    return slot == -1 ? _phoneBarIndices.length : slot;
   }
 
-  /// Opens a sheet listing the destinations the bottom bar folds into
-  /// "More" (Stats, Review, Agents, Settings) and selects the tapped one.
+  /// Opens a sheet listing the destination the phone bottom bar folds into
+  /// "More" (Settings) and selects the tapped one.
   Future<void> _openMore() async {
     await showModalBottomSheet<void>(
       context: context,
@@ -323,7 +395,7 @@ class _AppShellState extends State<AppShell> {
         child: ListView(
           shrinkWrap: true,
           children: <Widget>[
-            for (var i = 4; i < _destinations.length; i++)
+            for (final i in _phoneOverflowIndices)
               ListTile(
                 leading: Icon(_destinations[i].icon),
                 title: Text(_destinations[i].label),
@@ -338,89 +410,6 @@ class _AppShellState extends State<AppShell> {
               ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// Agent catalog screen: list, delete, create and edit.
-///
-/// Create/edit push [AgentSetupScreen] as a MaterialPageRoute (carrying
-/// [AgentConfig.id] for edits) so the form stays a plain constructor-widget
-/// while remaining reachable from both the shell and named routes.
-class _AgentListScreen extends ConsumerWidget {
-  /// Creates the agent list screen.
-  const _AgentListScreen();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final agents = ref.watch(agentListProvider).agents;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Text(
-                '${agents.length} agents',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const Spacer(),
-              FilledButton.icon(
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute<void>(
-                    builder: (_) => const Scaffold(
-                      appBar: null,
-                      body: SafeArea(child: AgentSetupScreen()),
-                    ),
-                  ),
-                ),
-                icon: const Icon(Icons.add),
-                label: const Text('New agent'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          if (agents.isEmpty)
-            const Text('No agents yet — create one to get started.')
-          else
-            for (final a in agents)
-              Card(
-                child: ListTile(
-                  leading: const Icon(Icons.smart_toy_outlined),
-                  title: Text(a.name),
-                  subtitle: Text(
-                    '${a.summary} · t=${a.temperature.toStringAsFixed(2)}',
-                  ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      IconButton(
-                        tooltip: 'Edit',
-                        icon: const Icon(Icons.edit_outlined),
-                        onPressed: () => Navigator.push(
-                          context,
-                          MaterialPageRoute<void>(
-                            builder: (_) => Scaffold(
-                              appBar: AppBar(title: Text('Edit ${a.name}')),
-                              body: AgentSetupScreen(agentId: a.id),
-                            ),
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Delete',
-                        icon: const Icon(Icons.delete_outline),
-                        onPressed: () =>
-                            ref.read(agentListProvider).removeAgent(a.id),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-        ],
       ),
     );
   }

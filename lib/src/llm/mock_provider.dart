@@ -16,6 +16,7 @@
 /// Pure Dart, no I/O. [testConnection] always returns `true`.
 library;
 
+import '../diagnostics/backend_log.dart';
 import 'provider.dart';
 import 'tool_schema.dart';
 import 'validation.dart';
@@ -31,20 +32,25 @@ class MockProvider extends LlmProvider {
   /// Reported model label (observability only).
   final String model;
 
+  /// UI-free logger (per-call override wins; defaults to [currentBackendLog]).
+  final BackendLog? log;
+
   int _cursor = 0;
 
   /// Creates a mock provider.
   ///
   /// Items of [script] must be [MoveToolCall] or [FailureKind]; anything
-  /// else surfaces as an `internal` error event at stream time.
+  /// else surfaces as an `internal` error event at stream time. [log]
+  /// injects a logger for tests; production call sites omit it and resolve
+  /// [currentBackendLog].
   MockProvider({
     List<Object>? script,
     this.stepDelay = const Duration(milliseconds: 20),
     this.model = 'mock',
-  }) : script = script ??
-            [
-              MoveToolCall(from: 'e2', to: 'e4', phrase: 'Demo opening'),
-            ];
+    this.log,
+  }) : script =
+           script ??
+           [MoveToolCall(from: 'e2', to: 'e4', phrase: 'Demo opening')];
 
   /// Number of script items consumed so far.
   int get consumed => _cursor;
@@ -63,14 +69,26 @@ class MockProvider extends LlmProvider {
 
   @override
   LlmCapabilities get capabilities => const LlmCapabilities(
-        supportsTools: true,
-        supportsStreaming: true,
-        supportsReasoning: false,
-        friendlyName: 'Mock (scripted)',
-      );
+    supportsTools: true,
+    supportsStreaming: true,
+    supportsReasoning: false,
+    friendlyName: 'Mock (scripted)',
+  );
 
   @override
-  Future<bool> testConnection() async => true;
+  Future<bool> testConnection({
+    BackendLog? log,
+    String? gameId,
+    String? tournamentId,
+  }) async {
+    (log ?? this.log ?? currentBackendLog).debug(
+      'testConnection end ok=true',
+      tag: 'mock-provider',
+      gameId: gameId,
+      tournamentId: tournamentId,
+    );
+    return true;
+  }
 
   @override
   void close() {
@@ -78,11 +96,29 @@ class MockProvider extends LlmProvider {
   }
 
   @override
-  Stream<LlmStreamEvent> streamMove(AgentRequest request) async* {
+  Stream<LlmStreamEvent> streamMove(
+    AgentRequest request, {
+    BackendLog? log,
+    String? gameId,
+    String? tournamentId,
+  }) async* {
+    final effectiveLog = log ?? this.log ?? currentBackendLog;
+    effectiveLog.debug(
+      'stream start model=$model cursor=$_cursor',
+      tag: 'mock-provider',
+      gameId: gameId,
+      tournamentId: tournamentId,
+    );
     final stopwatch = Stopwatch()..start();
     yield const LlmStreamEvent(kind: StreamEventKind.started);
 
     if (request.cancelToken?.isCancelled ?? false) {
+      effectiveLog.warning(
+        'stream failed kind=cancelled before send',
+        tag: 'mock-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
+      );
       yield LlmStreamEvent(
         kind: StreamEventKind.error,
         message: '${FailureKind.cancelled.name}: turn cancelled before send.',
@@ -94,6 +130,12 @@ class MockProvider extends LlmProvider {
       // Non-retryable on purpose: exhaustion is deterministic — retrying
       // the same empty queue would burn `maxRetries` attempts plus backoff
       // for a failure that can never heal.
+      effectiveLog.warning(
+        'stream failed kind=incompleteResponse exhausted',
+        tag: 'mock-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
+      );
       yield LlmStreamEvent(
         kind: StreamEventKind.error,
         message:
@@ -110,6 +152,12 @@ class MockProvider extends LlmProvider {
       if (item == FailureKind.valid) {
         // `valid` is not a failure: treat a stray entry as a no-op error so
         // the runner never receives an ambiguous turn.
+        effectiveLog.warning(
+          'stream failed kind=internal stray valid',
+          tag: 'mock-provider',
+          gameId: gameId,
+          tournamentId: tournamentId,
+        );
         yield LlmStreamEvent(
           kind: StreamEventKind.error,
           message:
@@ -118,10 +166,17 @@ class MockProvider extends LlmProvider {
         );
         return;
       }
-      final retryable = item == FailureKind.rateLimit ||
+      final retryable =
+          item == FailureKind.rateLimit ||
           item == FailureKind.providerError ||
           item == FailureKind.timeout ||
           item == FailureKind.incompleteResponse;
+      effectiveLog.debug(
+        'stream end scripted kind=${item.name}',
+        tag: 'mock-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
+      );
       yield LlmStreamEvent(
         kind: retryable ? StreamEventKind.errorRetry : StreamEventKind.error,
         message: '${item.name}: scripted ${item.name} failure.',
@@ -130,6 +185,12 @@ class MockProvider extends LlmProvider {
     }
 
     if (item is! MoveToolCall) {
+      effectiveLog.warning(
+        'stream failed kind=internal bad entry',
+        tag: 'mock-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
+      );
       yield LlmStreamEvent(
         kind: StreamEventKind.error,
         message:
@@ -150,10 +211,7 @@ class MockProvider extends LlmProvider {
     );
     if (item.phrase != null && item.phrase!.isNotEmpty) {
       await Future<void>.delayed(stepDelay);
-      yield LlmStreamEvent(
-        kind: StreamEventKind.textDelta,
-        text: item.phrase,
-      );
+      yield LlmStreamEvent(kind: StreamEventKind.textDelta, text: item.phrase);
     }
     await Future<void>.delayed(stepDelay);
     final encoded = _encode(argsJson);
@@ -174,6 +232,12 @@ class MockProvider extends LlmProvider {
       tokensOut: 16,
     );
     stopwatch.stop();
+    effectiveLog.debug(
+      'stream end uci=${item.uci}',
+      tag: 'mock-provider',
+      gameId: gameId,
+      tournamentId: tournamentId,
+    );
     yield LlmStreamEvent(
       kind: StreamEventKind.latency,
       latencyMs: stopwatch.elapsedMilliseconds,
@@ -184,8 +248,9 @@ class MockProvider extends LlmProvider {
   String _encode(Map<String, Object?> argsJson) {
     final entries = argsJson.entries.map((e) {
       final value = e.value;
-      final rendered =
-          value is String ? '"${value.replaceAll('"', '\\"')}"' : '$value';
+      final rendered = value is String
+          ? '"${value.replaceAll('"', '\\"')}"'
+          : '$value';
       return '"${e.key}":$rendered';
     });
     return '{${entries.join(',')}}';

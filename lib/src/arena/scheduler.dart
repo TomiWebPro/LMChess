@@ -23,6 +23,8 @@
 /// The scheduler never imports the orchestrator. Game execution is injected
 /// as a [GameFactory] (or the equivalent [GameRunner] function type), which
 /// tests replace with fakes.
+/// Talks to: `tournament.dart` (`TournamentConfig`/`Pairing`); execution injected as `GameFactory` for fakes.
+/// Never imports: `package:flutter`, `ui/`, `game/` orchestrator, `llm/`, `storage/`, `chess/`+`variant/` engines.
 library;
 
 import 'dart:async';

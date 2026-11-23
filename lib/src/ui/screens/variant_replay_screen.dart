@@ -235,30 +235,36 @@ class _VariantReplayScreenState extends ConsumerState<VariantReplayScreen> {
         ),
         body: LayoutBuilder(
           builder: (context, constraints) {
-            if (constraints.maxWidth >= 900) {
-              return Row(
-                children: <Widget>[
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: boardPane,
+            final targetWide = constraints.maxWidth >= 900;
+            return DebouncedBreakpoint<bool>(
+              target: targetWide,
+              builder: (context, wide) {
+                if (wide) {
+                  return Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: boardPane,
+                        ),
+                      ),
+                      SizedBox(width: 440, child: panel),
+                    ],
+                  );
+                }
+                return Column(
+                  children: <Widget>[
+                    Expanded(
+                      flex: 3,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: boardPane,
+                      ),
                     ),
-                  ),
-                  SizedBox(width: 440, child: panel),
-                ],
-              );
-            }
-            return Column(
-              children: <Widget>[
-                Expanded(
-                  flex: 3,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: boardPane,
-                  ),
-                ),
-                Expanded(flex: 2, child: panel),
-              ],
+                    Expanded(flex: 2, child: panel),
+                  ],
+                );
+              },
             );
           },
         ),
@@ -338,11 +344,11 @@ class _VariantReplayScreenState extends ConsumerState<VariantReplayScreen> {
             onPressed: _ply == 0 ? null : () => _seek(0),
             icon: const Icon(Icons.first_page),
           ),
-          IconButton(
+          HoldIconButton(
             key: const ValueKey<String>('variant-prev'),
-            tooltip: 'Previous ply',
-            onPressed: _ply == 0 ? null : () => _seek(_ply - 1),
-            icon: const Icon(Icons.chevron_left),
+            tooltip: 'Previous ply (hold to scrub)',
+            onStep: _ply == 0 ? null : () => _seek(_ply - 1),
+            icon: Icons.chevron_left,
           ),
           Expanded(
             child: Slider(
@@ -355,11 +361,11 @@ class _VariantReplayScreenState extends ConsumerState<VariantReplayScreen> {
               onChanged: last == 0 ? null : (value) => _seek(value.round()),
             ),
           ),
-          IconButton(
+          HoldIconButton(
             key: const ValueKey<String>('variant-next'),
-            tooltip: 'Next ply',
-            onPressed: _ply >= last ? null : () => _seek(_ply + 1),
-            icon: const Icon(Icons.chevron_right),
+            tooltip: 'Next ply (hold to scrub)',
+            onStep: _ply >= last ? null : () => _seek(_ply + 1),
+            icon: Icons.chevron_right,
           ),
           IconButton(
             key: const ValueKey<String>('variant-last'),

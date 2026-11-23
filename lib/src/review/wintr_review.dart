@@ -570,7 +570,7 @@ class WintrReviewService {
             note:
                 'Ply ${m.moveIndex + 1} '
                 '(${m.moverIsWhite ? 'White' : 'Black'}): '
-                '${m.assessment.quality.name}, '
+                '${qualityDisplayName(m.assessment.quality)}, '
                 '${m.assessment.lossCp!.abs()} cp swing.',
           ),
         )
@@ -620,7 +620,9 @@ class WintrReviewService {
     );
     final counts = _qualityCounts(reviewed);
     buffer.write(
-      counts.entries.map((e) => '${e.key}: ${e.value}').join(', '),
+      counts.entries
+          .map((e) => '${_displayNameFor(e.key)}: ${e.value}')
+          .join(', '),
     );
     buffer.write('. ');
     final white = _sideAccuracy(reviewed, true);
@@ -634,10 +636,18 @@ class WintrReviewService {
       buffer.write('No key moments (no supported swings).');
     } else {
       buffer.write(
-        'Key moments: ${moments.map((k) => 'ply ${k.moveIndex + 1} (${k.quality.name})').join(', ')}.',
+        'Key moments: ${moments.map((k) => 'ply ${k.moveIndex + 1} (${qualityDisplayName(k.quality)})').join(', ')}.',
       );
     }
     return buffer.toString();
+  }
+
+  /// Tier storage name → human-readable label for the summary sentence.
+  String _displayNameFor(String tierName) {
+    for (final quality in MoveQuality.values) {
+      if (quality.name == tierName) return qualityDisplayName(quality);
+    }
+    return tierName;
   }
 
   /// Formats an accuracy mean, or `n/a` when null.

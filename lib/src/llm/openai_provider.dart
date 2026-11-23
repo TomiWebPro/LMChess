@@ -26,10 +26,10 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:developer' show log;
 
 import 'package:http/http.dart' as http;
 
+import '../diagnostics/backend_log.dart';
 import 'http_helpers.dart';
 import 'provider.dart';
 import 'tool_schema.dart';
@@ -55,18 +55,23 @@ class OpenAiProvider extends LlmProvider {
   /// Whether [_client] was created internally (and thus closed by [close]).
   final bool _ownsClient;
 
+  /// UI-free logger (per-call override wins; defaults to [currentBackendLog]).
+  final BackendLog? log;
+
   /// Creates a provider.
   ///
   /// Pass [httpClient] to share a client or inject fakes; otherwise one is
-  /// created and must be released with [close].
+  /// created and must be released with [close]. [log] injects a logger for
+  /// tests; production call sites omit it and resolve [currentBackendLog].
   OpenAiProvider({
     required this.baseUrl,
     required this.apiKey,
     required this.model,
     http.Client? httpClient,
     this.timeout = const Duration(seconds: 120),
-  })  : _client = httpClient ?? http.Client(),
-        _ownsClient = httpClient == null;
+    this.log,
+  }) : _client = httpClient ?? http.Client(),
+       _ownsClient = httpClient == null;
 
   /// Releases the internally created HTTP client, if any.
   @override
@@ -81,11 +86,11 @@ class OpenAiProvider extends LlmProvider {
 
   @override
   LlmCapabilities get capabilities => const LlmCapabilities(
-        supportsTools: true,
-        supportsStreaming: true,
-        supportsReasoning: false,
-        friendlyName: 'OpenAI',
-      );
+    supportsTools: true,
+    supportsStreaming: true,
+    supportsReasoning: false,
+    friendlyName: 'OpenAI',
+  );
 
   /// Base URL without trailing slashes.
   String get _base => baseUrl.replaceAll(RegExp(r'/+$'), '');
@@ -93,16 +98,45 @@ class OpenAiProvider extends LlmProvider {
   Map<String, String> get _headers => jsonHeaders(bearerToken: apiKey);
 
   @override
-  Future<bool> testConnection() async {
+  Future<bool> testConnection({
+    BackendLog? log,
+    String? gameId,
+    String? tournamentId,
+  }) async {
+    final effectiveLog = log ?? this.log ?? currentBackendLog;
+    effectiveLog.debug(
+      'testConnection start',
+      tag: 'openai-provider',
+      gameId: gameId,
+      tournamentId: tournamentId,
+    );
     try {
       final response = await _client
           .get(Uri.parse('$_base/models'), headers: _headers)
           .timeout(const Duration(seconds: 10));
-      return response.statusCode == 200;
+      final ok = response.statusCode == 200;
+      if (ok) {
+        effectiveLog.debug(
+          'testConnection end ok=true',
+          tag: 'openai-provider',
+          gameId: gameId,
+          tournamentId: tournamentId,
+        );
+      } else {
+        effectiveLog.warning(
+          'testConnection failed kind=http status=${response.statusCode}',
+          tag: 'openai-provider',
+          gameId: gameId,
+          tournamentId: tournamentId,
+        );
+      }
+      return ok;
     } catch (error) {
-      log(
-        'testConnection: $id models probe failed — reporting false',
-        name: 'openai-provider',
+      effectiveLog.warning(
+        'testConnection failed kind=transport — reporting false',
+        tag: 'openai-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
         error: error,
       );
       return false;
@@ -110,12 +144,30 @@ class OpenAiProvider extends LlmProvider {
   }
 
   @override
-  Stream<LlmStreamEvent> streamMove(AgentRequest request) async* {
+  Stream<LlmStreamEvent> streamMove(
+    AgentRequest request, {
+    BackendLog? log,
+    String? gameId,
+    String? tournamentId,
+  }) async* {
+    final effectiveLog = log ?? this.log ?? currentBackendLog;
+    effectiveLog.debug(
+      'stream start model=$model',
+      tag: 'openai-provider',
+      gameId: gameId,
+      tournamentId: tournamentId,
+    );
     final stopwatch = Stopwatch()..start();
     yield const LlmStreamEvent(kind: StreamEventKind.started);
 
     bool cancelled() => request.cancelToken?.isCancelled ?? false;
     if (cancelled()) {
+      effectiveLog.warning(
+        'stream failed kind=cancelled before send',
+        tag: 'openai-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
+      );
       yield LlmStreamEvent(
         kind: StreamEventKind.error,
         message: '${FailureKind.cancelled.name}: turn cancelled before send.',
@@ -140,20 +192,31 @@ class OpenAiProvider extends LlmProvider {
 
     late final http.StreamedResponse response;
     try {
-      final httpRequest = http.Request(
-        'POST',
-        Uri.parse('$_base/chat/completions'),
-      )
-        ..headers.addAll(_headers)
-        ..body = jsonEncode(body);
+      final httpRequest =
+          http.Request('POST', Uri.parse('$_base/chat/completions'))
+            ..headers.addAll(_headers)
+            ..body = jsonEncode(body);
       response = await _client.send(httpRequest).timeout(timeout);
     } on TimeoutException {
+      effectiveLog.warning(
+        'stream failed kind=timeout on connect',
+        tag: 'openai-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
+      );
       yield LlmStreamEvent(
         kind: StreamEventKind.errorRetry,
         message: '${FailureKind.timeout.name}: connection timed out.',
       );
       return;
     } catch (e) {
+      effectiveLog.warning(
+        'stream failed kind=providerError on connect',
+        tag: 'openai-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
+        error: e,
+      );
       yield LlmStreamEvent(
         kind: StreamEventKind.errorRetry,
         message: '${FailureKind.providerError.name}: transport error: $e',
@@ -164,6 +227,12 @@ class OpenAiProvider extends LlmProvider {
     if (response.statusCode != 200) {
       final detail = await readErrorBody(response);
       final kind = failureKindForHttpStatus(response.statusCode);
+      effectiveLog.warning(
+        'stream failed kind=${kind.name} status=${response.statusCode}',
+        tag: 'openai-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
+      );
       yield LlmStreamEvent(
         kind: isRetryableFailureKind(kind)
             ? StreamEventKind.errorRetry
@@ -214,8 +283,9 @@ class OpenAiProvider extends LlmProvider {
         if (choice is! Map) continue;
         // Streaming shape uses `delta`; buffered non-SSE proxies may send
         // the full `message` shape instead — both are handled.
-        final node =
-            choice['delta'] is Map ? choice['delta'] : choice['message'];
+        final node = choice['delta'] is Map
+            ? choice['delta']
+            : choice['message'];
         if (node is! Map) continue;
         final content = node['content'];
         if (content is String && content.isNotEmpty) {
@@ -260,9 +330,16 @@ class OpenAiProvider extends LlmProvider {
         timeout,
       )) {
         if (cancelled()) {
+          effectiveLog.warning(
+            'stream failed kind=cancelled mid-stream',
+            tag: 'openai-provider',
+            gameId: gameId,
+            tournamentId: tournamentId,
+          );
           yield LlmStreamEvent(
             kind: StreamEventKind.error,
-            message: '${FailureKind.cancelled.name}: turn cancelled mid-stream.',
+            message:
+                '${FailureKind.cancelled.name}: turn cancelled mid-stream.',
           );
           return;
         }
@@ -292,6 +369,12 @@ class OpenAiProvider extends LlmProvider {
         }
       }
     } on TimeoutException {
+      effectiveLog.warning(
+        'stream failed kind=timeout stalled',
+        tag: 'openai-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
+      );
       yield LlmStreamEvent(
         kind: StreamEventKind.errorRetry,
         message:
@@ -300,6 +383,13 @@ class OpenAiProvider extends LlmProvider {
       );
       return;
     } catch (e) {
+      effectiveLog.warning(
+        'stream failed kind=providerError in-stream',
+        tag: 'openai-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
+        error: e,
+      );
       yield LlmStreamEvent(
         kind: StreamEventKind.errorRetry,
         message: '${FailureKind.providerError.name}: stream failed: $e',
@@ -307,6 +397,12 @@ class OpenAiProvider extends LlmProvider {
       return;
     }
     if (cancelled()) {
+      effectiveLog.warning(
+        'stream failed kind=cancelled mid-stream',
+        tag: 'openai-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
+      );
       yield LlmStreamEvent(
         kind: StreamEventKind.error,
         message: '${FailureKind.cancelled.name}: turn cancelled mid-stream.',
@@ -319,6 +415,12 @@ class OpenAiProvider extends LlmProvider {
       // last-wins would play an arbitrary pick. Surface it as a
       // non-retryable malformed outcome instead (no toolCallCompleted is
       // emitted, so the runner cannot validate a partial pick).
+      effectiveLog.warning(
+        'stream failed kind=malformedArgs calls=${toolArgs.length}',
+        tag: 'openai-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
+      );
       yield LlmStreamEvent(
         kind: StreamEventKind.error,
         message:
@@ -343,6 +445,12 @@ class OpenAiProvider extends LlmProvider {
       );
     }
     stopwatch.stop();
+    effectiveLog.debug(
+      'stream end model=$model calls=${toolArgs.length}',
+      tag: 'openai-provider',
+      gameId: gameId,
+      tournamentId: tournamentId,
+    );
     yield LlmStreamEvent(
       kind: StreamEventKind.latency,
       latencyMs: stopwatch.elapsedMilliseconds,

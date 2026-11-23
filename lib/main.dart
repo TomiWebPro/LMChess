@@ -9,8 +9,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'src/app.dart';
+import 'src/diagnostics/backend_log.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // Wire the UI-free backend logging contract to the real sink once at
+  // startup; backend code resolves currentBackendLog per-call.
+  currentBackendLog = AppLog.current;
   runApp(const ProviderScope(child: ArenaApp()));
 }

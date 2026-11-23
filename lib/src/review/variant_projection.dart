@@ -18,7 +18,7 @@
 /// bad projection can never reach the engine.
 library;
 
-import 'dart:developer' show log;
+import '../diagnostics/app_log.dart';
 
 import '../chess/fen.dart';
 import '../chess/piece.dart';
@@ -196,10 +196,10 @@ class VariantPositionProjector {
         parseFen(fen);
       } catch (error) {
         issues.add(VariantProjectionIssue.unsupportedProjection);
-        log(
+        AppLog.current.warning(
           'VariantPositionProjector: FEN projection rejected by parseFen — '
           'marking projection unsupported',
-          name: 'variant-projection',
+          tag: 'variant-projection',
           error: error,
         );
         continue;

@@ -7,7 +7,8 @@
 /// wrapper must live in its own file (storage layer) — never imported here.
 library;
 
-import 'dart:developer' show log;
+import '../diagnostics/app_log.dart';
+
 import 'dart:math' show Random;
 
 import 'package:http/http.dart' as http;
@@ -227,6 +228,12 @@ class AgentConfig {
   /// Max concurrent turns for this agent (arena scheduler hint, >= 1).
   final int concurrencyLimit;
 
+  /// Stockfish playing strength (UCI_Elo, 400..3600). Only meaningful when
+  /// [providerId] is [ProviderId.stockfish]; gameplay resolves it through
+  /// the per-turn Stockfish move picker (which needs the live FEN), never
+  /// through [createProvider].
+  final int stockfishElo;
+
   /// Creates an agent config.
   const AgentConfig({
     required this.id,
@@ -244,6 +251,7 @@ class AgentConfig {
     this.customInstructions = '',
     this.reasoningEffort,
     this.concurrencyLimit = 1,
+    this.stockfishElo = 1500,
   });
 
   /// Per-attempt timeout as a [Duration].
@@ -279,6 +287,9 @@ class AgentConfig {
     if (concurrencyLimit < 1) {
       problems.add('concurrencyLimit must be >= 1.');
     }
+    if (stockfishElo < 400 || stockfishElo > 3600) {
+      problems.add('stockfishElo must be within 400..3600.');
+    }
     if (baseUrl != null) {
       for (final problem in validateBaseUrl(baseUrl)) {
         problems.add(problem);
@@ -289,22 +300,23 @@ class AgentConfig {
 
   /// Serializes to JSON.
   Map<String, Object?> toJson() => {
-        'id': id,
-        'name': name,
-        'providerId': providerId.name,
-        'model': model,
-        if (baseUrl != null) 'baseUrl': baseUrl,
-        if (apiKeyRef != null) 'apiKeyRef': apiKeyRef,
-        'temperature': temperature,
-        'maxTokens': maxTokens,
-        'timeoutMs': timeoutMs,
-        'retry': retry.toJson(),
-        'fallback': fallback.toJson(),
-        'systemPrompt': systemPrompt,
-        'customInstructions': customInstructions,
-        if (reasoningEffort != null) 'reasoningEffort': reasoningEffort,
-        'concurrencyLimit': concurrencyLimit,
-      };
+    'id': id,
+    'name': name,
+    'providerId': providerId.name,
+    'model': model,
+    if (baseUrl != null) 'baseUrl': baseUrl,
+    if (apiKeyRef != null) 'apiKeyRef': apiKeyRef,
+    'temperature': temperature,
+    'maxTokens': maxTokens,
+    'timeoutMs': timeoutMs,
+    'retry': retry.toJson(),
+    'fallback': fallback.toJson(),
+    'systemPrompt': systemPrompt,
+    'customInstructions': customInstructions,
+    if (reasoningEffort != null) 'reasoningEffort': reasoningEffort,
+    'concurrencyLimit': concurrencyLimit,
+    'stockfishElo': stockfishElo,
+  };
 
   /// Parses from JSON; unknown [ProviderId] names fall back to
   /// [ProviderId.mock] so stored configs stay loadable. Missing scalar keys
@@ -348,6 +360,7 @@ class AgentConfig {
           ? json['reasoningEffort'] as String
           : null,
       concurrencyLimit: asInt(json['concurrencyLimit'], 1),
+      stockfishElo: asInt(json['stockfishElo'], 1500),
     );
   }
 
@@ -368,6 +381,7 @@ class AgentConfig {
     String? customInstructions,
     String? reasoningEffort,
     int? concurrencyLimit,
+    int? stockfishElo,
   }) {
     return AgentConfig(
       id: id ?? this.id,
@@ -385,6 +399,7 @@ class AgentConfig {
       customInstructions: customInstructions ?? this.customInstructions,
       reasoningEffort: reasoningEffort ?? this.reasoningEffort,
       concurrencyLimit: concurrencyLimit ?? this.concurrencyLimit,
+      stockfishElo: stockfishElo ?? this.stockfishElo,
     );
   }
 }
@@ -396,6 +411,7 @@ const Map<ProviderId, String> defaultBaseUrls = {
   ProviderId.gemini: 'https://generativelanguage.googleapis.com',
   ProviderId.ollama: ollamaDefaultBaseUrl,
   ProviderId.mock: '',
+  ProviderId.stockfish: '',
 };
 
 /// Materializes the [LlmProvider] for [config].
@@ -451,6 +467,14 @@ LlmProvider createProvider(
       );
     case ProviderId.mock:
       return MockProvider(model: config.model);
+    case ProviderId.stockfish:
+      // Stockfish needs the live FEN, which [AgentRequest] does not carry.
+      // Gameplay must go through the per-turn `stockfishMoveProvider(fen,
+      // legalUcis, elo:)` factory instead of materializing a provider here.
+      throw UnsupportedError(
+        'Stockfish configs cannot be materialized with createProvider; '
+        'use stockfishMoveProvider with the live position.',
+      );
   }
 }
 
@@ -564,10 +588,10 @@ Future<String> resolveApiKey(
     if (onReadError != null) {
       onReadError(ref, error, stackTrace);
     } else {
-      log(
+      AppLog.current.warning(
         'resolveApiKey: secure-store read failed for ref "$ref" — '
         'treating the agent as keyless (no API key)',
-        name: 'resolveApiKey',
+        tag: 'resolveApiKey',
         error: error,
         stackTrace: stackTrace,
       );

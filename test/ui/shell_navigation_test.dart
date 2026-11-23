@@ -1,7 +1,7 @@
-// Widget tests for AppShell navigation (§6.1).
+﻿// Widget tests for AppShell navigation (§6.1).
 //
 // Covers the responsive navigation surface: NavigationRail (wide),
-// BottomNavigationBar + "More" sheet (narrow), home-card routes,
+// BottomNavigationBar + "More" sheet (narrow), destination switching,
 // state preservation across switches, resize safety, rapid switching,
 // and semantics isolation for hidden IndexedStack tabs.
 //
@@ -93,19 +93,16 @@ Future<void> _tapRailLabel(WidgetTester tester, String label) async {
 void main() {
   group('§6.1 Wide layout: NavigationRail', () {
     testWidgets(
-        'rail destinations navigate to every tab (indices 1-7)', (tester) async {
-      // Navigate from Home (index 0) to all 7 other destinations.
+        'rail destinations navigate to every tab (indices 0-4)', (tester) async {
+      // The shell boots on Game (index 0); visit every other destination.
       await _pumpNavApp(tester);
 
-      expect(find.textContaining('LLM Chess Arena'), findsOneWidget);
+      expect(find.text('Game'), findsWidgets);
 
       final destinations = <String>[
-        'Play',
-        'Watch',
         'Arena',
         'Stats',
         'Review',
-        'Agents',
         'Settings',
       ];
 
@@ -119,50 +116,49 @@ void main() {
     });
 
     testWidgets(
-        'NavigationRail renders with exactly 8 destinations', (tester) async {
+        'NavigationRail renders with exactly 5 destinations', (tester) async {
       await _pumpNavApp(tester);
 
-      // The rail has 8 item slots regardless of whether they render as a
+      // The rail has 6 item slots regardless of whether they render as a
       // distinct widget type in the current Flutter version — assert via
       // the number of clickable text labels inside the rail container.
       final railContainer = find.byType(NavigationRail);
       expect(railContainer, findsOneWidget);
       final rail = tester.widget<NavigationRail>(railContainer);
-      expect(rail.destinations.length, 8);
+      expect(rail.destinations.length, 5);
     });
 
     testWidgets(
-        'tab state survives a switch away-and-back (Home → Play → Home → Play)',
+        'tab state survives a switch away-and-back (Game → Arena → Game)',
         (tester) async {
       await _pumpNavApp(tester);
 
-      await _tapRailLabel(tester, 'Play');
+      await _tapRailLabel(tester, 'Arena');
       await _drift(tester);
 
-      await _tapRailLabel(tester, 'Home');
+      await _tapRailLabel(tester, 'Game');
       await _drift(tester);
 
-      await _tapRailLabel(tester, 'Play');
+      await _tapRailLabel(tester, 'Arena');
       await _drift(tester);
 
-      // IndexedStack keeps Play mounted; no exception thrown.
+      await _tapRailLabel(tester, 'Game');
+      await _drift(tester);
+
       expect(tester.takeException(), isNull);
     });
 
     testWidgets(
-        'all 8 destinations render without overflow or exception',
+        'all 5 destinations render without overflow or exception',
         (tester) async {
       await _pumpNavApp(tester);
 
       final keys = <String>[
-        'Play',
-        'Watch',
+        'Game',
         'Arena',
         'Stats',
         'Review',
-        'Agents',
         'Settings',
-        'Home',
       ];
 
       for (final key in keys) {
@@ -173,16 +169,13 @@ void main() {
     });
 
     testWidgets(
-        'home-card taps open the corresponding rail destination via _openRoute',
-        (tester) async {
-      // Tapping the "Play" card on Home uses _openRoute → setState(index=1),
-      // NOT Navigator.push, so there is only one Screen instance.
+        'rail tap opens the corresponding destination directly', (tester) async {
       await _pumpNavApp(tester);
 
-      await tester.tap(find.text('Play').first);
+      await tester.tap(find.text('Arena').first);
       await tester.pump();
 
-      expect(find.text('Play'), findsWidgets);
+      expect(find.text('Arena'), findsWidgets);
       expect(tester.takeException(), isNull);
     });
   });
@@ -206,7 +199,7 @@ void main() {
     });
 
     testWidgets(
-        '"More" sheet lists Stats/Review/Agents/Settings and selects on tap',
+        '"More" sheet lists Settings and selects on tap',
         (tester) async {
       await _pumpNavApp(tester, size: const Size(500, 800));
 
@@ -216,16 +209,17 @@ void main() {
 
       // Modal sheet should display. Check for ListTile items inside.
       // In Material 3 the sheet may use different barrier types; the
-      // reliable indicator is the list tiles themselves.
-      final reviewTiles = find.descendant(
+      // reliable indicator is the list tiles themselves. (The bottom bar
+      // holds Game/Arena/Stats/Review, so the sheet holds Settings.)
+      final settingsTiles = find.descendant(
         of: find.byType(ListView),
-        matching: find.text('Review'),
+        matching: find.text('Settings'),
       );
-      expect(reviewTiles, findsWidgets);
+      expect(settingsTiles, findsWidgets);
 
-      // Tap "Review" inside the sheet — use warnIfMissed=false because the
+      // Tap "Settings" inside the sheet — use warnIfMissed=false because the
       // bottom-sheet overlay may render text outside the test surface bounds.
-      await tester.tap(reviewTiles.first, warnIfMissed: false);
+      await tester.tap(settingsTiles.first, warnIfMissed: false);
       await tester.pump();
 
       // Sheet dismisses (Navigator.pop inside onTap).
@@ -254,26 +248,21 @@ void main() {
     testWidgets(
         'narrow layout renders all destinations without crashing',
         (tester) async {
-      // Use a generous enough width for dropdown selectors on Watch/Arena.
+      // Use a generous enough width for dropdown selectors on Game/Arena.
       await _pumpNavApp(tester, size: const Size(680, 800));
 
-      // In narrow mode we use home-card taps to switch destinations.
+      // In narrow mode use the bottom bar + More sheet to switch.
       final targets = <String>[
-        'Play',
-        'Watch',
+        'Game',
         'Arena',
         'Stats',
         'Review',
-        'Agents',
-        'Settings',
       ];
 
       for (final target in targets) {
-        // Only tap if the card text is found (some screens may not show cards
-        // after initial load if content is cached differently).
-        final cardFinder = find.text(target);
-        if (cardFinder.evaluate().isNotEmpty) {
-          await tester.tap(cardFinder.first);
+        final dest = find.widgetWithText(NavigationDestination, target);
+        if (dest.evaluate().isNotEmpty) {
+          await tester.tap(dest);
           await tester.pump();
         }
         // Capture any exceptions during build/layout.
@@ -288,22 +277,19 @@ void main() {
 
   group('§6.1 State preservation & lifecycle', () {
     testWidgets(
-        'IndexedStack preserves mounted state across many tab switches',
+        'single mounted tab preserves state across many tab switches',
         (tester) async {
       await _pumpNavApp(tester);
 
       final path = <String>[
-        'Play',
-        'Watch',
+        'Game',
         'Arena',
         'Stats',
         'Review',
-        'Agents',
         'Settings',
-        'Home',
-        'Play',
-        'Home',
-        'Play',
+        'Game',
+        'Arena',
+        'Game',
       ];
 
       for (final dest in path) {
@@ -323,15 +309,14 @@ void main() {
       expect(find.byType(NavigationBar), findsOneWidget);
       expect(find.byType(NavigationRail), findsNothing);
 
-      // Switch to Play.
-      await tester.tap(find.text('Play').first);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 200));
+      // The game tab is mounted by default.
+      await tester.pump(const Duration(milliseconds: 350));
 
       // Resize to wide (>= 700).
       tester.view.physicalSize = const Size(700, 800);
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pump();
       expect(find.byType(NavigationRail), findsOneWidget);
       expect(find.byType(NavigationBar), findsNothing);
       expect(tester.takeException(), isNull);
@@ -344,6 +329,8 @@ void main() {
       // Back to narrow.
       tester.view.physicalSize = const Size(699, 800);
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pump();
       expect(find.byType(NavigationBar), findsOneWidget);
       expect(find.byType(NavigationRail), findsNothing);
       expect(tester.takeException(), isNull);
@@ -355,17 +342,14 @@ void main() {
       await _pumpNavApp(tester);
 
       final names = <String>[
-        'Play',
-        'Watch',
+        'Game',
         'Arena',
         'Stats',
         'Review',
-        'Agents',
         'Settings',
-        'Home',
       ];
 
-      // Cycle 20 times through the 8 destinations.
+      // Cycle 20 times through the 5 destinations.
       for (var round = 0; round < 20; round++) {
         for (final name in names) {
           await _tapRailLabel(tester, name);
@@ -382,41 +366,23 @@ void main() {
   // ----------------------------------------------------------------------
 
   group('§6.1 Semantics isolation for hidden tabs', () {
-    testWidgets('hidden tabs contribute zero square-label semantics nodes',
+    testWidgets('only the mounted tab contributes square semantics nodes',
         (tester) async {
       final handle = tester.ensureSemantics();
       try {
         await _pumpNavApp(tester);
 
-        // While on Home, no board squares should appear (Home has no chessboard).
-        final homeBefore = semantics.captureSemantics(tester);
-        final homeSquareCount = homeBefore.nodes.where((node) {
-          final data = node.getSemanticsData();
-          return data.label.contains('square');
-        }).length;
-        expect(homeSquareCount, 0,
-            reason: 'Home tab should have zero square semantics nodes');
-
-        // Switch to Play.
-        await _tapRailLabel(tester, 'Play');
-        await tester.pump();
-
-        // Play contains a Chessboard whose squaresOf() returns only
-        // occupied squares (~32 from Position.initial()). At minimum
-        // we verify that square nodes now exist (i.e. they're absent on
-        // Home and present on Play). We do not assert exactly 64 because
-        // the board only creates semantics nodes for entries in its
-        // `squares` map (not placeholder-empty squares).
-        final playNodes = semantics.captureSemantics(tester);
-        int playSquareCount = 0;
-        for (final node in playNodes.nodes) {
+        // The shell boots on Game, which hosts a chessboard.
+        final gameNodes = semantics.captureSemantics(tester);
+        var gameSquareCount = 0;
+        for (final node in gameNodes.nodes) {
           final data = node.getSemanticsData();
           if (data.label.contains('square')) {
-            playSquareCount++;
+            gameSquareCount++;
           }
         }
-        expect(playSquareCount, greaterThan(0),
-            reason: 'Play tab must expose square semantics nodes');
+        expect(gameSquareCount, greaterThan(0),
+            reason: 'Game tab must expose square semantics nodes');
         expect(tester.takeException(), isNull);
       } finally {
         handle.dispose();
@@ -431,7 +397,7 @@ void main() {
 
         semantics.expectSemanticsTreeInvariants(tester);
 
-        await _tapRailLabel(tester, 'Play');
+        await _tapRailLabel(tester, 'Arena');
         await tester.pump();
         semantics.expectSemanticsTreeInvariants(tester);
 
@@ -443,7 +409,7 @@ void main() {
         await tester.pump();
         semantics.expectSemanticsTreeInvariants(tester);
 
-        await _tapRailLabel(tester, 'Play');
+        await _tapRailLabel(tester, 'Game');
         await tester.pump();
         semantics.expectSemanticsTreeInvariants(tester);
 
@@ -458,22 +424,22 @@ void main() {
         (tester) async {
       await _pumpNavApp(tester);
 
-      await _tapRailLabel(tester, 'Play');
+      await _tapRailLabel(tester, 'Game');
       await tester.pump();
       final cap1 = semantics.captureSemantics(tester);
       final pm1 = semantics.parentMap(cap1);
 
-      await _tapRailLabel(tester, 'Watch');
+      await _tapRailLabel(tester, 'Arena');
       await tester.pump();
       final cap2 = semantics.captureSemantics(tester);
       final pm2 = semantics.parentMap(cap2);
 
-      await _tapRailLabel(tester, 'Arena');
+      await _tapRailLabel(tester, 'Stats');
       await tester.pump();
       final cap3 = semantics.captureSemantics(tester);
       final pm3 = semantics.parentMap(cap3);
 
-      await _tapRailLabel(tester, 'Home');
+      await _tapRailLabel(tester, 'Game');
       await tester.pump();
       final cap4 = semantics.captureSemantics(tester);
       final pm4 = semantics.parentMap(cap4);
@@ -484,26 +450,18 @@ void main() {
     });
 
     testWidgets(
-        'hidden-tab rule: Home→Play→Stats→Play toggles square count 0→positive→0→positive',
+        'hidden-tab rule: Game→Stats→Game toggles square count positive→0→positive',
         (tester) async {
       final handle = tester.ensureSemantics();
       try {
         await _pumpNavApp(tester);
 
-        // Home: 0 squares.
+        // Game: positive squares (occupied-square count from initial position).
         var count = semantics.captureSemantics(tester).nodes.where((n) {
           return n.getSemanticsData().label.contains('square');
         }).length;
-        expect(count, 0);
-
-        // Play: positive squares (occupied-square count from initial position).
-        await _tapRailLabel(tester, 'Play');
-        await tester.pump();
-        count = semantics.captureSemantics(tester).nodes.where((n) {
-          return n.getSemanticsData().label.contains('square');
-        }).length;
         expect(count, greaterThan(0),
-            reason: 'Play must have square nodes while mounted');
+            reason: 'Game must have square nodes while mounted');
 
         // Stats: 0 squares (no board).
         await _tapRailLabel(tester, 'Stats');
@@ -513,8 +471,8 @@ void main() {
         }).length;
         expect(count, 0);
 
-        // Play again: squares reappear.
-        await _tapRailLabel(tester, 'Play');
+        // Game again: squares reappear.
+        await _tapRailLabel(tester, 'Game');
         await tester.pump();
         count = semantics.captureSemantics(tester).nodes.where((n) {
           return n.getSemanticsData().label.contains('square');

@@ -177,7 +177,7 @@ QualityAssessment classify({
     return QualityAssessment(
       quality: MoveQuality.superBrilliant,
       lossCp: _loss(beforeCp, afterCp, moverIsWhite),
-      rationale: 'Decisive king capture (or forced enabler) — '
+      rationale: 'Decisive king capture (or forced enabler) â€” '
           'the game-winning mechanic.',
       beforeCp: beforeCp,
       afterCp: afterCp,
@@ -272,6 +272,35 @@ QualityAssessment classify({
     beforeCp: beforeCp,
     afterCp: afterCp,
   );
+}
+
+/// Human-readable display name for a [MoveQuality] tier.
+///
+/// Unlike [MoveQuality.name] (Dart identifier: `superBlunder`), this is the
+/// chess.com-style label shown in the UI and summaries: `Super Blunder`.
+String qualityDisplayName(MoveQuality quality) {
+  switch (quality) {
+    case MoveQuality.unsupported:
+      return 'Unsupported';
+    case MoveQuality.superBrilliant:
+      return 'Super Brilliant';
+    case MoveQuality.brilliant:
+      return 'Brilliant';
+    case MoveQuality.best:
+      return 'Best';
+    case MoveQuality.excellent:
+      return 'Excellent';
+    case MoveQuality.good:
+      return 'Good';
+    case MoveQuality.inaccuracy:
+      return 'Inaccuracy';
+    case MoveQuality.mistake:
+      return 'Mistake';
+    case MoveQuality.blunder:
+      return 'Blunder';
+    case MoveQuality.superBlunder:
+      return 'Super Blunder';
+  }
 }
 
 /// Mover-relative loss, or null when either score is missing.

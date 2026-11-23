@@ -133,7 +133,7 @@ void main() {
       markTestSkipped('stockfish binary not present at $binary');
       return;
     }
-    await _stockfish(binary);
+    await _stockfish(File(binary).absolute.path);
   }, skip: hostEngineBinary == null || !File(hostEngineBinary!).existsSync());
 
   test('wintr review report', () async {

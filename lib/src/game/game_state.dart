@@ -3,6 +3,8 @@
 ///
 /// Pure Dart. Snapshots are JSON-serializable by design so the storage layer
 /// can persist/resume games without touching engine objects.
+/// Talks to: `agent/agent_config.dart` (participant seats), `clock.dart`; snapshots consumed by `storage/` as JSON.
+/// Never imports: `package:flutter`, `ui/`, `chess/`+`variant/` engines, `llm/`, `arena/` — data model only.
 library;
 
 import '../agent/agent_config.dart';

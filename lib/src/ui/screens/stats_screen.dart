@@ -15,7 +15,8 @@
 ///   marks the review screen derives from real quality classifications
 ///   (empty until a review runs, with an honest inline empty state).
 ///
-/// A [ListenableBuilder] over [StatsLog.changes] + [QualityLog.changes]
+/// A [ListenableBuilder] over the `statsLogListenable` + `qualityLogListenable`
+/// adapters (see `ui/providers/backend_providers.dart`)
 /// re-renders when a game flushes or a review finishes. Agent/mode
 /// dropdowns filter the turn rows and the metrics table; game-count
 /// aggregates live in the metrics table. The grid is responsive
@@ -83,13 +84,13 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
     );
     String nameOf(String id) => names[id] ?? id;
     // Per-scope stores (§13 telemetry isolation); read once per build so the
-    // ListenableBuilder below subscribes to their change notifiers.
+    // ListenableBuilder below subscribes to their change adapters.
     final statsLog = ref.read(statsLogProvider);
     final qualityLog = ref.read(qualityLogProvider);
     return ListenableBuilder(
       listenable: Listenable.merge(<Listenable>[
-        statsLog.changes,
-        qualityLog.changes,
+        statsLogListenable(statsLog),
+        qualityLogListenable(qualityLog),
       ]),
       builder: (context, _) {
         final all = statsLog.store.listAll();
@@ -129,36 +130,41 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                     final w = constraints.maxWidth.isFinite
                         ? constraints.maxWidth
                         : 800;
-                    final cols = w >= 700 ? 2 : 1;
-                    return GridView.count(
-                      crossAxisCount: cols,
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
-                      childAspectRatio: 1.15,
-                      children: <Widget>[
-                        _chartCard(
-                          'Outcomes',
-                          _outcomeNote,
-                          _buildOutcomePie(results),
-                        ),
-                        _chartCard(
-                          'Error categories',
-                          _errorNote,
-                          _buildErrorBar(turns, nameOf),
-                        ),
-                        _chartCard(
-                          'Latency histogram (ms)',
-                          _latencyNote,
-                          _buildLatencyBar(latencies),
-                        ),
-                        _chartCard(
-                          'Quality distribution',
-                          _qualityNote,
-                          _buildQualityBar(marks),
-                        ),
-                      ],
+                    final targetCols = w >= 700 ? 2 : 1;
+                    return DebouncedBreakpoint<int>(
+                      target: targetCols,
+                      builder: (context, cols) {
+                        return GridView.count(
+                          crossAxisCount: cols,
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          mainAxisSpacing: 12,
+                          crossAxisSpacing: 12,
+                          mainAxisExtent: 280,
+                          children: <Widget>[
+                            _chartCard(
+                              'Outcomes',
+                              _outcomeNote,
+                              _buildOutcomePie(results),
+                            ),
+                            _chartCard(
+                              'Error categories',
+                              _errorNote,
+                              _buildErrorBar(turns, nameOf),
+                            ),
+                            _chartCard(
+                              'Latency histogram (ms)',
+                              _latencyNote,
+                              _buildLatencyBar(latencies),
+                            ),
+                            _chartCard(
+                              'Quality distribution',
+                              _qualityNote,
+                              _buildQualityBar(marks),
+                            ),
+                          ],
+                        );
+                      },
                     );
                   },
                 ),
@@ -293,49 +299,75 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                 style: theme.textTheme.bodySmall,
               )
             else
+              // Plain [Table] (not [DataTable]): shared column widths for
+              // the header and every row align by construction. (DataTable
+              // right-aligns numeric cells but not their headers, which
+              // rendered every value shifted right of its header.)
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
-                child: DataTable(
-                  headingTextStyle: theme.textTheme.labelSmall,
-                  dataTextStyle: theme.textTheme.bodySmall,
-                  columns: const <DataColumn>[
-                    DataColumn(label: Text('Agent')),
-                    DataColumn(label: Text('Turns'), numeric: true),
-                    DataColumn(label: Text('Legal'), numeric: true),
-                    DataColumn(label: Text('Fallback'), numeric: true),
-                    DataColumn(label: Text('Avg ms'), numeric: true),
-                    DataColumn(label: Text('p95 ms'), numeric: true),
-                    DataColumn(label: Text('W-L-D'), numeric: true),
-                    DataColumn(label: Text('Est. cost')),
-                  ],
-                  rows: <DataRow>[
+                child: Table(
+                  defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+                  border: TableBorder(
+                    horizontalInside: BorderSide(
+                      color: theme.dividerColor,
+                      width: 1,
+                    ),
+                  ),
+                  columnWidths: const <int, TableColumnWidth>{
+                    0: IntrinsicColumnWidth(),
+                    1: FixedColumnWidth(48),
+                    2: FixedColumnWidth(56),
+                    3: FixedColumnWidth(64),
+                    4: FixedColumnWidth(64),
+                    5: FixedColumnWidth(64),
+                    6: FixedColumnWidth(68),
+                    7: FixedColumnWidth(76),
+                  },
+                  children: <TableRow>[
+                    TableRow(
+                      children: <Widget>[
+                        _metricsHeaderCell(theme, 'Agent', TextAlign.left),
+                        _metricsHeaderCell(theme, 'Turns', TextAlign.right),
+                        _metricsHeaderCell(theme, 'Legal', TextAlign.right),
+                        _metricsHeaderCell(theme, 'Fallback', TextAlign.right),
+                        _metricsHeaderCell(theme, 'Avg ms', TextAlign.right),
+                        _metricsHeaderCell(theme, 'p95 ms', TextAlign.right),
+                        _metricsHeaderCell(theme, 'W-L-D', TextAlign.right),
+                        _metricsHeaderCell(theme, 'Est. cost', TextAlign.left),
+                      ],
+                    ),
                     for (final row in rows)
-                      DataRow(
-                        cells: <DataCell>[
-                          DataCell(Text(nameOf(row.key))),
-                          DataCell(Text('${row.value.turns}')),
-                          DataCell(
-                            Text(_percent(row.value.legalRate)),
+                      TableRow(
+                        children: <Widget>[
+                          _metricsCell(theme, nameOf(row.key), TextAlign.left),
+                          _metricsNumericCell(theme, '${row.value.turns}'),
+                          _metricsNumericCell(
+                            theme,
+                            _percent(row.value.legalRate),
                           ),
-                          DataCell(
-                            Text(_percent(row.value.fallbackRate)),
+                          _metricsNumericCell(
+                            theme,
+                            _percent(row.value.fallbackRate),
                           ),
-                          DataCell(
-                            Text(row.value.avgLatencyMs.toStringAsFixed(0)),
+                          _metricsNumericCell(
+                            theme,
+                            row.value.avgLatencyMs.toStringAsFixed(0),
                           ),
-                          DataCell(Text(row.value.p95.toStringAsFixed(0))),
-                          DataCell(
-                            Text(
-                              '${row.value.wins}-${row.value.losses}-'
-                              '${row.value.draws}',
-                            ),
+                          _metricsNumericCell(
+                            theme,
+                            row.value.p95.toStringAsFixed(0),
                           ),
-                          DataCell(
-                            Text(
-                              row.value.pricingKnown
-                                  ? '\$${row.value.estCostUsd.toStringAsFixed(4)}'
-                                  : 'n/a',
-                            ),
+                          _metricsNumericCell(
+                            theme,
+                            '${row.value.wins}-${row.value.losses}-'
+                            '${row.value.draws}',
+                          ),
+                          _metricsCell(
+                            theme,
+                            row.value.pricingKnown
+                                ? '\$${row.value.estCostUsd.toStringAsFixed(4)}'
+                                : 'n/a',
+                            TextAlign.left,
                           ),
                         ],
                       ),
@@ -360,6 +392,37 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
   /// `0.42` → `42%`.
   String _percent(double rate) => '${(rate * 100).toStringAsFixed(0)}%';
 
+  /// Header cell for the metrics table; same padding/align contract as
+  /// [_metricsCell] so headers sit exactly over their values.
+  Widget _metricsHeaderCell(ThemeData theme, String label, TextAlign align) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: Text(label, textAlign: align, style: theme.textTheme.labelSmall),
+    );
+  }
+
+  /// Body cell for the metrics table.
+  Widget _metricsCell(ThemeData theme, String value, TextAlign align) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: Text(value, textAlign: align, style: theme.textTheme.bodySmall),
+    );
+  }
+
+  /// Right-aligned numeric body cell with tabular figures so digits line up.
+  Widget _metricsNumericCell(ThemeData theme, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: Text(
+        value,
+        textAlign: TextAlign.right,
+        style: theme.textTheme.bodySmall?.copyWith(
+          fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+        ),
+      ),
+    );
+  }
+
   /// Card wrapper: title + chart + tap-to-inspect note.
   Widget _chartCard(String title, String note, Widget chart) {
     final theme = Theme.of(context);
@@ -370,14 +433,18 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Text(title, style: theme.textTheme.titleSmall),
-            Expanded(
+            SizedBox(
+              height: 200,
               child: Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: chart,
               ),
             ),
+            const SizedBox(height: 6),
             Text(
               note,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: theme.textTheme.labelSmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -406,7 +473,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
         value: wins.toDouble(),
         title: 'W $wins',
         color: cs.primary,
-        radius: 56,
+        radius: 40,
         titleStyle: TextStyle(
           color: cs.onPrimary,
           fontWeight: FontWeight.w700,
@@ -416,7 +483,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
         value: draws.toDouble(),
         title: 'D $draws',
         color: cs.outline,
-        radius: 56,
+        radius: 40,
         titleStyle: TextStyle(
           color: cs.surface,
           fontWeight: FontWeight.w700,
@@ -426,7 +493,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
         value: losses.toDouble(),
         title: 'L $losses',
         color: cs.error,
-        radius: 56,
+        radius: 40,
         titleStyle: TextStyle(
           color: cs.onError,
           fontWeight: FontWeight.w700,
@@ -436,7 +503,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
     return PieChart(
       PieChartData(
         sectionsSpace: 2,
-        centerSpaceRadius: 30,
+        centerSpaceRadius: 24,
         sections: sections,
         pieTouchData: PieTouchData(
           enabled: true,
@@ -506,7 +573,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
               showTitles: true,
               // Wide enough for three-digit counts (e.g. `124`); the
               // default 28px reserve wraps such labels onto two lines.
-              reservedSize: 40,
+              reservedSize: 32,
               // Explicit label interval: without it fl_chart picks its
               // own step (e.g. 10) AND draws a separate maxY label, which
               // renders as overlapping text at the top of the axis.
@@ -536,7 +603,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                 BarChartRodData(
                   toY: values[i],
                   color: colorFor(i),
-                  width: 22,
+                  width: 16,
                   borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(4),
                   ),

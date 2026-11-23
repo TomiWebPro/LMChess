@@ -4,6 +4,8 @@
 /// generated up-front from [TournamentConfig] by `scheduler.dart`. The
 /// scheduler then executes them with bounded concurrency and updates each
 /// [TournamentGameRef] in place. This file holds data only — no execution.
+/// Talks to: `scheduler.dart` (pairing target), `stats/event_log.dart` (export events); JSON round-trip via `storage/`.
+/// Never imports: `package:flutter`, `ui/`, `game/`, `llm/`, `chess/`+`variant/` engines, `storage/local_store`.
 library;
 
 /// Lifecycle status of a single scheduled tournament game.

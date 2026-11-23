@@ -1,4 +1,4 @@
-/// [ReviewScreen]: post-game analysis over real review records.
+﻿/// [ReviewScreen]: post-game analysis over real review records.
 ///
 /// Games come from [ReviewLog] (written by play/watch and standard arena
 /// games); a picker selects among the latest 20, and the screen re-runs
@@ -39,7 +39,6 @@ import '../../review/wintr_review.dart';
 import '../../theme/registry.dart';
 import '../backend_bridge.dart';
 import '../widgets/activity_panel.dart' show redactSecrets;
-import '../widgets/board_motion.dart';
 import '../widgets/boards.dart';
 import '../widgets/chessboard.dart';
 import '../widgets/scrub_shortcuts.dart';
@@ -113,7 +112,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
     _reviewLog = ref.read(reviewLogProvider);
     _variantReviewLog = ref.read(variantReviewLogProvider);
     _qualityLog = ref.read(qualityLogProvider);
-    _reviewLog.changes.addListener(_onLogChanged);
+    _reviewLog.addListener(_onLogChanged);
     // Selection and the review run are deferred to [didChangeDependencies]:
     // the shell builds every tab eagerly inside its IndexedStack, and this
     // screen must not spawn Stockfish while its tab is hidden.
@@ -134,7 +133,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
   @override
   void dispose() {
     _runToken++;
-    _reviewLog.changes.removeListener(_onLogChanged);
+    _reviewLog.removeListener(_onLogChanged);
     final handle = _handle;
     _handle = null;
     if (handle != null) unawaited(handle.dispose());
@@ -339,54 +338,141 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
         if (r == null) return;
         _onScrubAction(action, game, r);
       },
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            _buildHeader(games, game),
-            const SizedBox(height: 8),
-            _buildSourceBanner(),
-            const SizedBox(height: 12),
-            if (_loading)
-              _buildLoading(game)
-            else if (_error != null)
-              _buildError()
-            else if (report != null) ...<Widget>[
-              _buildReplaySlider(game, report),
-              const SizedBox(height: 8),
-              KeyedSubtree(
-                key: const ValueKey<String>('review-quality-row'),
-                child: _buildQualityRow(game, report),
-              ),
-              const SizedBox(height: 12),
-              _buildEvalGraph(report),
-              const SizedBox(height: 12),
-              KeyedSubtree(
-                key: const ValueKey<String>('review-before-after'),
-                child: _buildBeforeAfter(game),
-              ),
-              const SizedBox(height: 12),
-              KeyedSubtree(
-                key: const ValueKey<String>('review-move-record'),
-                child: _buildMoveRecord(game, report),
-              ),
-              const SizedBox(height: 12),
-              _buildSummary(report),
-              const SizedBox(height: 12),
-              _buildMoveList(game, report),
-              const SizedBox(height: 12),
-              _buildKeyMoments(report),
-              const SizedBox(height: 12),
-              _buildVariantReplays(),
-            ] else
-              const Text('Press “Re-run review” to analyze this game.'),
-          ],
-        ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final targetWide = constraints.maxWidth.isFinite &&
+              constraints.maxWidth > ArenaBreakpoints.wide;
+          return DebouncedBreakpoint<bool>(
+            target: targetWide,
+            builder: (context, wide) {
+              if (!wide) {
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      _buildHeader(games, game),
+                      const SizedBox(height: 8),
+                      _buildSourceBanner(),
+                      const SizedBox(height: 12),
+                      if (_loading)
+                        _buildLoading(game)
+                      else if (_error != null)
+                        _buildError()
+                      else if (report != null) ...<Widget>[
+                        _buildReplaySlider(game, report),
+                        const SizedBox(height: 8),
+                        KeyedSubtree(
+                          key: const ValueKey<String>('review-quality-row'),
+                          child: _buildQualityRow(game, report),
+                        ),
+                        const SizedBox(height: 12),
+                        KeyedSubtree(
+                          key: const ValueKey<String>('review-before-after'),
+                          child: _buildBeforeAfter(game),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildEvalGraph(report, height: 140),
+                        const SizedBox(height: 12),
+                        KeyedSubtree(
+                          key: const ValueKey<String>('review-move-record'),
+                          child: _buildMoveRecord(game, report),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildSummary(report),
+                        const SizedBox(height: 12),
+                        _buildMoveList(game, report),
+                        const SizedBox(height: 12),
+                        _buildKeyMoments(report),
+                        const SizedBox(height: 12),
+                        _buildVariantReplays(),
+                      ] else
+                        const Text('Press "Re-run review" to analyze this game.'),
+                    ],
+                  ),
+                );
+              }
+              return Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    _buildHeader(games, game),
+                    const SizedBox(height: 8),
+                    _buildSourceBanner(),
+                    const SizedBox(height: 12),
+                    if (_loading)
+                      _buildLoading(game)
+                    else if (_error != null)
+                      _buildError()
+                    else if (report != null)
+                      Expanded(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            Expanded(
+                              child: SingleChildScrollView(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: <Widget>[
+                                    _buildReplaySlider(game, report),
+                                    const SizedBox(height: 8),
+                                    KeyedSubtree(
+                                      key: const ValueKey<String>(
+                                          'review-quality-row'),
+                                      child: _buildQualityRow(game, report),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    KeyedSubtree(
+                                      key: const ValueKey<String>(
+                                          'review-before-after'),
+                                      child: _buildBeforeAfter(game),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    _buildEvalGraph(report, height: 120),
+                                    const SizedBox(height: 8),
+                                    KeyedSubtree(
+                                      key: const ValueKey<String>(
+                                          'review-move-record'),
+                                      child: _buildMoveRecord(game, report),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            SizedBox(
+                              width: 400,
+                              child: SingleChildScrollView(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: <Widget>[
+                                    _buildSummary(report),
+                                    const SizedBox(height: 12),
+                                    _buildMoveList(game, report),
+                                    const SizedBox(height: 12),
+                                    _buildKeyMoments(report),
+                                    const SizedBox(height: 12),
+                                    _buildVariantReplays(),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      const Text('Press "Re-run review" to analyze this game.'),
+                  ],
+                ),
+              );
+            },
+          );
+        },
       ),
     );
   }
-
   /// Empty state when nothing has been recorded yet.
   Widget _buildEmptyState() {
     return SingleChildScrollView(
@@ -424,7 +510,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
   /// even when no standard game has been recorded.
   Widget _buildVariantReplays() {
     return ListenableBuilder(
-      listenable: _variantReviewLog.changes,
+      listenable: variantReviewLogListenable(_variantReviewLog),
       builder: (context, _) {
         final games = _variantReviewLog.games;
         if (games.isEmpty) return const SizedBox.shrink();
@@ -701,7 +787,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
   }
 
   /// Eval graph (White-relative pawns) synced to the replay cursor.
-  Widget _buildEvalGraph(ReviewReport report) {
+  Widget _buildEvalGraph(ReviewReport report, {double height = 180}) {
     final theme = Theme.of(context);
     final spots = <FlSpot>[];
     if (report.moves.isNotEmpty && report.moves.first.beforeCp != null) {
@@ -742,7 +828,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
             ),
             const SizedBox(height: 4),
             SizedBox(
-              height: 180,
+              height: height,
               child: LineChart(
                 LineChartData(
                   lineTouchData: LineTouchData(
@@ -816,18 +902,10 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
   Widget _buildBeforeAfter(ReviewGame game) {
     final theme = Theme.of(context);
     final lastIndex = math.max(0, _fens.length - 1);
-    final beforeIndex = math.max(0, math.min(_ply - 1, lastIndex));
     final afterIndex = math.max(0, math.min(_ply, lastIndex));
-    // The move that led into the current cursor position, for the caption and
-    // from/to highlights — null at the start position.
     final lastUci = _ply >= 1 && _ply - 1 < game.ucis.length
         ? game.ucis[_ply - 1]
         : null;
-    // Direction-aware motion UCI (§15.3): a forward step animates the move
-    // into the current ply (`_ply - 1`); a backward step animates its reverse,
-    // which is the move the cursor is stepping out of (`_ply`), so a step back
-    // into the start position still slides e.g. e4→e2. Multi-ply jumps keep
-    // `scrubMotionFor`'s `null` snap.
     final int? motionIndex;
     if (_scrubDelta > 0) {
       motionIndex = _ply - 1;
@@ -848,95 +926,37 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
     final pieceTheme = ref.watch(
       themeRegistryProvider.select((r) => r.pieceTheme),
     );
-    Widget board(
-      String label,
-      int index, {
-      String? lastFrom,
-      String? lastTo,
-      BoardMove? motion,
-    }) {
-      return Column(
-        children: <Widget>[
-          Text(label),
-          const SizedBox(height: 4),
-          Chessboard(
-            squares: _squaresAt(index),
-            boardTheme: boardTheme,
-            pieceTheme: pieceTheme,
-            lastFrom: lastFrom,
-            lastTo: lastTo,
-            motion: motion,
-            interactive: false,
-            showCoordinates: false,
-          ),
-        ],
-      );
-    }
-
     final bright = lastUci != null && _ply >= 1;
-    final before = board('Before (ply $beforeIndex)', beforeIndex);
-    final after = board(
-      'After (ply $afterIndex)',
-      afterIndex,
-      lastFrom: bright ? lastUci.substring(0, 2) : null,
-      lastTo: bright ? lastUci.substring(2, 4) : null,
-      // Animates one-ply scrubs only: the direction-aware helper slides the
-      // final transition forward or slides it back on a backward step, and
-      // snaps on multi-ply jumps (§15.3.5 large-jump rule). The board derives
-      // capture/en-passant/castle from its before→after snapshot diff, so
-      // the bare from/to UCI pair is a complete motion value.
-      motion: scrubMotionFor(motionUci, _scrubDelta),
-    );
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final width = constraints.maxWidth.isFinite
-                    ? constraints.maxWidth
-                    : 800.0;
-                if (layoutModeFor(width) == ArenaLayoutMode.narrow) {
-                  // Stack on narrow phones so two boards cannot overflow.
-                  return Column(
-                    children: <Widget>[
-                      before,
-                      const SizedBox(height: 12),
-                      after,
-                    ],
-                  );
-                }
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Expanded(child: before),
-                    const SizedBox(width: 12),
-                    Expanded(child: after),
-                  ],
-                );
-              },
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: AspectRatio(
+                  aspectRatio: 1,
+                  child: Chessboard(
+                    squares: _squaresAt(afterIndex),
+                    boardTheme: boardTheme,
+                    pieceTheme: pieceTheme,
+                    lastFrom: bright ? lastUci.substring(0, 2) : null,
+                    lastTo: bright ? lastUci.substring(2, 4) : null,
+                    motion: scrubMotionFor(motionUci, _scrubDelta),
+                    interactive: false,
+                    showCoordinates: true,
+                  ),
+                ),
+              ),
             ),
             if (bright) ...<Widget>[
               const SizedBox(height: 4),
               Text(
-                'Last move: $lastUci${_fallbackAt(game, _ply - 1) ? ' '
-                          '(seeded fallback, unattributed)' : ''}',
+                'Last move: $lastUci',
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-            if (_fens.length < game.ucis.length + 1) ...<Widget>[
-              const SizedBox(height: 4),
-              Text(
-                'Record has ${_fens.length} position snapshot'
-                '${_fens.length == 1 ? '' : 's'} for '
-                '${game.ucis.length} plies — some plies cannot be '
-                'displayed.',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.error,
                 ),
               ),
             ],
@@ -945,13 +965,6 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
       ),
     );
   }
-
-  /// Convenience wrapper over [redactSecrets] (kept local to the card)…
-  bool _fallbackAt(ReviewGame game, int index) =>
-      index >= 0 &&
-      index < game.fallbackFlags.length &&
-      game.fallbackFlags[index];
-
   /// Board squares for FEN-history [index] (FEN or variant JSON payload).
   Map<String, String> _squaresAt(int index) {
     if (_fens.isEmpty) return const <String, String>{};

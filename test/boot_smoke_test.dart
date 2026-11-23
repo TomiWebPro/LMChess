@@ -15,7 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:llm_chess_arena/src/app.dart';
 
 void main() {
-  testWidgets('app boots to the home shell with demo agents', (
+  testWidgets('app boots to the game shell with demo agents', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -23,30 +23,35 @@ void main() {
     );
     await tester.pump();
 
-    // Title renders (shell AppBar or home header).
-    expect(find.text('LLM Chess Arena'), findsWidgets);
-
-    // Home screen feature tiles are visible.
-    expect(find.text('Play'), findsWidgets);
-    expect(find.text('Watch'), findsWidgets);
+    // Navigation rail renders the unified destinations (no Home dashboard).
+    expect(find.text('Game'), findsWidgets);
     expect(find.text('Arena'), findsWidgets);
+    expect(find.text('Stats'), findsWidgets);
   });
 
-  testWidgets('play screen opens and shows the board', (tester) async {
+  testWidgets('game screen opens and shows the board', (tester) async {
     await tester.pumpWidget(
       const ProviderScope(child: ArenaApp()),
     );
     await tester.pump();
 
-    // Navigate: tap the Play tile on the home screen (wide layout shows
-    // both rail and tiles; the tile exists regardless).
-    await tester.tap(find.text('Play').first);
-    await tester.pumpAndSettle();
+    // Navigate: tap the Game destination in the rail (wide layout shows
+    // the rail; the game auto-starts human-vs-agent).
+    await tester.tap(find.text('Game').first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
 
-    // The play screen hosts the chessboard; assert at least one board
-    // surface and the promotion/status chrome rendered without exceptions.
+    // The game screen hosts the chessboard; assert at least one board
+    // surface and the seat chrome rendered without exceptions.
     expect(tester.takeException(), isNull);
-    expect(find.textContaining('AI'), findsWidgets);
+    expect(
+      find.byKey(const ValueKey<String>('seat-card-white')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('seat-card-black')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('wide desktop layout renders without exceptions', (
@@ -63,12 +68,13 @@ void main() {
     );
     await tester.pump();
 
-    await tester.tap(find.text('Watch').first);
-    await tester.pumpAndSettle();
+    await tester.tap(find.text('Arena').first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
 
     // NOTE: no takeException on purpose — leaving any layout exception
     // pending lets the test framework dump it at test end WITH the full
     // widget diagnostics (creator chains), which makes failures fixable.
-    expect(find.textContaining('White'), findsWidgets);
+    expect(find.textContaining('Tournament'), findsWidgets);
   });
 }

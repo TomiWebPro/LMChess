@@ -28,16 +28,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Named routes for the app shell and deep links.
 class ArenaRoutes {
-  /// Home dashboard.
+  /// Home dashboard (retired; kept for deep-link compatibility).
   static const String home = '/';
+
+  /// Unified game room (configurable human/agent/stockfish seats).
+  static const String game = '/game';
 
   /// Agent configuration.
   static const String agents = '/agents';
 
-  /// Human vs AI.
+  /// Human vs AI (alias of [game]).
   static const String play = '/play';
 
-  /// AI vs AI watch room.
+  /// AI vs AI watch room (alias of [game]).
   static const String watch = '/watch';
 
   /// Tournament arena.
@@ -69,6 +72,7 @@ class AgentConfig {
     this.systemPrompt = '',
     this.userPromptTemplate = '',
     this.apiKeyRef,
+    this.stockfishElo = 1500,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
@@ -105,6 +109,10 @@ class AgentConfig {
   /// Creation timestamp.
   final DateTime createdAt;
 
+  /// Stockfish playing strength (UCI_Elo). Only meaningful when
+  /// [provider] is `'stockfish'`.
+  int stockfishElo;
+
   /// One-line `provider/model` summary for cards and dropdowns.
   String get summary => '$provider/$model';
 
@@ -118,6 +126,7 @@ class AgentConfig {
     String? systemPrompt,
     String? userPromptTemplate,
     String? apiKeyRef,
+    int? stockfishElo,
   }) {
     return AgentConfig(
       id: id,
@@ -129,6 +138,7 @@ class AgentConfig {
       systemPrompt: systemPrompt ?? this.systemPrompt,
       userPromptTemplate: userPromptTemplate ?? this.userPromptTemplate,
       apiKeyRef: apiKeyRef ?? this.apiKeyRef,
+      stockfishElo: stockfishElo ?? this.stockfishElo,
       createdAt: createdAt,
     );
   }
@@ -138,11 +148,17 @@ class AgentConfig {
     final problems = <String>[];
     if (name.trim().isEmpty) problems.add('Name is required.');
     if (provider.trim().isEmpty) problems.add('Provider is required.');
-    if (model.trim().isEmpty) problems.add('Model is required.');
+    if (model.trim().isEmpty && provider.trim().toLowerCase() != 'stockfish') {
+      problems.add('Model is required.');
+    }
     if (temperature < 0 || temperature > 2) {
       problems.add('Temperature must be within 0..2.');
     }
     if (maxTokens <= 0) problems.add('Max tokens must be positive.');
+    if (provider.trim().toLowerCase() == 'stockfish' &&
+        (stockfishElo < 400 || stockfishElo > 3600)) {
+      problems.add('Stockfish Elo must be within 400..3600.');
+    }
     return problems;
   }
 }
@@ -212,4 +228,3 @@ class AgentListStore extends ChangeNotifier {
 /// Provider for the shared [AgentListStore].
 final ChangeNotifierProvider<AgentListStore> agentListProvider =
     ChangeNotifierProvider<AgentListStore>((ref) => AgentListStore());
-

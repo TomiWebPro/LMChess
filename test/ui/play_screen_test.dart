@@ -63,7 +63,7 @@ Future<void> _pumpPlayApp(
     ),
   );
   // Navigate to Play tab — pump extra frames so layout settles.
-  await tester.tap(find.text('Play').first);
+  await tester.tap(find.text('Game').first);
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 50));
   await tester.pump(const Duration(milliseconds: 50));

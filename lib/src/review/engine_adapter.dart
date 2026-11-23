@@ -19,7 +19,9 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:developer' show log;
+
+import '../diagnostics/app_log.dart';
+
 import 'dart:io';
 
 /// Evaluates a position given as FEN (standard) or variant JSON (chaotic).
@@ -158,10 +160,10 @@ class HeuristicEvaluator implements PositionEvaluator {
         // Malformed variant JSON: degrade to unsupported, but log the
         // decode failure so a corrupt game record stays diagnosable
         // instead of silently yielding "no placement".
-        log(
+        AppLog.current.warning(
           'HeuristicEvaluator: unparseable variant JSON — treating the '
           'position as unsupported',
-          name: 'heuristic-evaluator',
+          tag: 'heuristic-evaluator',
           error: error,
         );
         return null;
@@ -365,12 +367,15 @@ class UciEngineAdapter implements PositionEvaluator {
             // Engine stderr carries warnings and errors: drain the pipe
             // (a full stderr pipe would deadlock the child) AND surface
             // the content instead of discarding it silently.
-            log('$engineName: $trimmed', name: 'engine-stderr');
+            AppLog.current.warning(
+              '$engineName: $trimmed',
+              tag: 'engine-stderr',
+            );
           },
           onError: (Object error) {
-            log(
+            AppLog.current.error(
               '$engineName stderr stream error',
-              name: 'engine-stderr',
+              tag: 'engine-stderr',
               error: error,
             );
           },
@@ -381,9 +386,9 @@ class UciEngineAdapter implements PositionEvaluator {
         .listen(
           lines.add,
           onError: (Object error) {
-            log(
+            AppLog.current.error(
               '$engineName stdout stream error',
-              name: 'engine-stdout',
+              tag: 'engine-stdout',
               error: error,
             );
           },
@@ -397,26 +402,28 @@ class UciEngineAdapter implements PositionEvaluator {
     // AV quarantine). Without this the adapter would stay "connected" forever
     // and every evaluate would write into a dead stdin, then wait out the
     // whole search timeout before reporting a silent `unsupported`.
-    unawaited(process.exitCode.then((code) {
-      if (!identical(_process, process)) return;
-      // The engine died on its own (a mismatched binary, OOM, kill, or
-      // AV quarantine). [dispose] nulls [_process] before killing, so an
-      // intentional teardown never reaches this branch. Surface the exit
-      // code — previously the only trace of this event was a silent
-      // `unsupported` on the next evaluate.
-      log(
-        '$engineName exited unexpectedly (code $code)',
-        name: 'engine-adapter',
-      );
-      _process = null;
-      final stderrSub = _stderrSub;
-      final stdoutSub = _stdoutSub;
-      _stderrSub = null;
-      _stdoutSub = null;
-      unawaited(stderrSub?.cancel());
-      unawaited(stdoutSub?.cancel());
-      if (!lines.isClosed) unawaited(lines.close());
-    }));
+    unawaited(
+      process.exitCode.then((code) {
+        if (!identical(_process, process)) return;
+        // The engine died on its own (a mismatched binary, OOM, kill, or
+        // AV quarantine). [dispose] nulls [_process] before killing, so an
+        // intentional teardown never reaches this branch. Surface the exit
+        // code — previously the only trace of this event was a silent
+        // `unsupported` on the next evaluate.
+        AppLog.current.error(
+          '$engineName exited unexpectedly (code $code)',
+          tag: 'engine-adapter',
+        );
+        _process = null;
+        final stderrSub = _stderrSub;
+        final stdoutSub = _stdoutSub;
+        _stderrSub = null;
+        _stdoutSub = null;
+        unawaited(stderrSub?.cancel());
+        unawaited(stdoutSub?.cancel());
+        if (!lines.isClosed) unawaited(lines.close());
+      }),
+    );
     try {
       _send('uci');
       await _waitFor((l) => l.trim() == 'uciok', timeout, 'uciok');

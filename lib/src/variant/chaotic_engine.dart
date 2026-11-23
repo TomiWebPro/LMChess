@@ -331,7 +331,7 @@ class ChaoticRules {
     final blackGone = isKingCaptured(board, PieceColor.black);
     if (whiteGone && blackGone) {
       return const GameOverResult(
-          over: true, reason: 'both kings captured — draw');
+          over: true, reason: 'both kings captured â€” draw');
     }
     if (whiteGone) {
       return const GameOverResult(

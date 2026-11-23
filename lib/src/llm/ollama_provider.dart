@@ -26,6 +26,7 @@ class OllamaProvider extends OpenAiProvider {
     required super.model,
     super.httpClient,
     super.timeout = const Duration(seconds: 180),
+    super.log,
   });
 
   @override
@@ -33,9 +34,9 @@ class OllamaProvider extends OpenAiProvider {
 
   @override
   LlmCapabilities get capabilities => const LlmCapabilities(
-        supportsTools: true,
-        supportsStreaming: true,
-        supportsReasoning: false,
-        friendlyName: 'Ollama (local)',
-      );
+    supportsTools: true,
+    supportsStreaming: true,
+    supportsReasoning: false,
+    friendlyName: 'Ollama (local)',
+  );
 }

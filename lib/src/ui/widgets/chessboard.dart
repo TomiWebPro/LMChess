@@ -458,6 +458,12 @@ class _ChessboardState extends State<Chessboard> with TickerProviderStateMixin {
           focusNode: _focusNode,
           canRequestFocus: canDrag,
           skipTraversal: true,
+          // Keyboard-only scope: must not contribute a Semantics node.
+          // A default `includeSemantics: true` Focus inserts an annotated
+          // `Semantics(focusable: …)` node that appears/merges/splits as
+          // `canRequestFocus` toggles, which is exactly the nested-reparent
+          // shape that trips the Windows engine bug (flutter/flutter#175041).
+          includeSemantics: false,
           onKeyEvent: _handleKeyEvent,
           child: Center(
             child: SizedBox(
@@ -758,35 +764,47 @@ class _ChessboardState extends State<Chessboard> with TickerProviderStateMixin {
 
   /// Renders one piece glyph with the theme fill/stroke treatment.
   Widget _buildGlyph(CellPiece piece, double cell, {bool lifted = false}) {
-    return Text(
-      piece.glyph,
-      style: TextStyle(
-        fontFamily: widget.pieceTheme.fontFamily,
-        fontSize: cell * 0.72,
-        height: 1,
-        color: piece.isWhite
-            ? widget.pieceTheme.whiteFill
-            : widget.pieceTheme.blackFill,
-        // Simulated outline via offset shadows in the stroke color; cheap and
-        // asset-free. A lifted piece adds one soft drop shadow.
-        shadows: <Shadow>[
-          for (final dx in <double>[-1, 1])
-            for (final dy in <double>[-1, 1])
-              Shadow(
-                offset: Offset(dx * cell * 0.025, dy * cell * 0.025),
-                blurRadius: cell * 0.015,
-                color: piece.isWhite
-                    ? widget.pieceTheme.whiteStroke
-                    : widget.pieceTheme.blackStroke,
-              ),
-          if (lifted)
-            Shadow(
-              offset: Offset(0, cell * 0.05),
-              blurRadius: cell * 0.12,
-              color: Colors.black.withValues(alpha: 0.45),
-            ),
-        ],
-      ),
+    final fill = piece.isWhite
+        ? widget.pieceTheme.whiteFill
+        : widget.pieceTheme.blackFill;
+    final stroke = piece.isWhite
+        ? widget.pieceTheme.whiteStroke
+        : widget.pieceTheme.blackStroke;
+    final strokeWidth = (cell * 0.05).clamp(1.5, 4.0);
+    return Stack(
+      alignment: Alignment.center,
+      children: <Widget>[
+        Text(
+          piece.glyph,
+          style: TextStyle(
+            fontFamily: widget.pieceTheme.fontFamily,
+            fontSize: cell * 0.72,
+            height: 1,
+            foreground: Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = strokeWidth
+              ..strokeJoin = StrokeJoin.round
+              ..color = stroke,
+          ),
+        ),
+        Text(
+          piece.glyph,
+          style: TextStyle(
+            fontFamily: widget.pieceTheme.fontFamily,
+            fontSize: cell * 0.72,
+            height: 1,
+            color: fill,
+            shadows: <Shadow>[
+              if (lifted)
+                Shadow(
+                  offset: Offset(0, cell * 0.05),
+                  blurRadius: cell * 0.12,
+                  color: Colors.black.withValues(alpha: 0.45),
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

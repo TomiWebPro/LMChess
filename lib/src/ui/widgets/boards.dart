@@ -1,4 +1,4 @@
-/// Small shared widgets used across play/watch/arena/review screens, plus
+﻿/// Small shared widgets used across play/watch/arena/review screens, plus
 /// the responsive board+panel layout contract.
 ///
 /// ## Responsive rule (applies everywhere a board meets a side panel)
@@ -13,6 +13,7 @@
 /// arrangement instead of [BoardPanelLayout].
 library;
 
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -49,6 +50,84 @@ ArenaLayoutMode layoutModeFor(double width) {
   return ArenaLayoutMode.narrow;
 }
 
+/// Debounces a breakpoint-derived value across live window-resize drags.
+///
+/// A Windows resize drag fires [LayoutBuilder] rebuilds dozens of times per
+/// second. Adopting every intermediate value immediately tears down and
+/// re-inflates large semantics subtrees (board <-> tabs <-> column) once per
+/// frame, which is exactly the reparent storm that corrupts the engine-side
+/// AXTree on Windows.
+///
+/// This holder keeps serving [stable] until [target] stays unchanged for
+/// [settle], so a drag produces size-only updates (same nodes, new rects -
+/// safe) and at most one structural switch after the user releases. The
+/// pending switch is cancelled if the width drifts back before [settle].
+class DebouncedBreakpoint<T> extends StatefulWidget {
+  /// Creates a debounced breakpoint holder.
+  const DebouncedBreakpoint({
+    super.key,
+    required this.target,
+    required this.builder,
+    this.settle = const Duration(milliseconds: 250),
+  });
+
+  /// Value derived from the current width (e.g. `layoutModeFor(width)`).
+  final T target;
+
+  /// Builds with the debounced (stable) value.
+  final Widget Function(BuildContext context, T stable) builder;
+
+  /// How long [target] must hold before it becomes [stable].
+  final Duration settle;
+
+  @override
+  State<DebouncedBreakpoint<T>> createState() => _DebouncedBreakpointState<T>();
+}
+
+class _DebouncedBreakpointState<T> extends State<DebouncedBreakpoint<T>> {
+  late T _stable;
+  Timer? _timer;
+  bool _initialized = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_initialized) {
+      _stable = widget.target;
+      _initialized = true;
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant DebouncedBreakpoint<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_initialized) {
+      _stable = widget.target;
+      _initialized = true;
+      return;
+    }
+    if (widget.target == _stable) {
+      _timer?.cancel();
+      _timer = null;
+      return;
+    }
+    if (widget.target == oldWidget.target) return;
+    _timer?.cancel();
+    _timer = Timer(widget.settle, () {
+      if (!mounted) return;
+      if (widget.target != _stable) setState(() => _stable = widget.target);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context, _stable);
+}
 /// Formats a clock value in seconds as `m:ss` (or `h:mm:ss` past one hour).
 String formatClock(int totalSeconds) {
   final s = math.max(0, totalSeconds);
@@ -168,6 +247,7 @@ class PlayerCard extends StatelessWidget {
     this.isActive = false,
     this.isHuman = false,
     this.isWhite = true,
+    this.onTap,
   });
 
   /// Display name (agent id or "You").
@@ -188,10 +268,15 @@ class PlayerCard extends StatelessWidget {
   /// Shows a white/black pip for side identity.
   final bool isWhite;
 
+  /// Tap to swap White/Black seats. `null` disables.
+  final VoidCallback? onTap;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Container(
+    final card = SizedBox(
+      height: 68,
+      child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(10),
@@ -218,6 +303,7 @@ class PlayerCard extends StatelessWidget {
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: <Widget>[
                 Row(
                   children: <Widget>[
@@ -248,31 +334,63 @@ class PlayerCard extends StatelessWidget {
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
+                if (subtitle.isEmpty)
+                  Text(
+                    ' ',
+                    style: theme.textTheme.bodySmall,
+                  ),
               ],
             ),
           ),
-          if (clockSeconds != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: isActive
-                    ? theme.colorScheme.primary
-                    : theme.colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                formatClock(clockSeconds!),
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontFeatures: const <FontFeature>[
-                    FontFeature.tabularFigures(),
-                  ],
-                  color: isActive
-                      ? theme.colorScheme.onPrimary
-                      : theme.colorScheme.onSurface,
-                ),
-              ),
-            ),
+          ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 64),
+            child: clockSeconds != null
+                ? ExcludeSemantics(
+                    // The countdown repaints (and would re-announce) on every
+                    // second while a timed game runs. A 1 Hz live text node
+                    // spams screen readers and churns the semantics tree on
+                    // every tick, which widens the Windows
+                    // accessibility-bridge crash window
+                    // (flutter/flutter#175041: the bridge fatally mishandles
+                    // updates that race node churn). The clock is decorative
+                    // — the mover, position, and result are all announced
+                    // through stable nodes — so it stays purely visual.
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isActive
+                            ? theme.colorScheme.primary
+                            : theme.colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        formatClock(clockSeconds!),
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontFeatures: const <FontFeature>[
+                            FontFeature.tabularFigures(),
+                          ],
+                          color: isActive
+                              ? theme.colorScheme.onPrimary
+                              : theme.colorScheme.onSurface,
+                        ),
+                      ),
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
         ],
+      ),
+      ),
+    );
+    if (onTap == null) return card;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Tooltip(
+        message: 'Tap to swap seats',
+        child: card,
       ),
     );
   }

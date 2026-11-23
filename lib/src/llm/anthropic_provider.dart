@@ -21,10 +21,10 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:developer' show log;
 
 import 'package:http/http.dart' as http;
 
+import '../diagnostics/backend_log.dart';
 import 'http_helpers.dart';
 import 'provider.dart';
 import 'tool_schema.dart';
@@ -53,6 +53,9 @@ class AnthropicProvider extends LlmProvider {
   /// Whether [_client] was created internally (and thus closed by [close]).
   final bool _ownsClient;
 
+  /// UI-free logger (per-call override wins; defaults to [currentBackendLog]).
+  final BackendLog? log;
+
   /// Creates a provider.
   AnthropicProvider({
     required this.baseUrl,
@@ -60,8 +63,9 @@ class AnthropicProvider extends LlmProvider {
     required this.model,
     http.Client? httpClient,
     this.timeout = const Duration(seconds: 120),
-  })  : _client = httpClient ?? http.Client(),
-        _ownsClient = httpClient == null;
+    this.log,
+  }) : _client = httpClient ?? http.Client(),
+       _ownsClient = httpClient == null;
 
   /// Releases the internally created HTTP client, if any.
   @override
@@ -76,33 +80,59 @@ class AnthropicProvider extends LlmProvider {
 
   @override
   LlmCapabilities get capabilities => const LlmCapabilities(
-        supportsTools: true,
-        supportsStreaming: true,
-        supportsReasoning: false,
-        friendlyName: 'Anthropic',
-      );
+    supportsTools: true,
+    supportsStreaming: true,
+    supportsReasoning: false,
+    friendlyName: 'Anthropic',
+  );
 
   /// Base URL without trailing slashes.
   String get _base => baseUrl.replaceAll(RegExp(r'/+$'), '');
 
   Map<String, String> get _headers => jsonHeaders(
-        extra: {
-          'x-api-key': apiKey,
-          'anthropic-version': anthropicApiVersion,
-        },
-      );
+    extra: {'x-api-key': apiKey, 'anthropic-version': anthropicApiVersion},
+  );
 
   @override
-  Future<bool> testConnection() async {
+  Future<bool> testConnection({
+    BackendLog? log,
+    String? gameId,
+    String? tournamentId,
+  }) async {
+    final effectiveLog = log ?? this.log ?? currentBackendLog;
+    effectiveLog.debug(
+      'testConnection start',
+      tag: 'anthropic-provider',
+      gameId: gameId,
+      tournamentId: tournamentId,
+    );
     try {
       final response = await _client
           .get(Uri.parse('$_base/v1/models'), headers: _headers)
           .timeout(const Duration(seconds: 10));
-      return response.statusCode == 200;
+      final ok = response.statusCode == 200;
+      if (ok) {
+        effectiveLog.debug(
+          'testConnection end ok=true',
+          tag: 'anthropic-provider',
+          gameId: gameId,
+          tournamentId: tournamentId,
+        );
+      } else {
+        effectiveLog.warning(
+          'testConnection failed kind=http status=${response.statusCode}',
+          tag: 'anthropic-provider',
+          gameId: gameId,
+          tournamentId: tournamentId,
+        );
+      }
+      return ok;
     } catch (error) {
-      log(
-        'testConnection: $id models probe failed — reporting false',
-        name: 'anthropic-provider',
+      effectiveLog.warning(
+        'testConnection failed kind=transport — reporting false',
+        tag: 'anthropic-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
         error: error,
       );
       return false;
@@ -110,12 +140,30 @@ class AnthropicProvider extends LlmProvider {
   }
 
   @override
-  Stream<LlmStreamEvent> streamMove(AgentRequest request) async* {
+  Stream<LlmStreamEvent> streamMove(
+    AgentRequest request, {
+    BackendLog? log,
+    String? gameId,
+    String? tournamentId,
+  }) async* {
+    final effectiveLog = log ?? this.log ?? currentBackendLog;
+    effectiveLog.debug(
+      'stream start model=$model',
+      tag: 'anthropic-provider',
+      gameId: gameId,
+      tournamentId: tournamentId,
+    );
     final stopwatch = Stopwatch()..start();
     yield const LlmStreamEvent(kind: StreamEventKind.started);
 
     bool cancelled() => request.cancelToken?.isCancelled ?? false;
     if (cancelled()) {
+      effectiveLog.warning(
+        'stream failed kind=cancelled before send',
+        tag: 'anthropic-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
+      );
       yield LlmStreamEvent(
         kind: StreamEventKind.error,
         message: '${FailureKind.cancelled.name}: turn cancelled before send.',
@@ -143,12 +191,25 @@ class AnthropicProvider extends LlmProvider {
         ..body = jsonEncode(body);
       response = await _client.send(httpRequest).timeout(timeout);
     } on TimeoutException {
+      effectiveLog.warning(
+        'stream failed kind=timeout on connect',
+        tag: 'anthropic-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
+      );
       yield LlmStreamEvent(
         kind: StreamEventKind.errorRetry,
         message: '${FailureKind.timeout.name}: connection timed out.',
       );
       return;
     } catch (e) {
+      effectiveLog.warning(
+        'stream failed kind=providerError on connect',
+        tag: 'anthropic-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
+        error: e,
+      );
       yield LlmStreamEvent(
         kind: StreamEventKind.errorRetry,
         message: '${FailureKind.providerError.name}: transport error: $e',
@@ -159,6 +220,12 @@ class AnthropicProvider extends LlmProvider {
     if (response.statusCode != 200) {
       final detail = await readErrorBody(response);
       final kind = failureKindForHttpStatus(response.statusCode);
+      effectiveLog.warning(
+        'stream failed kind=${kind.name} status=${response.statusCode}',
+        tag: 'anthropic-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
+      );
       yield LlmStreamEvent(
         kind: isRetryableFailureKind(kind)
             ? StreamEventKind.errorRetry
@@ -216,10 +283,7 @@ class AnthropicProvider extends LlmProvider {
           if (deltaType == 'text_delta') {
             final text = delta['text'];
             if (text is String && text.isNotEmpty) {
-              yield LlmStreamEvent(
-                kind: StreamEventKind.textDelta,
-                text: text,
-              );
+              yield LlmStreamEvent(kind: StreamEventKind.textDelta, text: text);
             }
           } else if (deltaType == 'input_json_delta') {
             final fragment = delta['partial_json'];
@@ -246,10 +310,9 @@ class AnthropicProvider extends LlmProvider {
         case 'error':
           final error = decoded['error'];
           final errorType = error is Map ? error['type'] : null;
-          final messageText =
-              error is Map && error['message'] is String
-                  ? error['message'] as String
-                  : 'stream error';
+          final messageText = error is Map && error['message'] is String
+              ? error['message'] as String
+              : 'stream error';
           final kind = _failureKindForAnthropicError('$errorType');
           yield LlmStreamEvent(
             kind: isRetryableFailureKind(kind)
@@ -262,15 +325,23 @@ class AnthropicProvider extends LlmProvider {
     }
 
     var streamFailed = false;
+    String? streamFailedKind;
     try {
       await for (final line in sseLinesWithInactivityTimeout(
         response.stream,
         timeout,
       )) {
         if (cancelled()) {
+          effectiveLog.warning(
+            'stream failed kind=cancelled mid-stream',
+            tag: 'anthropic-provider',
+            gameId: gameId,
+            tournamentId: tournamentId,
+          );
           yield LlmStreamEvent(
             kind: StreamEventKind.error,
-            message: '${FailureKind.cancelled.name}: turn cancelled mid-stream.',
+            message:
+                '${FailureKind.cancelled.name}: turn cancelled mid-stream.',
           );
           return;
         }
@@ -287,13 +358,23 @@ class AnthropicProvider extends LlmProvider {
             if (event.kind == StreamEventKind.error ||
                 event.kind == StreamEventKind.errorRetry) {
               streamFailed = true;
+              streamFailedKind = event.message?.split(':').first;
             }
             yield event;
           }
           // Exactly-one-terminal contract (provider.dart): the payload
           // error above is already the terminal event, so return now —
           // falling through would emit a second terminal (`done`) below.
-          if (streamFailed) return;
+          if (streamFailed) {
+            effectiveLog.warning(
+              'stream failed kind=${streamFailedKind ?? 'providerError'} '
+              'in-payload',
+              tag: 'anthropic-provider',
+              gameId: gameId,
+              tournamentId: tournamentId,
+            );
+            return;
+          }
         }
         // `event:` prefixes are redundant with each JSON body's own `type`.
       }
@@ -304,14 +385,30 @@ class AnthropicProvider extends LlmProvider {
           if (event.kind == StreamEventKind.error ||
               event.kind == StreamEventKind.errorRetry) {
             streamFailed = true;
+            streamFailedKind = event.message?.split(':').first;
           }
           yield event;
         }
         // Trailing-flush error is likewise terminal: return immediately so
         // no second terminal follows.
-        if (streamFailed) return;
+        if (streamFailed) {
+          effectiveLog.warning(
+            'stream failed kind=${streamFailedKind ?? 'providerError'} '
+            'in-trailer',
+            tag: 'anthropic-provider',
+            gameId: gameId,
+            tournamentId: tournamentId,
+          );
+          return;
+        }
       }
     } on TimeoutException {
+      effectiveLog.warning(
+        'stream failed kind=timeout stalled',
+        tag: 'anthropic-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
+      );
       yield LlmStreamEvent(
         kind: StreamEventKind.errorRetry,
         message:
@@ -320,6 +417,13 @@ class AnthropicProvider extends LlmProvider {
       );
       return;
     } catch (e) {
+      effectiveLog.warning(
+        'stream failed kind=providerError in-stream',
+        tag: 'anthropic-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
+        error: e,
+      );
       yield LlmStreamEvent(
         kind: StreamEventKind.errorRetry,
         message: '${FailureKind.providerError.name}: stream failed: $e',
@@ -327,6 +431,12 @@ class AnthropicProvider extends LlmProvider {
       return;
     }
     if (cancelled()) {
+      effectiveLog.warning(
+        'stream failed kind=cancelled mid-stream',
+        tag: 'anthropic-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
+      );
       yield LlmStreamEvent(
         kind: StreamEventKind.error,
         message: '${FailureKind.cancelled.name}: turn cancelled mid-stream.',
@@ -335,6 +445,12 @@ class AnthropicProvider extends LlmProvider {
     }
 
     if (stopReason == 'max_tokens') {
+      effectiveLog.warning(
+        'stream failed kind=incompleteResponse max_tokens',
+        tag: 'anthropic-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
+      );
       yield LlmStreamEvent(
         kind: StreamEventKind.errorRetry,
         message:
@@ -346,11 +462,18 @@ class AnthropicProvider extends LlmProvider {
 
     final completedCalls = <int, String>{
       for (final entry in toolArgs.entries)
-        if (entry.value.toString().isNotEmpty) entry.key: entry.value.toString(),
+        if (entry.value.toString().isNotEmpty)
+          entry.key: entry.value.toString(),
     };
     if (completedCalls.length > 1) {
       // Ambiguous: several tool blocks in one turn — playing an arbitrary
       // pick would be last-wins. Surface non-retryable malformed instead.
+      effectiveLog.warning(
+        'stream failed kind=malformedArgs calls=${completedCalls.length}',
+        tag: 'anthropic-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
+      );
       yield LlmStreamEvent(
         kind: StreamEventKind.error,
         message:
@@ -375,6 +498,12 @@ class AnthropicProvider extends LlmProvider {
       );
     }
     stopwatch.stop();
+    effectiveLog.debug(
+      'stream end model=$model calls=${completedCalls.length}',
+      tag: 'anthropic-provider',
+      gameId: gameId,
+      tournamentId: tournamentId,
+    );
     yield LlmStreamEvent(
       kind: StreamEventKind.latency,
       latencyMs: stopwatch.elapsedMilliseconds,

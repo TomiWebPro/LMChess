@@ -192,18 +192,18 @@ class _AgentActivityPanelState extends State<AgentActivityPanel> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final display = condenseActivityEvents(widget.events);
     return Column(
       children: <Widget>[
-        _buildHeader(theme),
+        _buildHeader(theme, display.length),
         Expanded(
-          child: widget.events.isEmpty
+          child: display.isEmpty
               ? _buildEmpty(theme)
               : ListView.builder(
                   controller: _scroll,
                   padding: const EdgeInsets.symmetric(vertical: 8),
-                  itemCount: widget.events.length,
-                  itemBuilder: (context, i) =>
-                      _EventTile(event: widget.events[i]),
+                  itemCount: display.length,
+                  itemBuilder: (context, i) => _EventTile(event: display[i]),
                 ),
         ),
         _buildFooter(theme),
@@ -212,7 +212,7 @@ class _AgentActivityPanelState extends State<AgentActivityPanel> {
   }
 
   /// Header: live indicator, event count, auto-scroll toggle.
-  Widget _buildHeader(ThemeData theme) {
+  Widget _buildHeader(ThemeData theme, int count) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
       child: Row(
@@ -245,7 +245,7 @@ class _AgentActivityPanelState extends State<AgentActivityPanel> {
           ),
           const SizedBox(width: 8),
           Text(
-            '${widget.events.length}',
+            '$count',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -337,6 +337,109 @@ class _AgentActivityPanelState extends State<AgentActivityPanel> {
   }
 }
 
+/// Condenses a raw activity stream into fewer, denser tiles.
+///
+/// Merging rules (all preserve information, only reduce tile count):
+///
+/// * Consecutive [ActivityEventKind.textDelta] events join into one (streamed
+///   reasoning chunks become a single TEXT tile).
+/// * Consecutive [ActivityEventKind.status] events join with ` · `.
+/// * Consecutive duplicate [ActivityEventKind.toolDelta] tiles with the same
+///   tool name and args keep only the last (delta + completed pairs).
+/// * A [ActivityEventKind.usage] event immediately followed by a
+///   [ActivityEventKind.latency] event merges into one USAGE tile carrying
+///   both token counts and `latencyMs`, so telemetry reads as one box.
+/// * A [ActivityEventKind.usage] (or merged usage+latency) tile immediately
+///   following a [ActivityEventKind.textDelta] tile folds into the TEXT tile:
+///   the AI reply keeps its token/latency counts inline instead of spending
+///   a whole extra USAGE box on telemetry (the footer still aggregates).
+/// * A lone [ActivityEventKind.latency] tile immediately following a
+///   [ActivityEventKind.textDelta] tile folds its `latencyMs` the same way.
+///
+/// All other events pass through unchanged, in order.
+List<ActivityEvent> condenseActivityEvents(List<ActivityEvent> events) {
+  final out = <ActivityEvent>[];
+  for (final e in events) {
+    if (out.isNotEmpty) {
+      final prev = out.last;
+      if (e.kind == ActivityEventKind.textDelta &&
+          prev.kind == ActivityEventKind.textDelta) {
+        out[out.length - 1] = ActivityEvent(
+          kind: prev.kind,
+          message: prev.message + e.message,
+          timestamp: prev.timestamp,
+          toolName: prev.toolName ?? e.toolName,
+          promptTokens: prev.promptTokens ?? e.promptTokens,
+          completionTokens: prev.completionTokens ?? e.completionTokens,
+          latencyMs: prev.latencyMs ?? e.latencyMs,
+        );
+        continue;
+      }
+      if (e.kind == ActivityEventKind.status &&
+          prev.kind == ActivityEventKind.status) {
+        out[out.length - 1] = ActivityEvent(
+          kind: prev.kind,
+          message: '${prev.message} · ${e.message}',
+          timestamp: prev.timestamp,
+          toolName: prev.toolName ?? e.toolName,
+          promptTokens: prev.promptTokens ?? e.promptTokens,
+          completionTokens: prev.completionTokens ?? e.completionTokens,
+          latencyMs: prev.latencyMs ?? e.latencyMs,
+        );
+        continue;
+      }
+      if (e.kind == ActivityEventKind.toolDelta &&
+          prev.kind == ActivityEventKind.toolDelta &&
+          (prev.toolName ?? '') == (e.toolName ?? '') &&
+          prev.message == e.message) {
+        out[out.length - 1] = e;
+        continue;
+      }
+      if (e.kind == ActivityEventKind.latency &&
+          prev.kind == ActivityEventKind.usage) {
+        out[out.length - 1] = ActivityEvent(
+          kind: ActivityEventKind.usage,
+          message: prev.message,
+          timestamp: prev.timestamp,
+          toolName: prev.toolName ?? e.toolName,
+          promptTokens: prev.promptTokens ?? e.promptTokens,
+          completionTokens: prev.completionTokens ?? e.completionTokens,
+          latencyMs: e.latencyMs ?? prev.latencyMs,
+        );
+        continue;
+      }
+      if (e.kind == ActivityEventKind.usage &&
+          prev.kind == ActivityEventKind.textDelta) {
+        out[out.length - 1] = ActivityEvent(
+          kind: prev.kind,
+          message: prev.message,
+          timestamp: prev.timestamp,
+          toolName: prev.toolName ?? e.toolName,
+          promptTokens: e.promptTokens ?? prev.promptTokens,
+          completionTokens: e.completionTokens ?? prev.completionTokens,
+          latencyMs: e.latencyMs ?? prev.latencyMs,
+        );
+        continue;
+      }
+      if (e.kind == ActivityEventKind.latency &&
+          prev.kind == ActivityEventKind.textDelta) {
+        out[out.length - 1] = ActivityEvent(
+          kind: prev.kind,
+          message: prev.message,
+          timestamp: prev.timestamp,
+          toolName: prev.toolName ?? e.toolName,
+          promptTokens: prev.promptTokens ?? e.promptTokens,
+          completionTokens: prev.completionTokens ?? e.completionTokens,
+          latencyMs: e.latencyMs ?? prev.latencyMs,
+        );
+        continue;
+      }
+    }
+    out.add(e);
+  }
+  return out;
+}
+
 /// Sums prompt+completion tokens across usage events.
 int _sumTokens(List<ActivityEvent> events) {
   var total = 0;
@@ -348,11 +451,14 @@ int _sumTokens(List<ActivityEvent> events) {
   return total;
 }
 
-/// Sums latency across latency events.
+/// Sums latency across latency events (and merged usage+latency tiles).
 int _sumLatency(List<ActivityEvent> events) {
   var total = 0;
   for (final e in events) {
-    if (e.kind == ActivityEventKind.latency) total += e.latencyMs ?? 0;
+    if (e.kind == ActivityEventKind.latency ||
+        e.kind == ActivityEventKind.usage) {
+      total += e.latencyMs ?? 0;
+    }
   }
   return total;
 }
@@ -424,9 +530,8 @@ class _EventTile extends StatelessWidget {
                     )
                   else
                     Text(message, style: theme.textTheme.bodySmall),
-                  if (event.kind == ActivityEventKind.usage &&
-                      (event.promptTokens != null ||
-                          event.completionTokens != null))
+                  if (event.promptTokens != null ||
+                      event.completionTokens != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 2),
                       child: Text(
@@ -437,8 +542,7 @@ class _EventTile extends StatelessWidget {
                         ),
                       ),
                     ),
-                  if (event.kind == ActivityEventKind.latency &&
-                      event.latencyMs != null)
+                  if (event.latencyMs != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 2),
                       child: Text(

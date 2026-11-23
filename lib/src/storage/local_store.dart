@@ -61,7 +61,9 @@
 library;
 
 import 'dart:async';
-import 'dart:developer' show log;
+
+import '../diagnostics/app_log.dart';
+
 import 'dart:io';
 
 import 'package:hive_ce_flutter/hive_flutter.dart';
@@ -163,18 +165,18 @@ class LocalAppStore implements AppRepository, EventStore {
     _boxesOpen = true;
     _lastMigrationReport = await migrate();
     if (!_lastMigrationReport!.isClean) {
-      log(
+      AppLog.current.warning(
         'LocalAppStore.migrate: $_lastMigrationReport',
-        name: 'LocalAppStore',
+        tag: 'LocalAppStore',
       );
     }
     final integrity = integrityReport();
     if (!integrity.isClean) {
-      log(
+      AppLog.current.warning(
         'LocalAppStore.integrity: ${integrity.quarantinedBoxCount} box(es) '
         'quarantined, ${integrity.corruptEntryCount} corrupt entry(ies): '
         '$integrity',
-        name: 'LocalAppStore',
+        tag: 'LocalAppStore',
       );
     }
     _ready = true;
@@ -192,9 +194,9 @@ class LocalAppStore implements AppRepository, EventStore {
       try {
         await Hive.box(name).close();
       } on Object catch (error, stack) {
-        log(
+        AppLog.current.error(
           'LocalAppStore: failed to close box "$name": $error',
-          name: 'LocalAppStore',
+          tag: 'LocalAppStore',
           error: error,
           stackTrace: stack,
         );
@@ -232,9 +234,9 @@ class LocalAppStore implements AppRepository, EventStore {
       return await Hive.openBox(name);
     } on Object catch (error, stack) {
       _quarantinedBoxes.add(name);
-      log(
+      AppLog.current.error(
         'LocalAppStore: box "$name" failed to open; quarantining',
-        name: 'LocalAppStore',
+        tag: 'LocalAppStore',
         error: error,
         stackTrace: stack,
       );
@@ -261,9 +263,10 @@ class LocalAppStore implements AppRepository, EventStore {
       try {
         await file.rename('${file.path}.corrupt-$stamp');
       } on Object catch (error) {
-        log(
+        AppLog.current.warning(
           'LocalAppStore: could not quarantine ${file.path}: $error',
-          name: 'LocalAppStore',
+          tag: 'LocalAppStore',
+          error: error,
         );
       }
     }
@@ -275,9 +278,9 @@ class LocalAppStore implements AppRepository, EventStore {
     final text = key.toString();
     if (keys.contains(text)) return;
     keys.add(text);
-    log(
+    AppLog.current.warning(
       'LocalAppStore: skipping corrupt entry $boxName/$text',
-      name: 'LocalAppStore',
+      tag: 'LocalAppStore',
     );
   }
 
@@ -722,9 +725,9 @@ class LocalAppStore implements AppRepository, EventStore {
     if (hook != null) {
       hook(error, stack);
     } else {
-      log(
+      AppLog.current.error(
         'LocalAppStore write failed: $error',
-        name: 'LocalAppStore',
+        tag: 'LocalAppStore',
         error: error,
         stackTrace: stack,
       );
@@ -747,9 +750,9 @@ class LocalAppStore implements AppRepository, EventStore {
       } on Object catch (error, stack) {
         // Skip corrupt entries; never fail a whole listing.
         _noteCorrupt(StorageBoxes.events, key);
-        log(
+        AppLog.current.warning(
           'LocalAppStore: corrupt event $key: $error',
-          name: 'LocalAppStore',
+          tag: 'LocalAppStore',
           error: error,
           stackTrace: stack,
         );

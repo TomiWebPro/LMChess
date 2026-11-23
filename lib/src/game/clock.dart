@@ -7,6 +7,8 @@
 /// [consume]; [start]/[stop] only record bookkeeping stamps.
 ///
 /// Pure Dart, no timers, no streams.
+/// Talks to: `game_state.dart` (`TimeControl` settings); driven by `orchestrator.dart` via explicit elapsed args.
+/// Never imports: `package:flutter`, `ui/`, `chess/`, `variant/`, `llm/`, `arena/`, `storage/` — pure deterministic math.
 library;
 
 /// Time-control families.

@@ -92,7 +92,7 @@ Future<void> _pumpPlayApp(
     ),
   );
   // Navigate to the Play tab — pump extra frames so layout settles.
-  await tester.tap(find.text('Play').first);
+  await tester.tap(find.text('Game').first);
   await tester.pump();
   for (var i = 0; i < 4; i++) {
     await tester.pump(const Duration(milliseconds: 50));
@@ -150,13 +150,16 @@ Future<void> _settle(WidgetTester tester) async {
 /// after its ticker future completes; a single `pump(300ms)` lands exactly on
 /// the boundary and the buttons below stay untappable. Small deterministic
 /// slices reliably settle past it (§15.3 moves-panel interactions).
+/// Tab pages are built lazily, so content (e.g. the Moves `Ply a / b`
+/// header) only exists once the controller stops changing.
 Future<void> _switchTab(WidgetTester tester, String tab) async {
   await tester.tap(find.text(tab).first);
-  await tester.pump();
-  for (var i = 0; i < 6; i++) {
-    await tester.pump(const Duration(milliseconds: 100));
+  final controller =
+      DefaultTabController.of(tester.element(find.byType(TabBar)));
+  for (var i = 0; i < 20 && controller.indexIsChanging; i++) {
+    await tester.pump(const Duration(milliseconds: 300));
   }
-  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 100));
 }
 
 /// Quick synchronous review evaluator (mirrors review_screen_test).
@@ -309,11 +312,108 @@ Future<void> _pumpVariant(WidgetTester tester) async {
   await tester.pump();
 }
 
+/// Overrides for Watch runs: fixed clock plus mock AI turns with a non-zero
+/// step delay so a full game takes many pump cycles. With a zero delay the
+/// sequential agent-vs-agent loop would play the entire game to terminal
+/// (and open the modal Game over dialog) before the test can scrub or tap
+/// the move list. Mirrors `watch_screen_test.dart`.
+List<Override> _watchOverrides() => <Override>[
+      clockProvider.overrideWithValue(() => DateTime.utc(2026, 1, 1)),
+      turnProviderFactoryProvider.overrideWithValue((
+        config,
+        legalUcis, {
+        seed,
+        phrase,
+      }) async {
+        if (legalUcis.isEmpty) {
+          return MockProvider(
+            script: const <Object>[FailureKind.incompleteResponse],
+            model: config.model,
+          );
+        }
+        final uci = legalUcis.first;
+        return MockProvider(
+          script: <Object>[
+            MoveToolCall(
+              from: uci.substring(0, 2),
+              to: uci.substring(2, 4),
+              promotion: uci.length > 4 ? uci.substring(4, 5) : null,
+              phrase: phrase,
+            ),
+          ],
+          model: config.model,
+          // Non-zero so a full game takes many pump cycles: the game must
+          // stay live while the test scrubs or taps the move list instead
+          // of finishing (and opening the modal Game over dialog) instantly.
+          stepDelay: const Duration(milliseconds: 100),
+        );
+      }),
+    ];
+
+/// Total plies applied, read from the Moves tab header (`Ply a / b`).
+///
+/// The header lives in the Moves tab (offstage until selected), so offstage
+/// widgets are included. Before the first move the panel shows
+/// `No moves yet` and the count is 0.
 int _watchMoveCount(WidgetTester tester) {
-  final text = tester
-      .widget<Text>(find.textContaining(RegExp(r'^Move \d+$')).first)
-      .data!;
-  return int.parse(text.split(' ').last);
+  final header = find.textContaining(
+    RegExp(r'^Ply \d+ / \d+$'),
+    skipOffstage: false,
+  );
+  if (header.evaluate().isEmpty) return 0;
+  final text = tester.widget<Text>(header.first).data!;
+  return int.parse(text.split('/').last.trim());
+}
+
+/// Transport overlay controls: idle/terminal shows a `Start` button, while a
+/// live game shows icon-only Pause/Resume + Stop buttons with tooltips.
+Finder _watchStartControl() => find.text('Start');
+
+/// Selects a panel tab and waits for the page animation to settle.
+///
+/// Tab pages are built lazily, so content (e.g. the Moves `Ply a / b`
+/// header) only exists once the controller stops changing.
+Future<void> _selectWatchTab(WidgetTester tester, String name) async {
+  await tester.tap(find.text(name).first);
+  final controller =
+      DefaultTabController.of(tester.element(find.byType(TabBar)));
+  for (var i = 0; i < 20 && controller.indexIsChanging; i++) {
+    await tester.pump(const Duration(milliseconds: 300));
+  }
+  await tester.pump(const Duration(milliseconds: 100));
+}
+
+/// Pumps until at least [min] plies are applied (or [maxSteps] is hit).
+///
+/// Move count is read from the Moves tab header, so select the Moves tab
+/// first. Each mock turn takes several pump cycles.
+Future<void> _waitForWatchMoves(WidgetTester tester, int min,
+    {int maxSteps = 80}) async {
+  for (var i = 0; i < maxSteps && _watchMoveCount(tester) < min; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+}
+
+/// Returns keyboard focus to the scrub-shortcut scope.
+///
+/// Selecting a panel tab (see [_selectWatchTab]) moves focus onto the tab,
+/// where arrow keys would navigate tabs instead of scrubbing plies. The
+/// scrub scope owns a `Focus` node (debug label `scrub-shortcuts`) around the
+/// whole screen; requesting focus there restores arrow/Home/End scrubbing.
+Future<void> _refocusWatchScrub(WidgetTester tester) async {
+  final ancestors = find.ancestor(
+    of: find.byType(Chessboard),
+    matching: find.byType(Focus),
+  );
+  for (final element in ancestors.evaluate()) {
+    final widget = element.widget;
+    if (widget is Focus &&
+        widget.focusNode?.debugLabel == 'scrub-shortcuts') {
+      widget.focusNode?.requestFocus();
+      break;
+    }
+  }
+  await tester.pump();
 }
 
 Future<void> _pumpWatch(
@@ -328,7 +428,7 @@ Future<void> _pumpWatch(
       home: Scaffold(
         body: ProviderScope(
           overrides: <Override>[
-            ..._playOverrides(),
+            ..._watchOverrides(),
             agentListProvider.overrideWith(
               (ref) => AgentListStore(seedDemos: true),
             ),
@@ -339,12 +439,15 @@ Future<void> _pumpWatch(
     ),
   );
   await tester.pump();
-  await tester.tap(find.text('Start'));
+  await tester.tap(_watchStartControl());
   await tester.pump();
-  // Pump until at least two moves are on the board.
-  for (var i = 0; i < 20 && _watchMoveCount(tester) < 4; i++) {
-    await tester.pump(const Duration(milliseconds: 100));
-  }
+  // The move count lives in the lazily-built Moves tab header: select the
+  // tab first, then pump until moves land. Tab selection moves keyboard
+  // focus onto the tab (where arrows would navigate tabs), so refocus the
+  // scrub scope before handing back to the test.
+  await _selectWatchTab(tester, 'Moves');
+  await _waitForWatchMoves(tester, 4);
+  await _refocusWatchScrub(tester);
   await tester.pump(const Duration(milliseconds: 50));
 }
 
@@ -880,8 +983,12 @@ void main() {
 
     testWidgets('move-list tap seeks and shows Return to live', (tester) async {
       await _pumpWatch(tester);
-      // Switch to the Moves tab.
-      await _switchTab(tester, 'Moves');
+      // _pumpWatch already leaves the Moves tab selected; only switch if
+      // the move list is not visible (re-tapping the active tab misses hit
+      // testing and only spams warnings).
+      if (find.byType(MoveList).evaluate().isEmpty) {
+        await _switchTab(tester, 'Moves');
+      }
       // Tap the first move entry.
       final firstEntry = find.descendant(
         of: find.byType(MoveList),

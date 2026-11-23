@@ -26,6 +26,8 @@
 /// `token`, `secret`, `password`, `authorization`, case-insensitive,
 /// substring match) with `'***REDACTED***'`. Export always redacts; the
 /// function is public so storage layers can reuse it.
+/// Talks to: `stats/event_log.dart`, `tournament.dart`; mirrors `backend/openapi.yaml` schema `1.0`; redaction reused by `storage/`.
+/// Never imports: `package:flutter`, `ui/`, `llm/`, `chess/`+`variant/` engines, `storage/local_store` — data only.
 library;
 
 import '../stats/event_log.dart';

@@ -10,6 +10,7 @@ import 'package:llm_chess_arena/src/variant/interpretation.dart';
 import 'package:llm_chess_arena/src/variant/variant_board.dart';
 import 'package:llm_chess_arena/src/variant/variant_replay.dart';
 import 'package:llm_chess_arena/src/ui/screens/variant_replay_screen.dart';
+import 'package:llm_chess_arena/src/ui/widgets/scrub_shortcuts.dart';
 import 'package:llm_chess_arena/src/ui/backend_bridge.dart' show clockProvider;
 
 // --- Test fixture builders ---
@@ -193,18 +194,18 @@ void main() {
     );
     await tester.pump();
 
-    var prevBtn = tester.widget<IconButton>(
+    var prevBtn = tester.widget<HoldIconButton>(
       find.byKey(const ValueKey<String>('variant-prev')),
     );
-    expect(prevBtn.onPressed, isNull);
+    expect(prevBtn.onStep, isNull);
 
     await tester.tap(find.byKey(const ValueKey<String>('variant-next')));
     await tester.pump();
 
-    prevBtn = tester.widget<IconButton>(
+    prevBtn = tester.widget<HoldIconButton>(
       find.byKey(const ValueKey<String>('variant-prev')),
     );
-    expect(prevBtn.onPressed, isNotNull);
+    expect(prevBtn.onStep, isNotNull);
   });
 
   testWidgets('next disabled at last re-enables after going back',
@@ -221,18 +222,18 @@ void main() {
     // Go to last via last_page button
     await tester.tap(find.byKey(const ValueKey<String>('variant-last')));
     await tester.pump();
-    var nextBtn = tester.widget<IconButton>(
+    var nextBtn = tester.widget<HoldIconButton>(
       find.byKey(const ValueKey<String>('variant-next')),
     );
-    expect(nextBtn.onPressed, isNull);
+    expect(nextBtn.onStep, isNull);
 
     // Go to first
     await tester.tap(find.byKey(const ValueKey<String>('variant-first')));
     await tester.pump();
-    nextBtn = tester.widget<IconButton>(
+    nextBtn = tester.widget<HoldIconButton>(
       find.byKey(const ValueKey<String>('variant-next')),
     );
-    expect(nextBtn.onPressed, isNotNull);
+    expect(nextBtn.onStep, isNotNull);
   });
 
   // ======================================================================
@@ -432,15 +433,15 @@ void main() {
       isNull,
     );
     expect(
-      tester.widget<IconButton>(
+      tester.widget<HoldIconButton>(
         find.byKey(const ValueKey<String>('variant-prev')),
-      ).onPressed,
+      ).onStep,
       isNull,
     );
     expect(
-      tester.widget<IconButton>(
+      tester.widget<HoldIconButton>(
         find.byKey(const ValueKey<String>('variant-next')),
-      ).onPressed,
+      ).onStep,
       isNull,
     );
   });
@@ -611,9 +612,9 @@ void main() {
       isNull,
     );
     expect(
-      tester.widget<IconButton>(
+      tester.widget<HoldIconButton>(
         find.byKey(const ValueKey<String>('variant-prev')),
-      ).onPressed,
+      ).onStep,
       isNotNull,
     );
   });

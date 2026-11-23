@@ -22,7 +22,8 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:developer' show log;
+
+import '../diagnostics/backend_log.dart';
 
 import 'package:http/http.dart' as http;
 
@@ -51,6 +52,9 @@ class GeminiProvider extends LlmProvider {
   /// Whether [_client] was created internally (and thus closed by [close]).
   final bool _ownsClient;
 
+  /// UI-free logger (per-call override wins; defaults to [currentBackendLog]).
+  final BackendLog? log;
+
   /// Creates a provider.
   GeminiProvider({
     required this.baseUrl,
@@ -58,8 +62,9 @@ class GeminiProvider extends LlmProvider {
     required this.model,
     http.Client? httpClient,
     this.timeout = const Duration(seconds: 120),
-  })  : _client = httpClient ?? http.Client(),
-        _ownsClient = httpClient == null;
+    this.log,
+  }) : _client = httpClient ?? http.Client(),
+       _ownsClient = httpClient == null;
 
   /// Releases the internally created HTTP client, if any.
   @override
@@ -74,30 +79,58 @@ class GeminiProvider extends LlmProvider {
 
   @override
   LlmCapabilities get capabilities => const LlmCapabilities(
-        supportsTools: true,
-        supportsStreaming: true,
-        supportsReasoning: false,
-        friendlyName: 'Gemini',
-      );
+    supportsTools: true,
+    supportsStreaming: true,
+    supportsReasoning: false,
+    friendlyName: 'Gemini',
+  );
 
   /// Base URL without trailing slashes.
   String get _base => baseUrl.replaceAll(RegExp(r'/+$'), '');
 
-  Map<String, String> get _headers => jsonHeaders(
-        extra: {'x-goog-api-key': apiKey},
-      );
+  Map<String, String> get _headers =>
+      jsonHeaders(extra: {'x-goog-api-key': apiKey});
 
   @override
-  Future<bool> testConnection() async {
+  Future<bool> testConnection({
+    BackendLog? log,
+    String? gameId,
+    String? tournamentId,
+  }) async {
+    final effectiveLog = log ?? this.log ?? currentBackendLog;
+    effectiveLog.debug(
+      'testConnection start',
+      tag: 'gemini-provider',
+      gameId: gameId,
+      tournamentId: tournamentId,
+    );
     try {
       final response = await _client
           .get(Uri.parse('$_base/v1beta/models'), headers: _headers)
           .timeout(const Duration(seconds: 10));
-      return response.statusCode == 200;
+      final ok = response.statusCode == 200;
+      if (ok) {
+        effectiveLog.debug(
+          'testConnection end ok=true',
+          tag: 'gemini-provider',
+          gameId: gameId,
+          tournamentId: tournamentId,
+        );
+      } else {
+        effectiveLog.warning(
+          'testConnection failed kind=http status=${response.statusCode}',
+          tag: 'gemini-provider',
+          gameId: gameId,
+          tournamentId: tournamentId,
+        );
+      }
+      return ok;
     } catch (error) {
-      log(
-        'testConnection: $id models probe failed — reporting false',
-        name: 'gemini-provider',
+      effectiveLog.warning(
+        'testConnection failed kind=transport — reporting false',
+        tag: 'gemini-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
         error: error,
       );
       return false;
@@ -105,12 +138,30 @@ class GeminiProvider extends LlmProvider {
   }
 
   @override
-  Stream<LlmStreamEvent> streamMove(AgentRequest request) async* {
+  Stream<LlmStreamEvent> streamMove(
+    AgentRequest request, {
+    BackendLog? log,
+    String? gameId,
+    String? tournamentId,
+  }) async* {
+    final effectiveLog = log ?? this.log ?? currentBackendLog;
+    effectiveLog.debug(
+      'stream start model=$model',
+      tag: 'gemini-provider',
+      gameId: gameId,
+      tournamentId: tournamentId,
+    );
     final stopwatch = Stopwatch()..start();
     yield const LlmStreamEvent(kind: StreamEventKind.started);
 
     bool cancelled() => request.cancelToken?.isCancelled ?? false;
     if (cancelled()) {
+      effectiveLog.warning(
+        'stream failed kind=cancelled before send',
+        tag: 'gemini-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
+      );
       yield LlmStreamEvent(
         kind: StreamEventKind.error,
         message: '${FailureKind.cancelled.name}: turn cancelled before send.',
@@ -149,19 +200,34 @@ class GeminiProvider extends LlmProvider {
 
     late final http.StreamedResponse response;
     try {
-      final uri = Uri.parse('$_base/v1beta/models/$model'
-          ':streamGenerateContent?alt=sse');
+      final uri = Uri.parse(
+        '$_base/v1beta/models/$model'
+        ':streamGenerateContent?alt=sse',
+      );
       final httpRequest = http.Request('POST', uri)
         ..headers.addAll(_headers)
         ..body = jsonEncode(body);
       response = await _client.send(httpRequest).timeout(timeout);
     } on TimeoutException {
+      effectiveLog.warning(
+        'stream failed kind=timeout on connect',
+        tag: 'gemini-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
+      );
       yield LlmStreamEvent(
         kind: StreamEventKind.errorRetry,
         message: '${FailureKind.timeout.name}: connection timed out.',
       );
       return;
     } catch (e) {
+      effectiveLog.warning(
+        'stream failed kind=providerError on connect',
+        tag: 'gemini-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
+        error: e,
+      );
       yield LlmStreamEvent(
         kind: StreamEventKind.errorRetry,
         message: '${FailureKind.providerError.name}: transport error: $e',
@@ -172,6 +238,12 @@ class GeminiProvider extends LlmProvider {
     if (response.statusCode != 200) {
       final detail = await readErrorBody(response);
       final kind = failureKindForHttpStatus(response.statusCode);
+      effectiveLog.warning(
+        'stream failed kind=${kind.name} status=${response.statusCode}',
+        tag: 'gemini-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
+      );
       yield LlmStreamEvent(
         kind: isRetryableFailureKind(kind)
             ? StreamEventKind.errorRetry
@@ -238,10 +310,7 @@ class GeminiProvider extends LlmProvider {
             if (part is! Map) continue;
             final text = part['text'];
             if (text is String && text.isNotEmpty) {
-              yield LlmStreamEvent(
-                kind: StreamEventKind.textDelta,
-                text: text,
-              );
+              yield LlmStreamEvent(kind: StreamEventKind.textDelta, text: text);
             }
             final functionCall = part['functionCall'];
             if (functionCall is Map) {
@@ -254,8 +323,7 @@ class GeminiProvider extends LlmProvider {
                 // map so no keys are lost (last key wins within a frame).
                 functionArgs ??= <String, Object?>{};
                 for (final argEntry in args.entries) {
-                  functionArgs!['${argEntry.key}'] =
-                      argEntry.value as Object?;
+                  functionArgs!['${argEntry.key}'] = argEntry.value as Object?;
                 }
                 yield LlmStreamEvent(
                   kind: StreamEventKind.toolCallDelta,
@@ -270,15 +338,23 @@ class GeminiProvider extends LlmProvider {
     }
 
     var streamFailed = false;
+    String? streamFailedKind;
     try {
       await for (final line in sseLinesWithInactivityTimeout(
         response.stream,
         timeout,
       )) {
         if (cancelled()) {
+          effectiveLog.warning(
+            'stream failed kind=cancelled mid-stream',
+            tag: 'gemini-provider',
+            gameId: gameId,
+            tournamentId: tournamentId,
+          );
           yield LlmStreamEvent(
             kind: StreamEventKind.error,
-            message: '${FailureKind.cancelled.name}: turn cancelled mid-stream.',
+            message:
+                '${FailureKind.cancelled.name}: turn cancelled mid-stream.',
           );
           return;
         }
@@ -295,13 +371,23 @@ class GeminiProvider extends LlmProvider {
             if (event.kind == StreamEventKind.error ||
                 event.kind == StreamEventKind.errorRetry) {
               streamFailed = true;
+              streamFailedKind = event.message?.split(':').first;
             }
             yield event;
           }
           // Exactly-one-terminal contract (provider.dart): the payload
           // error above is already the terminal event, so return now —
           // falling through would emit a second terminal (`done`) below.
-          if (streamFailed) return;
+          if (streamFailed) {
+            effectiveLog.warning(
+              'stream failed kind=${streamFailedKind ?? 'providerError'} '
+              'in-payload',
+              tag: 'gemini-provider',
+              gameId: gameId,
+              tournamentId: tournamentId,
+            );
+            return;
+          }
         }
       }
       if (pendingData != null) {
@@ -311,14 +397,30 @@ class GeminiProvider extends LlmProvider {
           if (event.kind == StreamEventKind.error ||
               event.kind == StreamEventKind.errorRetry) {
             streamFailed = true;
+            streamFailedKind = event.message?.split(':').first;
           }
           yield event;
         }
         // Trailing-flush error is likewise terminal: return immediately so
         // no second terminal follows.
-        if (streamFailed) return;
+        if (streamFailed) {
+          effectiveLog.warning(
+            'stream failed kind=${streamFailedKind ?? 'providerError'} '
+            'in-trailer',
+            tag: 'gemini-provider',
+            gameId: gameId,
+            tournamentId: tournamentId,
+          );
+          return;
+        }
       }
     } on TimeoutException {
+      effectiveLog.warning(
+        'stream failed kind=timeout stalled',
+        tag: 'gemini-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
+      );
       yield LlmStreamEvent(
         kind: StreamEventKind.errorRetry,
         message:
@@ -327,6 +429,13 @@ class GeminiProvider extends LlmProvider {
       );
       return;
     } catch (e) {
+      effectiveLog.warning(
+        'stream failed kind=providerError in-stream',
+        tag: 'gemini-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
+        error: e,
+      );
       yield LlmStreamEvent(
         kind: StreamEventKind.errorRetry,
         message: '${FailureKind.providerError.name}: stream failed: $e',
@@ -334,6 +443,12 @@ class GeminiProvider extends LlmProvider {
       return;
     }
     if (cancelled()) {
+      effectiveLog.warning(
+        'stream failed kind=cancelled mid-stream',
+        tag: 'gemini-provider',
+        gameId: gameId,
+        tournamentId: tournamentId,
+      );
       yield LlmStreamEvent(
         kind: StreamEventKind.error,
         message: '${FailureKind.cancelled.name}: turn cancelled mid-stream.',
@@ -356,6 +471,12 @@ class GeminiProvider extends LlmProvider {
       );
     }
     stopwatch.stop();
+    effectiveLog.debug(
+      'stream end model=$model hasCall=${functionArgs != null}',
+      tag: 'gemini-provider',
+      gameId: gameId,
+      tournamentId: tournamentId,
+    );
     yield LlmStreamEvent(
       kind: StreamEventKind.latency,
       latencyMs: stopwatch.elapsedMilliseconds,
